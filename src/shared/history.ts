@@ -50,11 +50,27 @@ export interface Step {
  * undone steps stay stored, as the record of what was done).
  */
 export function canRedo(steps: readonly Step[]): boolean {
+  return nextRedo(steps) !== null
+}
+
+/** The step Undo takes back next: the newest in effect (as `HistoryTable.undo` picks it). */
+export function newestShown(steps: readonly Step[]): Step | null {
+  for (let i = steps.length - 1; i >= 0; i--) if (!steps[i].hidden) return steps[i]
+  return null
+}
+
+/**
+ * The step Redo brings back next (as `HistoryTable.redo` picks it): the
+ * oldest undone one after the newest in effect, while nothing in effect
+ * came after it.
+ */
+export function nextRedo(steps: readonly Step[]): Step | null {
+  let found: Step | null = null
   for (let i = steps.length - 1; i >= 0; i--) {
-    if (!steps[i].hidden) return false
-    if (steps[i].undone) return true
+    if (!steps[i].hidden) break
+    if (steps[i].undone) found = steps[i]
   }
-  return false
+  return found
 }
 
 type Obj = Record<string, unknown>
@@ -71,11 +87,16 @@ function isEntityList(path: Seg[]): boolean {
       path[0] === 'retouch' ||
       path[0] === 'pixels'
     )
-  // A mask's components, and the point colours among its settings.
+  // A mask's components, the point colours among its settings, and a
+  // brush's strokes (a step adds its stroke, not the brush's every stroke).
   if (path[0] !== 'layers' || typeof path[1] === 'string') return false
   return (
     (path.length === 3 && path[2] === 'components') ||
-    (path.length === 4 && path[2] === 'settings' && path[3] === 'pointColors')
+    (path.length === 4 && path[2] === 'settings' && path[3] === 'pointColors') ||
+    (path.length === 5 &&
+      path[2] === 'components' &&
+      typeof path[3] !== 'string' &&
+      path[4] === 'strokes')
   )
 }
 
@@ -336,6 +357,8 @@ export interface TimelineRow {
   to?: number
   /** The pixel steps laid on after it (`stackSignature`): a moment whose differ from today's. */
   pixels: string
+  /** The Library batch it was made in (paste, sync, auto white balance on many photos at once). */
+  batch?: string
 }
 
 /** One editing session: steps with no long pause between them. */
@@ -403,7 +426,9 @@ export function groupTimeline(
     for (const op of s.patch) applyOp(running, op)
     const to = single ? numberAt(running, single.path) : undefined
     const pixels = stackSignature(activeSteps((running as unknown as Recipe).pixels ?? []))
-    const key = `${s.label}\n${controlKey(s.patch)}`
+    // A Library batch's step stays a row of its own, never merged with drags.
+    const batch = batchOf(s.label)
+    const key = `${s.label}\n${batch ? '' : controlKey(s.patch)}`
     const prev = here.rows[here.rows.length - 1]
     if (prev && key === lastKey && t - Date.parse(prev.at) <= opts.mergeMs) {
       prev.seqs.push(s.seq)
@@ -417,7 +442,8 @@ export function groupTimeline(
         firstAt: s.at,
         at: s.at,
         pixels,
-        ...(from !== undefined && to !== undefined ? { from, to } : {})
+        ...(from !== undefined && to !== undefined ? { from, to } : {}),
+        ...(batch ? { batch } : {})
       })
     lastKey = key
     here.end = s.at
@@ -438,7 +464,7 @@ const DELETED = /\s\[#([\d,]+)\]$/
 
 /** The label of the step that deletes `seqs` (shown as "Delete: <label>"). */
 export function deleteLabel(label: string, seqs: readonly number[]): string {
-  return `Delete: ${label.replace(DELETED, '')} [#${seqs.join(',')}]`
+  return `Delete: ${shownLabel(label)} [#${seqs.join(',')}]`
 }
 
 /** The steps a delete step's label names, or null for any other label. */
@@ -448,8 +474,29 @@ export function deletedSeqs(label: string): number[] | null {
   return m ? m[1].split(',').map(Number) : null
 }
 
-/** A label without the steps a delete names: what is shown. */
-export const shownLabel = (label: string): string => label.replace(DELETED, '')
+/** A label without the steps a delete names, or the batch it was made in: what is shown. */
+export const shownLabel = (label: string): string => label.replace(DELETED, '').replace(BATCH, '')
+
+// ── Library batches ─────────────────────────────────────────────────────────
+//
+// A change made in the Library to many photos at once (a paste, a sync, auto
+// white balance) is one step in each photo's history, and those steps share
+// a batch id so the Library can undo the batch through each photo's own
+// history (main/batchcommit.ts). The id rides in the label, after the words
+// shown, as a delete's steps do: no column to add to the index or to every
+// project.
+
+const BATCH = /\s\{batch:([A-Za-z0-9_-]+)\}$/
+
+/** A step label tagged with the Library batch it belongs to. */
+export function batchLabel(label: string, batch: string): string {
+  return `${shownLabel(label)} {batch:${batch}}`
+}
+
+/** The Library batch a step was made in, or null. */
+export function batchOf(label: string): string | null {
+  return BATCH.exec(label)?.[1] ?? null
+}
 
 /**
  * The photo with `seqs` (the steps of a timeline row) taken out, and every

@@ -8,7 +8,7 @@
  */
 import type { KeyBand, MaskMode } from './engine-types'
 import { effectiveMode } from './masks'
-import type { LocalLayer, MaskComponentSetting, RangeComponent } from './recipe'
+import type { BrushStrokeSetting, LocalLayer, MaskComponentSetting, RangeComponent } from './recipe'
 
 /**
  * How components join, as the engine combines them (measured against its
@@ -102,7 +102,8 @@ export function previewable(l: LocalLayer): boolean {
 export function drawable(c: MaskComponentSetting): boolean {
   if (c.kind === 'polygon') return c.points.length >= 3
   if (c.kind === 'range') return Boolean(c.hue || c.saturation || c.luma)
-  if (c.kind === 'brush' || c.kind === 'depth') return Boolean(c.png || c.ref)
+  if (c.kind === 'brush') return Boolean(c.png || c.ref || c.strokes?.length)
+  if (c.kind === 'depth') return Boolean(c.png || c.ref)
   return true
 }
 
@@ -124,6 +125,15 @@ export function maskJoins<C extends MaskComponentSetting>(
 }
 
 /**
+ * A brush's strokes, told apart cheaply: how many, and the last one's id
+ * and length (a stroke being painted grows; Undo takes the last away).
+ */
+export function strokesSig(strokes: BrushStrokeSetting[] | undefined): string {
+  const last = strokes?.[strokes.length - 1]
+  return last ? `${strokes.length}:${last.id}:${last.dabs.length}` : ''
+}
+
+/**
  * What a component's own plane depends on (its shape and feather, not its
  * mode, opacity or inversion, which apply as it joins): a plane is redrawn
  * only when this changes.
@@ -133,6 +143,7 @@ export function planeKey(c: MaskComponentSetting): string {
     return JSON.stringify([
       c.kind,
       c.ref ?? `${c.png.length}:${c.png.slice(-32)}`,
+      strokesSig(c.strokes),
       c.feather,
       c.edge ?? null
     ])

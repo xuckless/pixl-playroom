@@ -60,7 +60,7 @@ function progressLine(s: UpdateState): string | null {
     case 'not-available':
       return t('No update reached this copy yet. Try again shortly, or download it.')
     case 'error':
-      return t("Couldn't update: {{error}}", { error: s.error ?? t('unknown error') })
+      return t('Couldn’t update: {{error}}', { error: s.error ?? t('unknown error') })
     default:
       return null
   }

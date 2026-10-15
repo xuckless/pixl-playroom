@@ -13,9 +13,20 @@
  */
 import type { CropRect, Orientation, Transform } from './engine-types'
 import { effectiveCrop, orientedFrame } from './compile'
-import { inverse, swapsAxes, transformPoint } from './orientation'
+import { effective } from './edits'
+import { lensCorrection } from './lens'
+import { inverse, matrixOf, swapsAxes, transformPoint } from './orientation'
+import { applyProjective, glMat3, type Projective } from './projective'
+import { gridPoint, type LensGrid } from './lensframe'
 import type { Recipe } from './recipe'
-import { canvasToFrame, frameToCanvas, uprightTransform } from './upright'
+import {
+  canvasToFrame,
+  frameToCanvas,
+  homography,
+  invert3,
+  uprightTransform,
+  type Mat3
+} from './upright'
 
 export interface ViewGeometry {
   /** The oriented frame, full resolution, in pixels. */
@@ -28,10 +39,17 @@ export interface ViewGeometry {
   transform: Transform | null
   /** The display is the whole canvas (crop tool open), or the whole unwarped frame (guides). */
   whole: boolean
+  /**
+   * The masks drawn under another lens than the one rendered (Optics
+   * switched off, a lens slider moving): the map between the two, on the
+   * base frame (shared/lensframe.ts). Absent or null: they are on it.
+   * Points go through it; the matrices below leave it out.
+   */
+  lens?: LensGrid | null
 }
 
 export function viewGeometry(
-  r: Pick<Recipe, 'geometry'> & { off?: Recipe['off'] },
+  r: Pick<Recipe, 'geometry'>,
   frameWidth: number,
   frameHeight: number,
   cropMode: boolean,
@@ -39,19 +57,63 @@ export function viewGeometry(
   guides = false
 ): ViewGeometry {
   const o = orientedFrame(r, frameWidth, frameHeight)
-  // As `edits.ts` `effective` renders it: crop and straighten, or Upright, switched off.
-  const cropOff = r.off?.crop === true
-  const uprightOff = r.off?.geometry === true
   return {
     width: o.width,
     height: o.height,
     user: o.user,
-    crop: cropOff ? null : effectiveCrop(r, o.width, o.height),
-    straighten: cropOff ? 0 : r.geometry.straighten,
-    transform:
-      guides || uprightOff ? null : uprightTransform(r.geometry.upright, o.width, o.height),
+    crop: effectiveCrop(r, o.width, o.height),
+    straighten: r.geometry.straighten,
+    transform: guides ? null : uprightTransform(r.geometry.upright, o.width, o.height),
     whole: cropMode || guides
   }
+}
+
+/**
+ * The loupe's geometry: the picture as it is rendered, so from the recipe
+ * `compile` reads (`edits.ts` `effective`). Crop & straighten switched off
+ * are no crop and no straighten, Geometry switched off no Upright, and the
+ * crop is then fitted as the engine's is (an Upright still auto-crops with
+ * Crop off). One source of truth with the render: a view of its own once
+ * drifted from it by hundreds of pixels.
+ */
+export function loupeGeometry(
+  r: Recipe,
+  isRaw: boolean,
+  frameWidth: number,
+  frameHeight: number,
+  cropMode: boolean,
+  guides = false
+): ViewGeometry {
+  return viewGeometry(effective(r, isRaw), frameWidth, frameHeight, cropMode, guides)
+}
+
+/**
+ * What places every mask on the picture as rendered: the framing (turns,
+ * straighten, crop, Upright, as switched on) and the lens's geometry, as
+ * the engine is given them (rounded as `compile` rounds them). A change to
+ * it leaves every mask plane on hand drawn for another picture; anything
+ * else (a guide moved, an aspect lock on a drawn crop) leaves them as they are.
+ *
+ * Not the lens frame the masks are recorded on: moving that record (a lens
+ * edit settling) leaves every mask where it was on the picture, and a plane
+ * or thumbnail the engine has no reason to draw again would never show.
+ */
+export function maskPlacementKey(
+  r: Recipe,
+  isRaw: boolean,
+  frameWidth: number,
+  frameHeight: number
+): string {
+  const e = effective(r, isRaw)
+  const g = viewGeometry(e, frameWidth, frameHeight, false)
+  const round4 = (v: number): number => Math.round(v * 1e4) / 1e4
+  return JSON.stringify([
+    g.user,
+    g.crop && [g.crop.x, g.crop.y, g.crop.width, g.crop.height].map(round4),
+    round4(g.straighten),
+    g.transform,
+    lensCorrection(e.lens)?.distortion ?? null
+  ])
 }
 
 export interface P {
@@ -102,11 +164,173 @@ export function baseToOriented(g: ViewGeometry, p: P): P {
 }
 
 export function displayToBase(g: ViewGeometry, p: P): P {
-  return orientedToBase(g, displayToOriented(g, p))
+  const b = orientedToBase(g, displayToOriented(g, p))
+  return g.lens ? gridPoint(g.lens.toMasks, g.lens.n, b) : b
 }
 
 export function baseToDisplay(g: ViewGeometry, p: P): P {
-  return orientedToDisplay(g, baseToOriented(g, p))
+  return orientedToDisplay(g, baseToOriented(g, masksToRendered(g, p)))
+}
+
+/**
+ * Display → base on the frame as rendered, the masks' lens grid left out:
+ * where a model looking at the picture is pointed (SAM's clicks, boxes and
+ * strokes, a look's pick), since it sees the photo through the lens it
+ * renders with (ai/segment.ts), whatever frame the masks are recorded on.
+ */
+export function displayToRendered(g: ViewGeometry, p: P): P {
+  return orientedToBase(g, displayToOriented(g, p))
+}
+
+/** A point of the masks' frame on the frame as rendered: through the lens grid, if one. */
+export function masksToRendered(g: Pick<ViewGeometry, 'lens'>, p: P): P {
+  return g.lens ? gridPoint(g.lens.toRendered, g.lens.n, p) : p
+}
+
+// ── The map as a matrix ──────────────────────────────────────────────────────
+
+/**
+ * Display ↔ base as one projective matrix (`projective.ts`), normalised.
+ * Exact: the crop and straighten, the turns and flips are affine and
+ * Upright's warp is a homography, so their product is one (without an
+ * Upright warp its last row is 0, 0, 1). What draws a mask on the GPU (the
+ * loupe's preview, the brush's stroke) takes it, with the perspective
+ * divide, so its shapes land where `displayToBase` puts them.
+ */
+export { applyProjective, glMat3, type Projective }
+
+function mul3(a: Mat3, b: Mat3): Mat3 {
+  const o = [0, 0, 0, 0, 0, 0, 0, 0, 0] as Mat3
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      for (let k = 0; k < 3; k++) o[i * 3 + j] += a[i * 3 + k] * b[k * 3 + j]
+  return o
+}
+
+/** The same map scaled so its divisor is positive at `p` (the GPU's test for "in front"). */
+function positiveAt(m: Projective, p: P): Projective {
+  return m[6] * p.x + m[7] * p.y + m[8] < 0 ? (m.map((v) => -v) as Projective) : m
+}
+
+/**
+ * Display → base, normalised (see `Projective`): the matrix of `displayToBase`
+ * on the frame rendered (a lens grid, which is no projective map, left out).
+ */
+export function displayToBaseMatrix(g: ViewGeometry): Projective {
+  const { width: W, height: H } = g
+  // Display → canvas (normalised): the crop, then the straighten undone about the centre.
+  let toCanvas: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+  if (!g.whole && g.crop) {
+    const t = (g.straighten * Math.PI) / 180
+    const c = Math.cos(t)
+    const s = Math.sin(t)
+    // q = (crop.xy + d · crop.wh) · (W, H) − (W, H) / 2, in pixels about the centre.
+    const crop: Mat3 = [
+      g.crop.width * W,
+      0,
+      g.crop.x * W - W / 2,
+      0,
+      g.crop.height * H,
+      g.crop.y * H - H / 2,
+      0,
+      0,
+      1
+    ]
+    const turn: Mat3 = [c / W, s / W, 0.5, -s / H, c / H, 0.5, 0, 0, 1]
+    toCanvas = mul3(turn, crop)
+  }
+  // Canvas → frame: the warp undone, in the frame's pixels.
+  const unwarp: Mat3 = g.transform
+    ? mul3(
+        [1 / W, 0, 0, 0, 1 / H, 0, 0, 0, 1],
+        mul3(invert3(homography(g.transform, W, H)), [W, 0, 0, 0, H, 0, 0, 0, 1])
+      )
+    : [1, 0, 0, 0, 1, 0, 0, 0, 1]
+  // Oriented → base: the user's turn undone about the centre.
+  const o = matrixOf(inverse(g.user))
+  const toBase: Mat3 = [
+    o[0][0],
+    o[0][1],
+    0.5 - 0.5 * (o[0][0] + o[0][1]),
+    o[1][0],
+    o[1][1],
+    0.5 - 0.5 * (o[1][0] + o[1][1]),
+    0,
+    0,
+    1
+  ]
+  return positiveAt(mul3(toBase, mul3(unwarp, toCanvas)), { x: 0.5, y: 0.5 })
+}
+
+/** Base → display, normalised: the inverse of `displayToBaseMatrix`. */
+export function baseToDisplayMatrix(g: ViewGeometry): Projective {
+  const m = displayToBaseMatrix(g)
+  return positiveAt(invert3(m), applyProjective(m, { x: 0.5, y: 0.5 }))
+}
+
+/**
+ * One of the lens grid's maps about `p` to first order, as an affine
+ * `Projective`: exact at `p`, and the grid is a smooth, gentle warp.
+ */
+function gridAffine(values: number[], n: number, p: P): Projective {
+  const h = 1e-4
+  const o = gridPoint(values, n, p)
+  const x = gridPoint(values, n, { x: p.x + h, y: p.y })
+  const y = gridPoint(values, n, { x: p.x, y: p.y + h })
+  const a = (x.x - o.x) / h
+  const b = (y.x - o.x) / h
+  const c = (x.y - o.y) / h
+  const d = (y.y - o.y) / h
+  return [a, b, o.x - a * p.x - b * p.y, c, d, o.y - c * p.x - d * p.y, 0, 0, 1]
+}
+
+/**
+ * `displayToBaseMatrix` onto the masks' frame when they are on another lens
+ * than the one rendered (`ViewGeometry.lens`, which no matrix holds): its
+ * grid taken to first order about display point `p`. Exact at `p`, and
+ * close across a brush stroke from there (a pixel or so 180 px away in the
+ * far corner of a strong correction, where the matrix alone is 50 px out):
+ * for a GPU that draws on the masks' frame (the brush's stroke, its Auto
+ * Mask). The plain matrix without a grid.
+ */
+export function displayToBaseMatrixNear(g: ViewGeometry, p: P): Projective {
+  const m = displayToBaseMatrix(g)
+  if (!g.lens) return m
+  return mul3(gridAffine(g.lens.toMasks, g.lens.n, applyProjective(m, p)), m)
+}
+
+/** `baseToDisplayMatrix` from the masks' frame, likewise: exact at base point `b`. */
+export function baseToDisplayMatrixNear(g: ViewGeometry, b: P): Projective {
+  const m = baseToDisplayMatrix(g)
+  if (!g.lens) return m
+  return mul3(m, gridAffine(g.lens.toRendered, g.lens.n, b))
+}
+
+/**
+ * How much the display → base map magnifies about display point `p`: base
+ * units per display unit, in the sizes given (a brush's plane pixels per
+ * screen pixel, say), as √|det J|, the scale an area keeps. The same both
+ * ways across under a turn or a straighten; under an Upright warp, a dab
+ * keeps its area where a stretch along one axis only would have it grow.
+ * Onto the masks' frame when they are on another lens (`ViewGeometry.lens`):
+ * a dab painted with Optics off is as big on the picture as the cursor.
+ */
+export function localScale(
+  g: ViewGeometry,
+  p: P,
+  display: { w: number; h: number },
+  base: { w: number; h: number }
+): number {
+  const m = displayToBaseMatrixNear(g, p)
+  const w = m[6] * p.x + m[7] * p.y + m[8]
+  const q = applyProjective(m, p)
+  // ∂(X/w)/∂x = (m0 − X·m6) / w, and so on.
+  const jxx = (m[0] - q.x * m[6]) / w
+  const jxy = (m[1] - q.x * m[7]) / w
+  const jyx = (m[3] - q.y * m[6]) / w
+  const jyy = (m[4] - q.y * m[7]) / w
+  const det = (jxx * jyy - jxy * jyx) * ((base.w * base.h) / (display.w * display.h))
+  return Math.sqrt(Math.abs(det))
 }
 
 /**

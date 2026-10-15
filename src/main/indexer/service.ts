@@ -12,6 +12,7 @@
 import { legacyBits } from '../../shared/rebuild'
 import { withVersion } from '../../shared/versions'
 import { tk } from '../../shared/i18n'
+import { normaliseProof, type ProofSettings } from '../../shared/proof'
 import { exportLocationFromLast, LOCATION_SETTING } from '../../shared/locations'
 import { createHash } from 'crypto'
 import { homedir } from 'os'
@@ -50,9 +51,19 @@ import type {
   Snapshot,
   SourceListing
 } from '../../shared/ipc'
-import { ENGINE_RENDER_REV } from '../../shared/pixels'
+import { ENGINE_RENDER_REV, PREVIEW_THUMB_REV } from '../../shared/pixels'
 import { groupNear } from '../../shared/dupes'
-import { parseRawColour } from '../../shared/rawcolour'
+import {
+  BURST_SECONDS,
+  bursts,
+  groupAround,
+  NEAR_BITS,
+  nearGroups,
+  withAsked,
+  type ShotGroupKind,
+  type TimedShot
+} from '../../shared/shots'
+import { dcpIdOf, parseRawColour, readProfile, registerDcp } from '../../shared/rawcolour'
 import { readNames, searchWords } from '../../shared/naming'
 import { CULL_VERSION, cullKey, type CullModels } from '../../shared/cull'
 import { convertAsShot, type WbContext } from '../../shared/wbconvert'
@@ -66,6 +77,7 @@ import {
   type Recipe
 } from '../../shared/recipe'
 import { slim } from '../planeref'
+import { diffRecipe, newestShown, nextRedo, replay } from '../../shared/history'
 import { memberResolver, remapCollections, type SmartGroup } from '../../shared/smart'
 import { cacheUrlIn } from '../cache-url'
 import { emptyCamera, readCamera } from '../camera'
@@ -78,6 +90,7 @@ import {
   sidecarPath,
   writeSidecar,
   type Sidecar,
+  type SidecarCopy,
   type SidecarItem,
   type SidecarStack
 } from '../sidecar'
@@ -104,6 +117,8 @@ import {
   type Origin
 } from '../project/pixlfile'
 import { IMAGE_EXTENSIONS, isRawExt, versionStamp } from '../source'
+import { isBlobHash, isPlainExt } from '../../shared/ids'
+import { cacheFile, isSafeLocalPath } from '../contain'
 import type { IndexEvent } from './protocol'
 import {
   applyMetaPatch,
@@ -149,12 +164,39 @@ export interface ThumbWork {
   stamp: string
 }
 
+/** What names a photo's pictures (`thumbJob`'s stamp), and the thumbnail it has now. */
+interface PictureStamp {
+  row: PhotoRow
+  key: string
+  edited: boolean
+  stamp: string
+  thumbKey: string | null
+  thumbPath: string | null
+}
+
 /** What opening a photo in develop needs from the index, in one trip. */
 export interface OpenData {
   row: PhotoRow
   recipe: Recipe
   item: LibraryItem
   snapshots: Snapshot[]
+  /** A proof copy's proof: it opens proofed. */
+  proof: ProofSettings | null
+}
+
+/** How a virtual copy is made: its name (or a numbered template) and, for a proof copy, its proof. */
+export interface CopyOptions {
+  name?: string
+  /** "Copy {{n}}", translated by main (this process speaks no language). */
+  template?: string
+  proof?: ProofSettings
+}
+
+/** A new copy's name: as given, else the template (or "Copy {{n}}") numbered `n`. */
+export function copyName(opts: CopyOptions, n: number): string {
+  const name = opts.name?.trim()
+  if (name) return name.slice(0, 200)
+  return (opts.template || 'Copy {{n}}').replace('{{n}}', String(n))
 }
 
 export interface IndexOptions {
@@ -203,6 +245,13 @@ interface ListingContext {
 
 /** A file's content version, for its cached SHA-1. */
 const hashKeyOf = (row: PhotoRow): string => `${row.mtime}-${row.size}`
+
+/** Photos with a capture time, as the burst finder reads them (the rows themselves as keys). */
+function timedShots(rows: PhotoRow[]): TimedShot<PhotoRow>[] {
+  return rows
+    .filter((r) => r.captured_at)
+    .map((r) => ({ key: r, t: new Date(r.captured_at as string).getTime(), name: r.name }))
+}
 
 /** A folder's own modification time (null when it cannot be read). */
 function folderMtime(folder: string): number | null {
@@ -324,6 +373,12 @@ export class IndexService {
           ? opts.freshLocation
           : exportLocationFromLast(this.store.getSetting('export.last'))
       )
+    // The camera profiles photos' colours name (engine 0.21, E21): the
+    // thumbnails' stamps name the develop by them, as main's caches do.
+    for (const { id, json } of this.store.cameraProfiles()) {
+      const profile = readProfile(json)
+      if (profile) registerDcp(id, profile)
+    }
     this.home = opts.home ?? homedir()
     this.cacheRoot = join(opts.userData, 'cache')
     this.emit = opts.emit
@@ -620,9 +675,15 @@ export class IndexService {
       return hit.origin
     }
     // One the index has open is read through it (it may hold uncommitted writes).
-    const origin = this.projects.isOpen(path)
-      ? this.projects.use(path, (p) => p.origin())
-      : PixlFile.peekOrigin(path)
+    // A file whose origin no Playroom wrote is not a project (`validOrigin`).
+    let origin: Origin | null = null
+    try {
+      origin = this.projects.isOpen(path)
+        ? this.projects.use(path, (p) => p.origin())
+        : PixlFile.peekOrigin(path)
+    } catch {
+      origin = null
+    }
     this.origins.set(path, { stamp, origin })
     return origin
   }
@@ -692,9 +753,14 @@ export class IndexService {
     // Photos that moved away from their projects (in a projects folder).
     for (const row of photos) {
       if (claimed.has(row.id) || this.projectOf(row)) continue
-      const found = this.store
-        .projectsNamed(row.name, row.size)
-        .find((c) => !taken.has(c.path) && existsSync(c.path) && !existsSync(c.origin_path))
+      const found = this.store.projectsNamed(row.name, row.size).find(
+        (c) =>
+          !taken.has(c.path) &&
+          existsSync(c.path) &&
+          // A path no Playroom would look at (a device, a share outside the
+          // library) is not looked at: the original is as good as gone.
+          !(this.lookable(c.origin_path) && existsSync(c.origin_path))
+      )
       if (!found) continue
       this.projects.write(found.path, (p) => {
         const o = p.origin()
@@ -875,13 +941,14 @@ export class IndexService {
   private writeOriginal(row: PhotoRow, project: string): { path: string; codec: string } | null {
     return this.projects.use(project, (p) => {
       const o = p.original()
-      if (o?.state !== 'ready' || !o.blob) return null
+      if (o?.state !== 'ready' || !isBlobHash(o.blob)) return null
       const info = p.blob(o.blob)
       if (!info) return null
       const ext = o.kind === 'verbatim' ? row.ext : o.kind === 'dng' ? 'dng' : 'jxl'
+      if (!isPlainExt(ext)) return null
       const dir = join(this.cacheRoot, 'photos', String(row.id))
       mkdirSync(dir, { recursive: true })
-      const path = join(dir, `original-${o.blob.slice(0, 16)}.${ext}`)
+      const path = cacheFile(dir, `original-${o.blob.slice(0, 16)}.${ext}`)
       if (!existsSync(path) && !p.writeBlobTo(o.blob, path)) return null
       return { path, codec: info.codec }
     })
@@ -998,9 +1065,9 @@ export class IndexService {
   blobFile(key: string, hash: string, ext: string): string | null {
     const row = this.row(key)
     const project = this.projectOf(row)
-    if (!project) return null
+    if (!project || !isBlobHash(hash) || !isPlainExt(ext)) return null
     const dir = join(this.cacheRoot, 'photos', String(row.id), 'blobs')
-    const path = join(dir, `${hash}.${ext}`)
+    const path = cacheFile(dir, `${hash}.${ext}`)
     if (existsSync(path)) return path
     mkdirSync(dir, { recursive: true })
     return this.projects.use(project, (p) => (p.writeBlobTo(hash, path) ? path : null))
@@ -1074,6 +1141,13 @@ export class IndexService {
     // The truth where one is written; a photo with none keeps what the index recorded.
     if (sidecar.rawColour)
       this.store.setRawColour(row.id, sidecar.rawColour, sidecar.rawColourChosen === true)
+    // The camera profile it names, carried in (from another machine, say).
+    // One the index holds already stands: an id is a file's, kept as read.
+    const profileId = dcpIdOf(sidecar.rawColour)
+    if (profileId && sidecar.cameraProfile && !this.store.cameraProfile(profileId)) {
+      this.store.setCameraProfile(profileId, JSON.stringify(sidecar.cameraProfile))
+      registerDcp(profileId, sidecar.cameraProfile)
+    }
     if (sidecar.names) this.store.setNames(row.id, JSON.stringify(sidecar.names))
     if (sidecar.cullKeep) this.store.setCullKeep(row.id, true)
     if (from === 'project') {
@@ -1089,7 +1163,7 @@ export class IndexService {
       return
     }
     this.filling.add(folder)
-    let filled = 0
+    const filled: number[] = []
     try {
       do {
         this.fillAgain.delete(folder)
@@ -1100,13 +1174,13 @@ export class IndexService {
           // Gone while its exif was read.
           if (!this.store.photo(row.id)) continue
           this.store.setCamera(row.id, camera)
-          filled++
+          filled.push(row.id)
         }
       } while (this.fillAgain.has(folder))
     } finally {
       this.filling.delete(folder)
     }
-    if (filled > 0) this.emit({ name: 'changed', folder })
+    if (filled.length > 0) this.emit({ name: 'changed', folder, photos: filled })
   }
 
   /**
@@ -1115,7 +1189,7 @@ export class IndexService {
    */
   private async fillXmp(folder: string): Promise<void> {
     const changed = await this.xmpSerial(async () => {
-      let n = 0
+      const n: number[] = []
       let i = 0
       for (const row of this.store.photosIn(folder)) {
         // A stat each: a big folder yields between chunks, as the scan does.
@@ -1135,12 +1209,12 @@ export class IndexService {
         // Gone while its sidecar was read.
         if (!this.store.photo(row.id)) continue
         this.store.tx(() => this.store.setXmp(row.id, meta, meta.keywords, mtime))
-        n++
+        n.push(row.id)
       }
       return n
     })
-    if (changed > 0 && !this.closed) {
-      this.emit({ name: 'changed', folder })
+    if (changed.length > 0 && !this.closed) {
+      this.emit({ name: 'changed', folder, photos: changed })
       this.emit({ name: 'sources' })
     }
   }
@@ -1159,11 +1233,15 @@ export class IndexService {
    * their items' keys, indexing any folder the index has not seen. A folder
    * given as the first path is that folder, with no keys.
    */
-  async resolvePaths(paths: string[]): Promise<{ folder: string | null; keys: string[] }> {
+  async resolvePaths(
+    paths: string[],
+    allowed: string[] = []
+  ): Promise<{ folder: string | null; keys: string[] }> {
     if (paths.length === 0) return { folder: null, keys: [] }
     // A project stands for its photo: the folder is the photo's (or, when
     // that is gone, the project's own), and the key the photo's.
-    if (paths.some((p) => p.toLowerCase().endsWith(PIXL_EXT))) return this.resolveProjects(paths)
+    if (paths.some((p) => p.toLowerCase().endsWith(PIXL_EXT)))
+      return this.resolveProjects(paths, allowed)
     const first = resolve(paths[0])
     let isDir = false
     try {
@@ -1195,12 +1273,12 @@ export class IndexService {
    * file the index has not seen is scanned (to learn the file and tie it to
    * its project), but it is not opened, watched or added to the recent ones.
    */
-  async photoPaths(paths: string[]): Promise<string[]> {
+  async photoPaths(paths: string[], allowed: string[] = []): Promise<string[]> {
     const out: string[] = []
     for (const p of paths.map((x) => resolve(x))) {
       let row: PhotoRow | null
       if (p.toLowerCase().endsWith(PIXL_EXT)) {
-        const { keys } = await this.resolveProjects([p])
+        const { keys } = await this.resolveProjects([p], allowed)
         row = keys[0] ? (this.store.photosByIds([parseKey(keys[0]).photoId])[0] ?? null) : null
       } else row = await this.photoAt(p)
       if (row && !out.includes(row.path)) out.push(row.path)
@@ -1216,14 +1294,66 @@ export class IndexService {
     return this.store.photoByPath(path) ?? null
   }
 
+  /**
+   * The folders the library knows: those opened (the sidebar's), and those
+   * it has photos in. A network path a file names is looked at only inside
+   * the first (`isSafeLocalPath`).
+   */
+  private libraryFolders(): string[] {
+    return this.store.recentFolders(-1)
+  }
+
+  /** Whether a path a file names may be looked at (`isSafeLocalPath`). */
+  private lookable(path: string): boolean {
+    return isSafeLocalPath(path, this.libraryFolders())
+  }
+
+  /** Whether a folder is one the library has opened or holds photos in. */
+  private knownFolder(folder: string): boolean {
+    return this.store.hasPhotosIn(folder) || this.libraryFolders().includes(folder)
+  }
+
+  /**
+   * A project's home: the folder its origin names when that may be looked
+   * at without asking (known to the library, beside the project, or one the
+   * user allowed), else the project's own folder.
+   */
+  private projectHome(project: string, origin: Origin | null, allowed: string[]): string {
+    const own = dirname(project)
+    if (!origin) return own
+    const home = dirname(origin.path)
+    if (home === own || !this.lookable(home) || !existsSync(home)) return own
+    return this.knownFolder(home) || allowed.includes(home) ? home : own
+  }
+
+  /**
+   * The folders these files name that would be looked at only because a file
+   * says so: a project's photo folder, or a collections file's items' folders,
+   * that exists here, may be looked at, and that the library has never
+   * opened or scanned. Main asks before any of them is scanned (a project or
+   * collections file someone else made names folders of their choosing).
+   */
+  foldersToAsk(paths: string[]): string[] {
+    const out = new Set<string>()
+    for (const p of paths.map((x) => resolve(x))) {
+      if (!p.toLowerCase().endsWith(PIXL_EXT)) continue
+      const o = this.originOf(p)
+      if (!o) continue
+      const home = dirname(o.path)
+      if (home === dirname(p) || !this.lookable(home) || !existsSync(home)) continue
+      if (!this.knownFolder(home)) out.add(home)
+    }
+    return [...out]
+  }
+
   private async resolveProjects(
-    paths: string[]
+    paths: string[],
+    allowed: string[] = []
   ): Promise<{ folder: string | null; keys: string[] }> {
     const projects = paths.map((p) => resolve(p)).filter((p) => p.toLowerCase().endsWith(PIXL_EXT))
     const origin = this.originOf(projects[0])
     if (!origin) return { folder: null, keys: [] }
-    const home = dirname(origin.path)
-    const folder = existsSync(home) ? home : dirname(projects[0])
+    const folder = this.projectHome(projects[0], origin, allowed)
     await this.rescan(folder, false)
     // A project beside a photo in another folder: that folder is looked at too.
     const keys: string[] = []
@@ -1231,7 +1361,7 @@ export class IndexService {
       let rows = this.store.photosWithProject(p)
       if (rows.length === 0) {
         const o = this.originOf(p)
-        if (o) await this.rescan(existsSync(dirname(o.path)) ? dirname(o.path) : dirname(p), false)
+        if (o) await this.rescan(this.projectHome(p, o, allowed), false)
         rows = this.store.photosWithProject(p)
       }
       const row = rows.find((r) => existsSync(r.path)) ?? rows[0]
@@ -1325,6 +1455,11 @@ export class IndexService {
   /** These photos' items and their copies' (what a stack change touched). */
   private itemsOfPhotos(ids: Iterable<number>): LibraryItem[] {
     return this.itemsOf(this.store.photosByIds([...ids]))
+  }
+
+  /** These photos' items (and their copies'), as a listing has them: what a fill changed. */
+  itemsOfIds(ids: number[]): LibraryItem[] {
+    return this.itemsOfPhotos(ids)
   }
 
   private itemFrom(row: PhotoRow, copy: CopyRow | undefined, ctx: ListingContext): LibraryItem {
@@ -1670,7 +1805,31 @@ export class IndexService {
    * refers to it follows), items are found by path (their folders indexed
    * if new), and what cannot be found is left out. Returns what was added.
    */
-  async importCollections(file: unknown): Promise<Collection[]> {
+  /** The folders a collections file's items name that the library does not know (see `foldersToAsk`). */
+  collectionFoldersToAsk(file: unknown): string[] {
+    const out = new Set<string>()
+    for (const folder of this.collectionFolders(file))
+      if (!this.knownFolder(folder) && existsSync(folder)) out.add(folder)
+    return [...out]
+  }
+
+  /** The folders of a collections file's items the index has no row for, those it may look at. */
+  private collectionFolders(file: unknown): string[] {
+    const f = file as Partial<CollectionsFile> | null
+    if (!f || !Array.isArray(f.collections)) return []
+    const folders = new Set<string>()
+    const roots = this.libraryFolders()
+    for (const c of f.collections) {
+      for (const it of (c && Array.isArray(c.items) ? c.items : []) as { path?: unknown }[]) {
+        const path = it?.path
+        if (!isSafeLocalPath(path, roots)) continue
+        if (!this.store.photoByPath(path)) folders.add(dirname(path))
+      }
+    }
+    return [...folders]
+  }
+
+  async importCollections(file: unknown, allowed: string[] = []): Promise<Collection[]> {
     const f = file as Partial<CollectionsFile> | null
     if (
       !f ||
@@ -1688,15 +1847,11 @@ export class IndexService {
     for (const c of defs) {
       ids.set(c.id, this.store.collection(c.id) || ids.has(c.id) ? newId() : c.id)
     }
-    // Index the folders of paths the index does not know yet.
-    const folders = new Set<string>()
-    for (const c of defs) {
-      for (const it of c.items ?? []) {
-        if (typeof it?.path === 'string' && !this.store.photoByPath(it.path))
-          folders.add(dirname(it.path))
-      }
-    }
-    for (const folder of folders) if (existsSync(folder)) await this.rescan(folder, false)
+    // Index the folders of paths the index does not know yet: those the
+    // library knows, and those the user allowed (main asks first).
+    for (const folder of this.collectionFolders(f))
+      if ((this.knownFolder(folder) || allowed.includes(folder)) && existsSync(folder))
+        await this.rescan(folder, false)
 
     // Parents first, so every parent exists when its child is saved.
     const byOld = new Map(defs.map((c) => [c.id, c]))
@@ -1823,26 +1978,8 @@ export class IndexService {
    * than `seconds` between one capture and the next, two or more long, the
    * first as cover. Returns how many stacks were made.
    */
-  autoStack(folder: string, seconds = 3): number {
-    const timed = this.store
-      .photosIn(folder)
-      .filter((r) => !r.stack_id && r.captured_at)
-      .map((r) => ({ r, t: new Date(r.captured_at as string).getTime() }))
-      .filter((x) => Number.isFinite(x.t))
-      .sort((a, b) => a.t - b.t || a.r.name.localeCompare(b.r.name))
-    const runs: PhotoRow[][] = []
-    let run: PhotoRow[] = []
-    let last = -Infinity
-    for (const { r, t } of timed) {
-      if (t - last > seconds * 1000 && run.length > 0) {
-        runs.push(run)
-        run = []
-      }
-      run.push(r)
-      last = t
-    }
-    if (run.length > 0) runs.push(run)
-    const made = runs.filter((g) => g.length >= 2)
+  autoStack(folder: string, seconds = BURST_SECONDS): number {
+    const made = bursts(timedShots(this.store.photosIn(folder).filter((r) => !r.stack_id)), seconds)
     if (made.length === 0) return 0
     this.store.tx(() => {
       for (const g of made) {
@@ -1852,6 +1989,33 @@ export class IndexService {
     })
     this.emit({ name: 'changed', folder })
     return made.length
+  }
+
+  /**
+   * The shots taken with a photo, for the Library's Survey of it (N): its
+   * burst in its folder, else the photos there whose picture hashes are
+   * near its own. Read only: nothing is stacked, and only hashes already
+   * made are compared (no file is read). A virtual copy is grouped by its
+   * photo's capture and picture, and shown beside it. Null when it stands
+   * alone.
+   */
+  shotGroup(
+    key: string,
+    seconds = BURST_SECONDS,
+    bits = NEAR_BITS
+  ): { kind: ShotGroupKind; keys: string[] } | null {
+    const row = this.store.photo(parseKey(key).photoId)
+    if (!row) return null
+    const rows = this.store.photosIn(row.folder)
+    const own = keyOf(row.id, null)
+    const runs = bursts(timedShots(rows), seconds).map((r) => r.map((x) => keyOf(x.id, null)))
+    const hashed = rows
+      .filter((r) => r.dhash && r.dhash_key === r.thumb_key)
+      .map((r) => ({ key: keyOf(r.id, null), hash: r.dhash as string }))
+    // The near groups only when there is no burst: comparing hashes is the slower half.
+    const near = runs.some((r) => r.includes(own)) ? [] : nearGroups(hashed, bits)
+    // A virtual copy asked about: its photo's group, with the copy beside it.
+    return withAsked(groupAround(own, runs, near), own, key)
   }
 
   // ── duplicates ──
@@ -2021,7 +2185,8 @@ export class IndexService {
       row: this.withOriginal(row),
       recipe: it?.recipe ?? defaultRecipe(row.is_raw === 1),
       item,
-      snapshots: it?.snapshots ?? []
+      snapshots: it?.snapshots ?? [],
+      proof: it && 'proof' in it ? ((it as SidecarCopy).proof ?? null) : null
     }
   }
 
@@ -2052,6 +2217,13 @@ export class IndexService {
     const apply = (s: Sidecar): void => {
       change(s)
       if (colour && !s.rawColour) s.rawColour = colour
+      // A camera profile goes with the colour that names it, and only then:
+      // the index's for that id (one carried for a colour since changed is
+      // another profile), else what the file carried in.
+      const profileId = dcpIdOf(s.rawColour)
+      s.cameraProfile = profileId
+        ? (readProfile(this.store.cameraProfile(profileId)) ?? s.cameraProfile ?? null)
+        : null
       if (names && !s.names) s.names = names
       if (row.cull_keep === 1 && !s.cullKeep) s.cullKeep = true
     }
@@ -2130,8 +2302,13 @@ export class IndexService {
     return this.itemsFor(keys)
   }
 
-  /** A virtual copy of `key` with its saved recipe. Returns the new copy's item. */
-  createCopy(key: string): LibraryItem {
+  /**
+   * A virtual copy of `key` with its saved recipe. Returns the new copy's
+   * item. Named `name`, else `template` ("Copy {{n}}" in the language main
+   * speaks) numbered after the copies there are; a proof copy carries its
+   * proof (shared/proof.ts), which nothing but opening it reads.
+   */
+  createCopy(key: string, opts: CopyOptions = {}): LibraryItem {
     const { photoId } = parseKey(key)
     const id = newId()
     const source = this.recipe(key)
@@ -2140,12 +2317,13 @@ export class IndexService {
       (s) => {
         s.copies.push({
           id,
-          name: `Copy ${s.copies.length + 1}`,
+          name: copyName(opts, s.copies.length + 1),
           rating: 0,
           flag: null,
           label: null,
           recipe: structuredClone(source),
-          snapshots: []
+          snapshots: [],
+          ...(opts.proof ? { proof: normaliseProof(opts.proof) } : {})
         })
       },
       () => true
@@ -2209,6 +2387,36 @@ export class IndexService {
 
   /** The thumbnail to render for an item, or null when the one it has is current (or it cannot be read). */
   thumbJob(photoId: number, copyId: string | null): ThumbWork | null {
+    const work = this.pictureStamp(photoId, copyId)
+    if (!work) return null
+    const have = work.thumbPath && existsSync(work.thumbPath)
+    if (work.thumbKey === work.stamp && have) return null
+    return this.pictureWork(work)
+  }
+
+  /**
+   * What a larger picture of a photo is made from (the Library's screen
+   * preview), named by the same stamp as its thumbnail: a new edit, a new
+   * file or a newer engine names a new one. Null for a photo gone or that
+   * cannot be read.
+   */
+  previewJob(photoId: number, copyId: string | null): ThumbWork | null {
+    const work = this.pictureStamp(photoId, copyId)
+    return work && this.pictureWork(work)
+  }
+
+  /** The work a stamp names: the row as the engine reads it, and the recipe. */
+  private pictureWork(w: PictureStamp): ThumbWork {
+    return {
+      row: this.withOriginal(w.row),
+      recipe: this.recipe(w.key),
+      edited: w.edited,
+      stamp: w.stamp
+    }
+  }
+
+  /** A photo's (or copy's) picture stamp, and the thumbnail it has now. */
+  private pictureStamp(photoId: number, copyId: string | null): PictureStamp | null {
     const row = this.store.photo(photoId)
     if (!row || this.isFailed(row)) return null
     const existing =
@@ -2223,10 +2431,18 @@ export class IndexService {
     const edited = recipeKey !== 'plain'
     // An unedited RAW's thumbnail is its embedded preview, which no develop makes.
     // An edited photo's thumbnail is of the engine that graded it (`ENGINE_RENDER_REV`).
-    const stamp = `${versionStamp(row, !raw || edited)}${edited ? `-e${ENGINE_RENDER_REV}` : ''}-${recipeKey}`
-    const have = existing.thumb_path && existsSync(existing.thumb_path)
-    if (existing.thumb_key === stamp && have) return null
-    return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
+    // An unedited RAW's since engine 0.21 is sized from its preview, not the
+    // sensor (`PREVIEW_THUMB_REV`): those made before, often far too small, again.
+    const mark = edited ? `-e${ENGINE_RENDER_REV}` : raw ? `-t${PREVIEW_THUMB_REV}` : ''
+    const stamp = `${versionStamp(row, !raw || edited)}${mark}-${recipeKey}`
+    return {
+      row,
+      key,
+      edited,
+      stamp,
+      thumbKey: existing.thumb_key ?? null,
+      thumbPath: existing.thumb_path ?? null
+    }
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, stamp: string): void {
@@ -2257,6 +2473,19 @@ export class IndexService {
    * (`explicit`): an untouched RAW gets no sidecar for a default that is
    * worked out the same way again.
    */
+  /** Keep a camera profile (its JSON) by the id a `dcp:<id>` colour names (engine 0.21, E21). */
+  setCameraProfile(id: string, json: string): void {
+    const profile = /^[0-9a-f]{8}$/.test(id) ? readProfile(json) : null
+    if (!profile) return
+    this.store.setCameraProfile(id, json)
+    registerDcp(id, profile)
+  }
+
+  /** A camera profile's JSON, by id; null when the index holds none. */
+  cameraProfile(id: string): string | null {
+    return this.store.cameraProfile(id)
+  }
+
   setRawColour(photoId: number, colour: string, explicit = false): void {
     const c = parseRawColour(colour)
     const row = this.store.photo(photoId)
@@ -2553,6 +2782,106 @@ export class IndexService {
       (p, k) => p.history.redo(k),
       () => this.store.redoHistory(key)
     )
+  }
+
+  // ── Library batches (main/batchcommit.ts) ──
+
+  /**
+   * One photo's step of a Library batch. A photo with no history gets its
+   * base first, quietly: where it stood (`before`), with no step that
+   * changes nothing. One whose saved recipe moved on without a step (a
+   * paste from before batches wrote history) catches up with one, as an open
+   * in Develop would. Then `next` is one step under `label`, saved with the
+   * recipe (its first step makes the photo's project). Returns the step's
+   * seq, or null when `next` changed nothing. A photo whose original is
+   * gone (its drive unplugged) and that has no project yet is refused: its
+   * first step would make a project with nothing to carry.
+   */
+  batchStep(key: string, label: string, before: Recipe, next: Recipe): number | null {
+    const row = this.row(key)
+    if (!this.projectOf(row) && !existsSync(row.path))
+      throw Object.assign(new Error(tk('{{name}} is offline')), { values: { name: row.name } })
+    const log = this.history(key)
+    if (!log.base) this.appendHistory(key, tk('Opened'), before)
+    else {
+      const head = log.head ?? replay(log.base.recipe, log.steps)
+      if (diffRecipe(head, before).length > 0)
+        this.commitEdit(key, tk('Opened as saved'), before, before)
+    }
+    return this.commitEdit(key, label, next, next).step?.seq ?? null
+  }
+
+  /**
+   * Where a photo stood before its step `seq` of a Library batch, while that
+   * step can still be rewritten (`amendEdit`: the last one stored, in
+   * effect): a nudge burst's next click, a look's Amount or a look swapped
+   * are made again from here. Null once anything came after it.
+   */
+  batchBase(key: string, seq: number): Recipe | null {
+    const log = this.history(key)
+    const last = log.steps[log.steps.length - 1]
+    if (!log.base || !last || last.seq !== seq || last.hidden) return null
+    return replay(log.base.recipe, log.steps.slice(0, -1))
+  }
+
+  /**
+   * A Library batch's step rewritten as `next` (saved with it), where it is
+   * still the last; the step's seq after, null when it could not be (or
+   * `next` is where the photo stood before it: the step is gone).
+   */
+  amendBatchStep(key: string, seq: number, label: string, next: Recipe): number | null {
+    return this.amendEdit(key, seq, label, next, next)?.step?.seq ?? null
+  }
+
+  /**
+   * A batch taken back: on each photo whose newest step in effect is still
+   * the batch's, that step is undone and the recipe the history now
+   * describes is saved. A photo edited since (or gone) is skipped and keeps
+   * everything. Returns the recipes undone to, by key, and what was skipped.
+   */
+  undoBatchSteps(steps: { key: string; seq: number }[]): {
+    recipes: Record<string, Recipe>
+    skipped: string[]
+  } {
+    return this.batchHistory(steps, (key, seq) => {
+      if (newestShown(this.history(key).steps)?.seq !== seq) return null
+      return this.undoHistory(key)
+    })
+  }
+
+  /** A batch brought back: each photo's step redone where Redo would bring that step back next. */
+  redoBatchSteps(steps: { key: string; seq: number }[]): {
+    recipes: Record<string, Recipe>
+    skipped: string[]
+  } {
+    return this.batchHistory(steps, (key, seq) => {
+      if (nextRedo(this.history(key).steps)?.seq !== seq) return null
+      return this.redoHistory(key)
+    })
+  }
+
+  private batchHistory(
+    steps: { key: string; seq: number }[],
+    change: (key: string, seq: number) => HistoryLog | null
+  ): { recipes: Record<string, Recipe>; skipped: string[] } {
+    const recipes: Record<string, Recipe> = {}
+    const skipped: string[] = []
+    for (const { key, seq } of steps) {
+      try {
+        const log = change(key, seq)
+        if (!log?.base) {
+          skipped.push(key)
+          continue
+        }
+        const recipe = log.head ?? replay(log.base.recipe, log.steps)
+        this.saveRecipe(key, recipe)
+        recipes[key] = recipe
+      } catch {
+        // The photo went (forgotten, its file gone): nothing of it to take back.
+        skipped.push(key)
+      }
+    }
+    return { recipes, skipped }
   }
 
   setHistoryHidden(key: string, seqs: number[], hidden: boolean): HistoryLog {

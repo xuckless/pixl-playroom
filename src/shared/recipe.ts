@@ -12,6 +12,7 @@ import {
   defaultCurvesVs,
   defaultLogWheels,
   defaultPrimaries,
+  logRangeBefore021,
   normaliseCurvesVs,
   normaliseLogWheels,
   normalisePrimaries,
@@ -33,6 +34,8 @@ import { normalisePrompt, PROMPT_VIAS, type PromptGeometry, type PromptVia } fro
 import { conceptOf, type ConceptId } from './concepts'
 import { isFacePart, type FaceFound } from './faceparts'
 import { tk } from './i18n'
+import { isPlaneHash, safeIdOf } from './ids'
+import { carryFrame, normaliseLensFrame, ownLensFrame, type LensFrame } from './lensframe'
 
 /**
  * 3 (engine 0.18): a RAW's untouched default sharpening takes the edge mask
@@ -40,9 +43,15 @@ import { tk } from './i18n'
  * for edits made before it (so they look as they did). 5: a gain-map photo
  * is edited in HDR by default (Photo → Edit as SDR for the stored SDR
  * picture); one with pixel steps (AI Denoise, Enhance, baked heals and
- * removals, which an HDR photo cannot take yet) keeps its SDR base.
+ * removals, which an HDR photo cannot take yet) keeps its SDR base. 6
+ * (engine 0.21): the Log wheels grade in PixlLog, their Low and High range
+ * its code values; an older recipe's (display-encoded luma) are carried to
+ * the same tones, Resolve's defaults to the new ones. Also
+ * from 6: the lens frame the masks are drawn on (`masks.lensFrame`,
+ * shared/lensframe.ts); an older recipe's masks are taken to be on the lens
+ * it renders with.
  */
-export const RECIPE_VERSION = 5
+export const RECIPE_VERSION = 6
 
 export const HSL_BANDS = [
   'red',
@@ -245,13 +254,70 @@ export interface EffectsSetting {
   vignetteRoundness: number
   vignetteFeather: number
   vignetteHighlights: number
-  /** Highlight priority darkens like light falling off; paint overlay mixes toward black or white. */
-  vignetteStyle: 'highlight' | 'paint'
+  /**
+   * Highlight priority darkens like light falling off; colour priority
+   * (engine 0.21) lightens without washing colours toward white; paint
+   * overlay mixes toward black or white.
+   */
+  vignetteStyle: 'highlight' | 'colour' | 'paint'
   /** A lift toward a colour on the look's code values (see `addcolor.ts`). */
   wash: AddColourSetting
   grainAmount: number
   grainSize: number
   grainRoughness: number
+  /** 0…100: a colour grain beside the grey one, the dye clouds of a colour film. */
+  grainColour: number
+  /** Where in the tones the grain is strongest (`GRAIN_RESPONSES`). */
+  grainResponse: GrainResponseKind
+  /** A red glow around the highlights, as light bounces back through colour film. The photo's own: a mask has none. */
+  halation: HalationSetting
+  /** A diffusion filter's veil or a glow off the highlights. The photo's own: a mask has none. */
+  bloom: BloomSetting
+}
+
+/**
+ * Grain by tone: `film` strongest in the midtones (the engine's own, as
+ * grain always was), `flat` the same everywhere, `negative` strongest in
+ * the shadows, as a scanned colour negative's.
+ */
+export type GrainResponseKind = 'film' | 'flat' | 'negative'
+export const GRAIN_RESPONSES: GrainResponseKind[] = ['film', 'flat', 'negative']
+
+export interface HalationSetting {
+  /** 0…100 */
+  amount: number
+  /** 0…100: how bright a highlight must be (as shown) before it glows. */
+  threshold: number
+  /** 0…100: how far the glow spreads (`glowRadius`). */
+  size: number
+  /** 0…45 degrees: from red to amber. */
+  hue: number
+}
+
+/** `diffusion` veils the whole picture (a Pro-Mist); `glow` spreads only the highlights. */
+export type BloomStyle = 'diffusion' | 'glow'
+export const BLOOM_STYLES: BloomStyle[] = ['diffusion', 'glow']
+
+export interface BloomSetting {
+  style: BloomStyle
+  /** 0…100 */
+  amount: number
+  /** 0…100: how far it spreads (`glowRadius`). */
+  size: number
+  /** 0…100: where Glow's highlights start (as shown); Diffusion has none. */
+  threshold: number
+  /** −100…100: cool to warm; 0 is white. */
+  warmth: number
+}
+
+/**
+ * Colour made denser, not greyer, as a slide film's dyes are (engine 0.21's
+ * `Density`): `amount` −100…100 darkens saturated colour (lightens it below
+ * 0); each band's weight −100…100 says how much of it that hue takes.
+ */
+export interface DensitySetting {
+  amount: number
+  bands: Record<HslBand, number>
 }
 
 export interface CalibrationSetting {
@@ -282,6 +348,12 @@ export interface GeometrySetting {
 
 interface ComponentBase {
   id: string
+  /**
+   * The lens frame it is on, when not the masks' (`Recipe.masks`): a model's
+   * plane made under another correction, a plane kept as painted across a
+   * lens edit, a mask pasted from another photo. Absent: the masks' frame.
+   */
+  lensFrame?: LensFrame
   /** The user's name for it; unset, the list shows the kind's own label. */
   name?: string
   mode: MaskMode
@@ -332,10 +404,14 @@ export interface MaskRefine {
 }
 
 /**
- * A painted plane: 8-bit grey PNG, base64, in the base frame's aspect. Across
- * IPC (and in the renderer's state and the edit history) the plane travels
- * by reference: `png` is empty and `ref` names it in the main process's
- * plane store. Sidecars always hold the PNG itself.
+ * A painted mask: its strokes as vectors (engine 0.21's, E36), painted over
+ * a plane when it has one. The plane is an 8-bit grey PNG, base64, in the
+ * base frame's aspect: a model's mask, an Auto Mask stroke, or a brush an
+ * older version painted. Across IPC (and in the renderer's state and the
+ * edit history) the plane travels by reference: `png` is empty and `ref`
+ * names it in the main process's plane store. Sidecars always hold the PNG
+ * itself. A brush of strokes alone has neither (`png` empty); `width` ×
+ * `height` is still the base frame's aspect at the size a plane would be.
  */
 export interface BrushComponent extends ComponentBase {
   kind: 'brush'
@@ -343,12 +419,35 @@ export interface BrushComponent extends ComponentBase {
   height: number
   png: string
   ref?: string
+  /** Strokes laid over the plane (or nothing), in the order painted. Absent: none. */
+  strokes?: BrushStrokeSetting[]
   /**
    * What made the plane, when a model did: a preset saved from the photo
    * asks for it again on another (looks/smart.ts `toInstructions`). Unset
    * for a painted plane, which belongs to its photo alone.
    */
   source?: BrushSource
+}
+
+/**
+ * One brush stroke as the engine paints it (`MaskShape::Strokes`, 0.21.0,
+ * E36): resolution-free, so it is as sharp on a 45 MP export as on the
+ * proxy it was painted on.
+ */
+export interface BrushStrokeSetting {
+  id: string
+  /**
+   * Four numbers a dab, in the order laid down: x and y as fractions of the
+   * base frame (−1…2: a stroke may run off it), the radius as a fraction of
+   * its shorter side (0…1], the pen's pressure 0…1 (1 for a mouse).
+   */
+  dabs: number[]
+  /** 0…1 of a dab's radius that fades (the brush's Feather). */
+  softness: number
+  /** 0…1: the stroke's strength (the brush's Density); going back over it adds nothing. */
+  flow: number
+  /** An eraser's stroke: takes itself out of what was painted before it. */
+  erase?: true
 }
 
 /** A model's mask, as what to ask for again (see `BrushComponent.source`). */
@@ -563,6 +662,7 @@ export const SETTINGS_KEYS = [
   'logWheels',
   'curvesVs',
   'qualifiers',
+  'density',
   'detail',
   'effects',
   'calibration'
@@ -584,13 +684,12 @@ export const EDIT_SECTIONS = [
   'light',
   'presence',
   'curve',
-  'rcurves',
   'mixer',
-  'grading',
-  'calibration',
   'primaries',
   'logwheels',
   'qualifier',
+  'calibration',
+  'grading',
   'detail',
   'effects',
   'optics',
@@ -625,6 +724,8 @@ export interface Recipe {
   hsl: Record<HslBand, BandSetting>
   bwMix: Record<HslBand, number>
   pointColors: PointColorSetting[]
+  /** HSL's Density tab. */
+  density: DensitySetting
   colorGrade: ColorGradeSetting
   /** DaVinci Resolve's primaries (shared/resolve.ts): the Resolve colour tools' first card. */
   primaries: PrimariesSetting
@@ -658,6 +759,17 @@ export interface Recipe {
   gainMap: GainMapEdit
   /** Sections switched off, their values kept (see `EDIT_SECTIONS`). */
   off: OffSections
+  /** Where the masks and spots are placed: the lens frame they are drawn on. */
+  masks: MaskPlacement
+}
+
+/**
+ * The lens geometry every mask and spot coordinate is a fraction of (the
+ * frame the correction leaves): null for none. When the photo is rendered
+ * through another, they are carried over (shared/lensframe.ts).
+ */
+export interface MaskPlacement {
+  lensFrame: LensFrame
 }
 
 export type GainMapEdit = 'base' | 'hdr'
@@ -755,6 +867,11 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     hsl: zeroBands(),
     bwMix: zeroMix(),
     pointColors: [],
+    // Every band whole, so the overall amount works by itself.
+    density: {
+      amount: 0,
+      bands: Object.fromEntries(HSL_BANDS.map((b) => [b, 100])) as Record<HslBand, number>
+    },
     colorGrade: {
       shadows: zeroWheel(),
       midtones: zeroWheel(),
@@ -792,7 +909,11 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       wash: { ...NO_ADD },
       grainAmount: 0,
       grainSize: 25,
-      grainRoughness: 50
+      grainRoughness: 50,
+      grainColour: 0,
+      grainResponse: 'film',
+      halation: { amount: 0, threshold: 80, size: 50, hue: 12 },
+      bloom: { style: 'diffusion', amount: 0, size: 65, threshold: 75, warmth: 0 }
     },
     calibration: {
       shadowsTint: 0,
@@ -815,7 +936,8 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     pixels: [],
     layers: [],
     custom: [],
-    off: {}
+    off: {},
+    masks: { lensFrame: null }
   }
 }
 
@@ -870,6 +992,10 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   // Before 5 every gain-map photo was edited on its SDR base by default: it
   // moves to HDR, unless it has pixel steps, which an HDR photo cannot take.
   if (saved < 5) r.gainMap = r.pixels.length > 0 ? 'base' : 'hdr'
+  // Before 6 nothing said which lens the masks were drawn under: the one the
+  // photo renders with is the best guess (none while Optics is switched off).
+  const placement = isObject(value) && isObject(value.masks) ? value.masks : null
+  const lensFrame = placement ? normaliseLensFrame(placement.lensFrame) : undefined
   r.version = RECIPE_VERSION
   if (r.gainMap !== 'base') r.gainMap = 'hdr'
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {
@@ -878,12 +1004,16 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   r.toneCurve = normaliseToneCurve(r.toneCurve)
   r.primaries = normalisePrimaries(r.primaries)
   r.curvesVs = normaliseCurvesVs(r.curvesVs)
-  r.logWheels = normaliseLogWheels(r.logWheels)
+  // Before 6 the Log wheels' ranges were display-encoded luma.
+  const logRange = saved < 6 && isObject(value) ? logRangeBefore021(value.logWheels) : null
+  r.logWheels = normaliseLogWheels(logRange ? { ...r.logWheels, ...logRange } : r.logWheels)
   r.qualifiers = normaliseQualifiers(r.qualifiers)
   // Only sections there are, each switched off by `true` (`fill` keeps any key).
   // Colour (Vibrance, Saturation, Hue) joined Presence: off, it keeps them off.
   const off: Record<string, unknown> = { ...(r.off ?? {}) }
   if (off.colour === true) off.presence = true
+  // Resolve's Curves and the Tone curve are one card now: either off is it off.
+  if (off.rcurves === true) off.curve = true
   r.off = Object.fromEntries(
     Object.entries(off).filter(
       ([k, v]) => v === true && (EDIT_SECTIONS as readonly string[]).includes(k)
@@ -899,10 +1029,14 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     delete l.adjust
     const settings = layerSettingsOf(withOld as unknown as Record<string, unknown>)
     settings.toneCurve = normaliseToneCurve(settings.toneCurve)
+    const own = isObject(withOld.settings) ? withOld.settings.logWheels : undefined
+    const range = saved < 6 ? logRangeBefore021(own) : null
+    if (range) settings.logWheels = { ...settings.logWheels, ...range }
     settings.calibration = normaliseCalibration(settings.calibration)
     return {
       ...l,
-      id: typeof l.id === 'string' && l.id ? l.id : newId(),
+      // Ids name cache files (a mask's thumbnail): only safe ones are kept (shared/ids.ts).
+      id: safeIdOf(l.id) ?? newId(),
       name: typeof l.name === 'string' ? l.name : 'Mask',
       enabled: l.enabled !== false,
       opacity: num(l.opacity, 100, 0, 100),
@@ -927,21 +1061,37 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     ...(c as unknown as CustomLayer),
     layer: migrateLook(structuredClone(c.layer))
   }))
-  r.retouch = (Array.isArray(r.retouch) ? (r.retouch as unknown[]) : []).filter(
-    (s): s is RetouchSpot =>
-      isObject(s) &&
-      typeof s.id === 'string' &&
-      typeof s.kind === 'string' &&
-      Array.isArray(s.points) &&
-      typeof s.radius === 'number'
-  )
+  r.retouch = (Array.isArray(r.retouch) ? (r.retouch as unknown[]) : [])
+    .filter(
+      (s): s is RetouchSpot =>
+        isObject(s) &&
+        typeof s.id === 'string' &&
+        typeof s.kind === 'string' &&
+        Array.isArray(s.points) &&
+        typeof s.radius === 'number'
+    )
+    .map((s) => {
+      // A spot's own frame (pasted from another photo), if it is one.
+      if (s.lensFrame === undefined) return s
+      const { lensFrame, ...rest } = s
+      const f = normaliseLensFrame(lensFrame)
+      return f === undefined ? rest : { ...rest, lensFrame: f }
+    })
+  r.masks = {
+    lensFrame: lensFrame !== undefined ? lensFrame : r.off.optics ? null : ownLensFrame(r)
+  }
   r.pointColors = (Array.isArray(r.pointColors) ? (r.pointColors as unknown[]) : [])
     .map(normalisePointColor)
     .filter((p): p is PointColorSetting => p !== null)
     .slice(0, MAX_POINT_COLORS)
   r.presence.smoothing = num(r.presence.smoothing, 100, 0, 100)
-  for (const l of r.layers)
+  r.effects = normaliseEffects(r.effects)
+  r.density = normaliseDensity(r.density)
+  for (const l of r.layers) {
     l.settings.presence.smoothing = num(l.settings.presence.smoothing, 100, 0, 100)
+    l.settings.effects = normaliseEffects(l.settings.effects)
+    l.settings.density = normaliseDensity(l.settings.density)
+  }
   // An edit made before Smoothing keeps its look: none, in the photo and its
   // masks. An untouched photo takes the new default (it has nothing to smooth).
   if (saved < 4 && isEdited(r, isRaw)) {
@@ -960,6 +1110,44 @@ function normaliseCalibration(c: CalibrationSetting): CalibrationSetting {
   return Object.fromEntries(
     Object.entries(c).map(([k, v]) => [k, num(v, 0, -100, 100)])
   ) as unknown as CalibrationSetting
+}
+
+/**
+ * Engine 0.21's film effects held to their sliders (an edit from before
+ * them has their defaults, from `fill`): the grain's colour and response,
+ * halation and bloom.
+ */
+function normaliseEffects(e: EffectsSetting): EffectsSetting {
+  const h = e.halation
+  const b = e.bloom
+  return {
+    ...e,
+    grainColour: num(e.grainColour, 0, 0, 100),
+    grainResponse: GRAIN_RESPONSES.includes(e.grainResponse) ? e.grainResponse : 'film',
+    halation: {
+      amount: num(h.amount, 0, 0, 100),
+      threshold: num(h.threshold, 80, 0, 100),
+      size: num(h.size, 50, 0, 100),
+      hue: num(h.hue, 12, 0, 45)
+    },
+    bloom: {
+      style: BLOOM_STYLES.includes(b.style) ? b.style : 'diffusion',
+      amount: num(b.amount, 0, 0, 100),
+      size: num(b.size, 65, 0, 100),
+      threshold: num(b.threshold, 75, 0, 100),
+      warmth: num(b.warmth, 0, -100, 100)
+    }
+  }
+}
+
+function normaliseDensity(d: DensitySetting): DensitySetting {
+  return {
+    amount: num(d.amount, 0, -100, 100),
+    bands: Object.fromEntries(HSL_BANDS.map((b) => [b, num(d.bands[b], 100, -100, 100)])) as Record<
+      HslBand,
+      number
+    >
+  }
 }
 
 const BLEND_MODES: BlendMode[] = [
@@ -1026,7 +1214,7 @@ function normalisePointColor(value: unknown): PointColorSetting | null {
   if (!isObject(value)) return null
   const v = value
   return {
-    id: typeof v.id === 'string' && v.id ? v.id : newId(),
+    id: safeIdOf(v.id) ?? newId(),
     hue: ((num(v.hue, 0) % 360) + 360) % 360,
     saturation: num(v.saturation, 0, 0, 1),
     luminance: num(v.luminance, 0.5, 0, 1),
@@ -1102,6 +1290,39 @@ function brushSource(v: unknown): BrushSource | null {
 }
 
 /**
+ * A brush's strokes from a sidecar: each with an id, whole dabs of finite
+ * numbers held to the engine's ranges; one with no dab is dropped. Null
+ * when none is left.
+ */
+export function normaliseStrokes(v: unknown): BrushStrokeSetting[] | null {
+  if (!Array.isArray(v)) return null
+  const seen = new Set<string>()
+  const out: BrushStrokeSetting[] = []
+  for (const x of v) {
+    if (!isObject(x) || !Array.isArray(x.dabs)) continue
+    const n = Math.floor(x.dabs.length / 4)
+    const dabs: number[] = []
+    for (let k = 0; k < n; k++) {
+      const [px, py, r, p] = (x.dabs as unknown[]).slice(k * 4, k * 4 + 4)
+      if (![px, py, r, p].every((d) => typeof d === 'number' && Number.isFinite(d))) continue
+      if (!((r as number) > 0)) continue
+      dabs.push(num(px, 0, -1, 2), num(py, 0, -1, 2), num(r, 0.01, 1e-6, 1), num(p, 1, 0, 1))
+    }
+    if (dabs.length === 0) continue
+    const id = typeof x.id === 'string' && x.id && !seen.has(x.id) ? x.id : newId()
+    seen.add(id)
+    out.push({
+      id,
+      dabs,
+      softness: num(x.softness, 0.5, 0, 1),
+      flow: num(x.flow, 1, 0, 1),
+      ...(x.erase === true ? { erase: true as const } : {})
+    })
+  }
+  return out.length > 0 ? out : null
+}
+
+/**
  * One mask component from a sidecar: fills what an older version did not
  * write, and drops what this version cannot draw (so an unknown kind never
  * reaches the compiler).
@@ -1109,8 +1330,15 @@ function brushSource(v: unknown): BrushSource | null {
 export function normaliseComponent(value: unknown): MaskComponentSetting | null {
   if (!isObject(value)) return null
   const c = value
+  // A plane's reference names its file in the cache: only a SHA-256 is one
+  // (shared/ids.ts). Any other is dropped, and the plane named again from its
+  // PNG; one named only by a reference that is not a name has no plane. A
+  // component with neither is kept as it always was.
+  const ref = isPlaneHash(c.ref) ? { ref: c.ref } : {}
+  const badRef = typeof c.ref === 'string' && c.ref !== '' && !isPlaneHash(c.ref)
+  if ((c.kind === 'brush' || c.kind === 'depth') && badRef && !c.png) return null
   const base = {
-    id: typeof c.id === 'string' && c.id ? c.id : newId(),
+    id: safeIdOf(c.id) ?? newId(),
     mode: MASK_MODES.includes(c.mode as MaskMode) ? (c.mode as MaskMode) : ('Add' as MaskMode),
     opacity: num(c.opacity, 100, 0, 100),
     invert: c.invert === true,
@@ -1119,21 +1347,25 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
     ...((e) => (e ? { edge: e } : {}))(normaliseEdge(c.edge)),
     ...((r) => (r ? { refine: r } : {}))(normaliseRefine(c.refine)),
     ...(num(c.smooth, 0, 0, 100) > 0 ? { smooth: num(c.smooth, 0, 0, 100) } : {}),
-    ...(num(c.contrast, 0, 0, 100) > 0 ? { contrast: num(c.contrast, 0, 0, 100) } : {})
+    ...(num(c.contrast, 0, 0, 100) > 0 ? { contrast: num(c.contrast, 0, 0, 100) } : {}),
+    ...((f) => (f !== undefined ? { lensFrame: f } : {}))(normaliseLensFrame(c.lensFrame))
   }
   switch (c.kind) {
-    case 'brush':
-      if (typeof c.png !== 'string') return null
+    case 'brush': {
+      const strokes = normaliseStrokes(c.strokes)
+      if (typeof c.png !== 'string' && !strokes) return null
       return {
         ...base,
         kind: 'brush',
-        png: c.png,
+        png: typeof c.png === 'string' ? c.png : '',
         // A plane held by reference (IPC, history, a project) keeps its reference.
-        ...(typeof c.ref === 'string' && c.ref ? { ref: c.ref } : {}),
+        ...ref,
         ...((src) => (src ? { source: src } : {}))(brushSource(c.source)),
         width: num(c.width, 1),
-        height: num(c.height, 1)
+        height: num(c.height, 1),
+        ...(strokes ? { strokes } : {})
       }
+    }
     case 'polygon': {
       if (!Array.isArray(c.points)) return null
       const rings = ringsOf(c.rings)
@@ -1193,7 +1425,7 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         ...base,
         kind: 'depth',
         png: c.png,
-        ...(typeof c.ref === 'string' && c.ref ? { ref: c.ref } : {}),
+        ...ref,
         width: num(c.width, 1),
         height: num(c.height, 1),
         near,
@@ -1259,7 +1491,7 @@ export const GROUP_LABELS: Record<RecipeGroup, string> = {
   whiteBalance: tk('White balance'),
   basicTone: tk('Exposure & tone'),
   presence: tk('Presence'),
-  toneCurve: tk('Tone curve'),
+  toneCurve: tk('Curves'),
   hsl: tk('HSL / B&W mix'),
   colorGrade: tk('Colour grading'),
   primaries: tk('Primaries'),
@@ -1306,6 +1538,7 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.hsl = f.hsl
         r.bwMix = f.bwMix
         r.pointColors = f.pointColors
+        r.density = f.density
         break
       case 'colorGrade':
         r.colorGrade = f.colorGrade
@@ -1333,7 +1566,8 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.lens = f.lens
         break
       case 'retouch':
-        r.retouch = f.retouch
+        // On the source's lens frame: the target maps them to its own.
+        r.retouch = carryFrame(f.retouch, f.masks?.lensFrame ?? null, r.masks?.lensFrame ?? null)
         break
       case 'effects':
         r.effects = f.effects
@@ -1358,7 +1592,14 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.geometry.flipHorizontal = f.geometry.flipHorizontal
         break
       case 'localAdjustments':
-        r.layers = f.layers
+        r.layers = f.layers.map((l) => ({
+          ...l,
+          components: carryFrame(
+            l.components,
+            f.masks?.lensFrame ?? null,
+            r.masks?.lensFrame ?? null
+          )
+        }))
         break
       case 'custom':
         r.custom = f.custom
@@ -1464,7 +1705,7 @@ function groupValues(r: Recipe, g: RecipeGroup): unknown[] {
     case 'toneCurve':
       return [r.toneCurve, r.curvesVs]
     case 'hsl':
-      return [r.hsl, r.bwMix, r.pointColors]
+      return [r.hsl, r.bwMix, r.pointColors, r.density]
     case 'colorGrade':
       return [r.colorGrade]
     case 'primaries':

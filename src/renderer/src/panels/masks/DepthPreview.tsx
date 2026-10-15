@@ -56,7 +56,7 @@ export function DepthPreview({ c }: { c: DepthComponent }): React.JSX.Element | 
     <canvas
       ref={canvas}
       className="depth-preview"
-      aria-label={t("The photo's depth, the range tinted")}
+      aria-label={t('The photo’s depth, the range tinted')}
     />
   )
 }

@@ -31,6 +31,7 @@ import {
   type Retouch
 } from './engine-types'
 import { hash32 } from './recipe'
+import { gradeKey } from './compile'
 
 /** The index setting that turns GPU dragging off (Preferences); missing is on. */
 export const GPU_DRAG_SETTING = 'develop.gpuDrag'
@@ -69,11 +70,14 @@ export function constrainedMac(platform: string, cpuModel: string, totalMb: numb
 /** What the GPU grades in this release (Phase A §4.3); every other op is refused. */
 const GPU_OPS = new Set<string>(['Primary', 'Tone', 'HslBands', 'Dehaze'])
 
-/** A stage space the GPU refuses: an HDR signal, or one through an ICC profile. */
+/** The log grading spaces (engine 0.21): the GPU has no kernel for their moves yet. */
+const LOG_SPACES = new Set<string>(['AcesCct', 'DavinciIntermediate', 'PixlLog'])
+
+/** A stage space the GPU refuses: an HDR signal, one through an ICC profile, or a log one. */
 function refusedSpace(space: GradeSpace): boolean {
   if (space === 'LinearWorking') return false
   const s = space.Encoded.space
-  return typeof s === 'object' || s === 'Rec2100Pq' || s === 'Rec2100Hlg'
+  return typeof s === 'object' || s === 'Rec2100Pq' || s === 'Rec2100Hlg' || LOG_SPACES.has(s)
 }
 
 function smoothed(s: AdjustmentSmoothing | null | undefined): boolean {
@@ -96,7 +100,7 @@ function refusedIn(op: GradeOp): string | null {
 /**
  * The first field of `grade` the GPU drag path is known to refuse (Phase A
  * §4.3's list), or null when it should take it: a layer's mask, an opacity
- * other than 1, a blend other than Normal, an HDR or ICC stage, Tone's
+ * other than 1, a blend other than Normal, an HDR, ICC or log stage, Tone's
  * Guided base, any smoothing above 0, and every op but Primary, Tone,
  * HslBands and Dehaze, and no grade at all (nothing to run on the device:
  * refused by `grade_device`). Asking first would only cost a round trip to
@@ -194,7 +198,10 @@ export function gradeInputRequest(p: GradeInputParts): ConvertRequest {
     input: p.input,
     resize: 'None',
     resampler: 'Lanczos3',
-    pixel: { depth: 'F32', channels: null },
+    // RGBA (0.21.0, E61: an opaque alpha of exactly 1, a grey source made
+    // RGB): the frame is uploaded with alpha, so every drag frame comes back
+    // as the window takes it, with no pass to lay one in.
+    pixel: { depth: 'F32', channels: 4 },
     encode: { Pixels: { sample: 'F16' } },
     metadata: ICC_ONLY,
     color,
@@ -217,7 +224,8 @@ export function gradeInputRequest(p: GradeInputParts): ConvertRequest {
     output_sharpen: null,
     limits: p.limits,
     measure: null,
-    grade_device: 'Cpu'
+    grade_device: 'Cpu',
+    hold_refines: false
   }
 }
 
@@ -248,8 +256,8 @@ export interface DragParts {
  * A drag frame on the GPU (Phase A §4.3, step 3): from the uploaded frame,
  * so everything before the grade is null here (it is in the frame), no
  * framing and no resize, a display `color`. It names no channels: the frame
- * has its own (`pixel.channels` is refused on a `GpuFrame`), so an opaque
- * photo comes back RGB and the host lays in the alpha (`toRgba`).
+ * has its own (`pixel.channels` is refused on a `GpuFrame`), RGBA since the
+ * upload asks for four (E61).
  */
 export function gpuDragRequest(p: DragParts): ConvertRequest {
   return {
@@ -281,7 +289,9 @@ export function gpuDragRequest(p: DragParts): ConvertRequest {
     output_sharpen: null,
     limits: null,
     measure: p.measure,
-    grade_device: 'Gpu'
+    grade_device: 'Gpu',
+    // The GPU refuses held refines (E62).
+    hold_refines: false
   }
 }
 
@@ -289,11 +299,13 @@ export function gpuDragRequest(p: DragParts): ConvertRequest {
 const HALF_ONE = 0x3c00
 
 /**
- * A frame's pixels as the window takes them, RGBA: a GPU drag of an opaque
- * photo returns RGB (three bytes a pixel in 8 bits, six in half floats),
- * its SDR companion too, and what reads a frame (`deliver` in the engine
- * host, lib/frames.ts in the window) counts four or eight. Pixels that are
- * RGBA already, or of no size this knows, are returned as they are.
+ * A frame's pixels as the window takes them, RGBA: a Full HDR drag's SDR
+ * companion follows the master's render, not the frame, and may be RGB
+ * (three bytes a pixel in 8 bits, six in half floats), while what reads a
+ * frame (`deliver` in the engine host, lib/frames.ts in the window) counts
+ * four or eight. Pixels that are RGBA already, or of no size this knows,
+ * are returned as they are. The drag's own pixels are RGBA from the engine
+ * (E61).
  */
 export function toRgba(data: Uint8Array, width: number, height: number): Uint8Array {
   const px = width * height
@@ -380,4 +392,31 @@ export function dragVerdict(err: { code?: string; field?: string }): DragVerdict
  */
 export function heldKey(from: string, framing: unknown): string {
   return JSON.stringify([from, framing])
+}
+
+/**
+ * What the 1:1 view's held refine planes are of (engine 0.21.0, E62): the
+ * full-size source and the whole render's grade, framing, lens correction
+ * and retouch. The engine refuses a plane only when its mask changed, not
+ * the pixels under it, so a retouch or a lens correction since makes them
+ * again; any other grade change does too (the photo's measurements held
+ * beside them are of that grade).
+ */
+export function refineKey(
+  from: { path: string; width: number; height: number },
+  render: Pick<ConvertRequest, 'grade' | 'framing' | 'lens' | 'retouch'>
+): string {
+  return String(
+    hash32(
+      gradeKey([
+        from.path,
+        from.width,
+        from.height,
+        render.grade,
+        render.framing,
+        render.lens,
+        render.retouch
+      ])
+    )
+  )
 }

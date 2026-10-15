@@ -5,11 +5,10 @@
  * (Delete in Heal, [ ] for the heal brush) comes before the general one.
  */
 import { rebuild, usePipeline } from './pipeline'
-import { effective } from '../../../shared/edits'
 import { suggestedReasons, useCull } from '../state/cull'
 import { useSyncExternalStore } from 'react'
 import { nextOf } from '../../../shared/masks'
-import { RECIPE_GROUPS } from '../../../shared/recipe'
+import type { GridMove } from '../../../shared/cullnav'
 import {
   jumpToCard,
   masksOpen,
@@ -19,7 +18,7 @@ import {
   toggleDrawer,
   toggleMasks
 } from '../develop/tools'
-import { CARDS, panelTitle, RESOLVE_TWIN, type PanelId } from '../../../shared/cards'
+import { CARDS, panelTitle, type PanelId } from '../../../shared/cards'
 import {
   componentLabel,
   deleteComponent,
@@ -32,6 +31,7 @@ import {
 } from '../panels/masks/model'
 import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
+import { useExports } from '../state/exports'
 import { scoped } from '../state/scope'
 import { useLibrary } from '../state/library'
 import { choosePhotos } from './openPhotos'
@@ -41,17 +41,44 @@ import { flashHud } from '../views/loupe/hudNote'
 import { loupeZoom, setSpace } from '../views/loupe/zoom'
 import { api, errorText } from './api'
 import { autoWbBatch } from './autowb'
+import { makeProofCopies, makeProofCopy, toggleProofSplit } from './proofing'
+import { copySettings, pasteSettings } from './clipboard'
+import { autoToneTargets, nudge } from './quickdevelop'
+import { developBatch, gridStep, inGrid, inMode, metaItem, metaTargets } from './librarycontext'
+import {
+  afterDecision,
+  developToLoupe,
+  dropFromSurvey,
+  goBack,
+  goCompare,
+  goDevelop,
+  goGrid,
+  goLoupe,
+  goSurvey,
+  promoteCandidate,
+  shownKey,
+  stepPhoto,
+  swapCompare,
+  toggleAutoAdvance,
+  toggleLoupe
+} from './librarymodes'
+import { libZoom } from '../views/library/libzoom'
+import type { MetaPatch } from '../../../shared/ipc'
+import { redoLibrary, undoAction, undoLibrary, useLibraryUndo } from '../state/libraryUndo'
 import { t, tk, tp } from './i18n'
 import {
   allConflicts,
   chordLabel,
   chordOf,
+  modifierKey,
+  modifierName,
   onLayout,
   parseChord,
   resolveBindings,
   sameChord,
   type Bindings,
-  type KeyContext
+  type KeyContext,
+  type Modifier
 } from './keys'
 
 export interface KeyCommand {
@@ -114,15 +141,42 @@ export async function rejectSuggested(): Promise<void> {
     .filter((i) => suggestedReasons(i, reasons))
     .map((i) => i.key)
   if (keys.length === 0) return lib().say(t('No suggested rejects here'), 'info')
+  const last = useLibraryUndo.getState().done.at(-1)
   await lib().setMeta({ flag: 'reject' }, keys)
+  // Not asked for after all, or not written: nothing to say.
+  const entry = useLibraryUndo.getState().done.at(-1)
+  if (!entry || entry === last) return
   lib().say(
     tp(
       '{{count}} photo flagged rejected: nothing deleted',
       '{{count}} photos flagged rejected: nothing deleted',
       keys.length
     ),
-    'info'
+    'info',
+    undoAction(entry)
   )
+}
+
+/**
+ * A rating, flag or label key: on the photos it acts on here (UX-13), then,
+ * with auto-advance in force, on to the next photo (lib/librarymodes.ts).
+ */
+function decide(patch: MetaPatch): void {
+  const targets = metaTargets()
+  void lib().setMeta(patch, targets)
+  afterDecision(targets)
+}
+
+/** The thumbnails' size range (the toolbar's slider), and its step for ⌘+ and ⌘−. */
+const THUMB_MIN = 100
+const THUMB_MAX = 360
+const THUMB_STEP = 40
+const THUMB_DEFAULT = 180
+
+/** E opens the Loupe now (it opened Develop): said once, the first time it is pressed. */
+function tellLoupeKey(): void {
+  if (!ui().tell('loupe-key')) return
+  lib().say(t('E now opens the Loupe; {{key}} develops', { key: keyHint('library.develop') }))
 }
 
 const RATING_LABELS = [
@@ -147,7 +201,8 @@ const rating = [0, 1, 2, 3, 4, 5].map<KeyCommand>((n) => ({
   group: 'Rating & flags',
   context: 'global',
   keys: [String(n)],
-  run: () => void lib().setMeta({ rating: n })
+  // The selection in the Grid; the photo shown anywhere else (UX-13).
+  run: () => decide({ rating: n })
 }))
 
 const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((label, i) => ({
@@ -157,8 +212,8 @@ const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((la
   context: 'global',
   keys: [String(6 + i)],
   run: () => {
-    const current = focusedItem()?.label
-    void lib().setMeta({ label: current === label ? null : label })
+    const current = metaItem()?.label
+    decide({ label: current === label ? null : label })
   }
 }))
 
@@ -171,28 +226,26 @@ const PANEL_KEYS: Partial<Record<PanelId, number>> = {
   basic: 1,
   curve: 2,
   mixer: 3,
-  grading: 4,
+  primaries: 4,
   detail: 5,
   optics: 6,
   geometry: 7,
   effects: 8,
   calibration: 9
 }
-/** The panel a key's command shows with the colour tools in force. */
-const keyedPanel = (id: PanelId): PanelId =>
-  (ui().colourTools === 'resolve' && RESOLVE_TWIN[id]) || id
-const PANELS: PanelId[] = ['basic', ...CARDS.filter((c) => !c.basic).map((c) => c.id)]
+// Lightroom's Colour grading (legacy) is offered only on photos using it: no command.
+const PANELS: PanelId[] = ['basic', ...CARDS.filter((c) => !c.basic && !c.legacy).map((c) => c.id)]
 const cards = PANELS.map<KeyCommand>((id) => ({
   id: `card.${id}`,
   // Made when read, in the language in force (`t()` of it where it is shown changes nothing).
   get label() {
-    return t('Show {{card}}', { card: t(panelTitle(keyedPanel(id), ui().colourTools)) })
+    return t('Show {{card}}', { card: t(panelTitle(id)) })
   },
   group: 'Tools',
   context: 'develop',
   keys: PANEL_KEYS[id] ? [`Mod+${PANEL_KEYS[id]}`] : [],
   run: (e) => {
-    jumpToCard(keyedPanel(id))
+    jumpToCard(id)
     stop(e)
   }
 }))
@@ -207,7 +260,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Rating & flags',
     context: 'global',
     keys: ['P'],
-    run: () => void lib().setMeta({ flag: 'pick' })
+    run: () => decide({ flag: 'pick' })
   },
   {
     id: 'flag.reject',
@@ -215,7 +268,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Rating & flags',
     context: 'global',
     keys: ['X'],
-    run: () => void lib().setMeta({ flag: 'reject' })
+    run: () => decide({ flag: 'reject' })
   },
   {
     id: 'cull.rejectAll',
@@ -242,7 +295,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Rating & flags',
     context: 'global',
     keys: ['U'],
-    run: () => void lib().setMeta({ flag: null })
+    run: () => decide({ flag: null })
   },
   {
     id: 'export',
@@ -251,6 +304,16 @@ export const COMMANDS: KeyCommand[] = [
     context: 'global',
     keys: ['Mod+Shift+E'],
     run: () => lib().setDialog('export')
+  },
+  {
+    id: 'export.previous',
+    label: tk('Export with previous'),
+    group: 'Library',
+    context: 'global',
+    // Lightroom's key for it.
+    keys: ['Mod+Alt+Shift+E'],
+    when: () => useExports.getState().last !== null && lib().targets().length > 0,
+    run: () => void useExports.getState().previous()
   },
   {
     id: 'library.openPhotos',
@@ -271,6 +334,18 @@ export const COMMANDS: KeyCommand[] = [
     keys: ['Mod+Shift+O'],
     run: (e) => {
       void lib().chooseFolder()
+      stop(e)
+    }
+  },
+  {
+    id: 'settings.pasteSpecial',
+    label: tk('Choose settings to paste…'),
+    group: 'Edit',
+    context: 'global',
+    keys: ['Mod+Shift+V'],
+    when: () => !!lib().clipboard,
+    run: (e) => {
+      lib().setDialog('paste')
       stop(e)
     }
   },
@@ -323,16 +398,176 @@ export const COMMANDS: KeyCommand[] = [
   // ── library ──
   {
     id: 'library.develop',
-    label: tk('Develop the focused photo'),
+    label: tk('Develop the photo shown'),
     group: 'Navigation',
     context: 'library',
-    keys: ['Enter', 'D', 'E'],
-    when: () => !!lib().focus,
+    keys: ['D', 'Enter'],
+    when: () => !!shownKey(),
+    run: () => goDevelop()
+  },
+  {
+    id: 'library.grid',
+    label: tk('Grid'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['G'],
+    run: () => goGrid()
+  },
+  {
+    id: 'library.loupe',
+    label: tk('Loupe: one photo, large'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['E'],
     run: () => {
-      const focus = lib().focus
-      if (!focus) return
-      lib().setView('develop')
-      void dev().open(focus)
+      goLoupe()
+      tellLoupeKey()
+    }
+  },
+  {
+    id: 'library.toggleLoupe',
+    label: tk('Grid or Loupe, in turn'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['Space'],
+    run: (e) => {
+      toggleLoupe()
+      stop(e)
+    }
+  },
+  {
+    id: 'library.compare',
+    label: tk('Compare two photos'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['C'],
+    run: () => goCompare()
+  },
+  {
+    id: 'library.survey',
+    label: tk('Survey the selection (one photo: its burst)'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['N'],
+    run: () => void goSurvey()
+  },
+  {
+    id: 'library.back',
+    label: tk('Back to the Grid; in the Grid, let go of the selection'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['Escape'],
+    // A menu or dropdown open with the keyboard closes on its own.
+    when: (e) => !e.defaultPrevented,
+    run: () => goBack()
+  },
+  {
+    id: 'library.autoAdvance',
+    label: tk('Auto advance after a rating, flag or label'),
+    group: 'Rating & flags',
+    context: 'library',
+    keys: ['Shift+A'],
+    run: () => toggleAutoAdvance()
+  },
+  {
+    id: 'library.filterBar',
+    label: tk('Show or hide the filter bar'),
+    group: 'View',
+    context: 'library',
+    keys: ['Shift+Backslash'],
+    run: (e) => {
+      ui().setFilterBar(!ui().filterBar)
+      stop(e)
+    }
+  },
+  {
+    id: 'library.zoomIn',
+    label: tk('Zoom in (in the Grid, larger thumbnails)'),
+    group: 'View',
+    context: 'library',
+    keys: ['Mod+Equal', 'Mod+Shift+Equal', 'Mod+NumpadAdd'],
+    run: (e) => {
+      if (inMode('loupe', 'compare')) void libZoom.zoomIn()
+      else lib().setThumbSize(Math.min(THUMB_MAX, lib().thumbSize + THUMB_STEP))
+      stop(e)
+    }
+  },
+  {
+    id: 'library.zoomOut',
+    label: tk('Zoom out (in the Grid, smaller thumbnails)'),
+    group: 'View',
+    context: 'library',
+    keys: ['Mod+Minus', 'Mod+Shift+Minus', 'Mod+NumpadSubtract'],
+    run: (e) => {
+      if (inMode('loupe', 'compare')) void libZoom.zoomOut()
+      else lib().setThumbSize(Math.max(THUMB_MIN, lib().thumbSize - THUMB_STEP))
+      stop(e)
+    }
+  },
+  {
+    id: 'library.zoomFit',
+    label: tk('Fit (in the Grid, thumbnails at their usual size)'),
+    group: 'View',
+    context: 'library',
+    keys: ['Mod+0'],
+    run: (e) => {
+      if (inMode('loupe', 'compare')) libZoom.fit()
+      else lib().setThumbSize(THUMB_DEFAULT)
+      stop(e)
+    }
+  },
+  {
+    id: 'loupe.zoom',
+    label: tk('Fit ↔ 1:1, to check focus'),
+    group: 'View',
+    context: 'library.loupe',
+    keys: ['Z'],
+    when: () => inMode('loupe', 'compare'),
+    run: () => void libZoom.toggle()
+  },
+  {
+    id: 'compare.swap',
+    label: tk('Compare: swap the Select and the Candidate'),
+    group: 'Navigation',
+    context: 'library.compare',
+    keys: ['Tab'],
+    when: () => inMode('compare'),
+    run: (e) => {
+      swapCompare()
+      stop(e)
+    }
+  },
+  {
+    id: 'compare.promote',
+    label: tk('Compare: the Candidate becomes the Select'),
+    group: 'Navigation',
+    context: 'library.compare',
+    keys: ['ArrowUp'],
+    when: (e) => inMode('compare') && !e.defaultPrevented,
+    run: (e) => {
+      promoteCandidate()
+      stop(e)
+    }
+  },
+  {
+    id: 'compare.link',
+    label: tk('Compare: zoom both together, or apart'),
+    group: 'View',
+    context: 'library.compare',
+    keys: ['L'],
+    when: () => inMode('compare'),
+    run: () => libZoom.toggleLink()
+  },
+  {
+    id: 'survey.drop',
+    label: tk('Survey: drop the photo picked'),
+    group: 'Navigation',
+    context: 'library.survey',
+    keys: ['Slash'],
+    when: () => inMode('survey'),
+    run: (e) => {
+      dropFromSurvey()
+      stop(e)
     }
   },
   {
@@ -347,13 +582,60 @@ export const COMMANDS: KeyCommand[] = [
     }
   },
   {
+    id: 'library.undo',
+    label: tk('Undo in the library'),
+    group: 'Edit',
+    context: 'library',
+    keys: ['Mod+Z'],
+    run: (e) => {
+      void undoLibrary()
+      stop(e)
+    }
+  },
+  {
+    id: 'library.redo',
+    label: tk('Redo in the library'),
+    group: 'Edit',
+    context: 'library',
+    keys: ['Mod+Shift+Z'],
+    run: (e) => {
+      void redoLibrary()
+      stop(e)
+    }
+  },
+  {
+    id: 'library.copy',
+    label: tk('Copy the focused photo’s settings'),
+    group: 'Edit',
+    context: 'library',
+    keys: ['Mod+C'],
+    // Text selected (the info pane's): ⌘C copies that.
+    when: () => !!lib().focus && !document.getSelection()?.toString(),
+    run: () => {
+      const focus = lib().focus
+      if (focus) void copySettings(focus)
+    }
+  },
+  {
     id: 'library.paste',
-    label: tk('Paste settings onto the selection…'),
-    group: 'Library',
+    label: tk('Paste settings onto the selection'),
+    group: 'Edit',
     context: 'library',
     keys: ['Mod+V'],
-    run: () => lib().setDialog('sync')
+    when: () => !!lib().clipboard && lib().targets().length > 0,
+    run: () => void pasteSettings(lib().targets())
   },
+  ...quickNudges(),
+  {
+    id: 'library.autoTone',
+    label: tk('Auto tone on the selection'),
+    group: 'Library',
+    context: 'library',
+    keys: [],
+    when: () => lib().targets().length > 0,
+    run: () => void autoToneTargets(lib().targets())
+  },
+  ...gridMoves(),
   {
     id: 'library.stack',
     label: tk('Stack the selection'),
@@ -390,7 +672,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.makeCover',
-    label: tk("Make the focused photo its stack's cover"),
+    label: tk('Make the focused photo its stack’s cover'),
     group: 'Library',
     context: 'library',
     keys: ['Shift+S'],
@@ -407,6 +689,19 @@ export const COMMANDS: KeyCommand[] = [
     context: 'library',
     keys: ['I'],
     run: () => ui().setLibraryInfo(!ui().libraryInfo)
+  },
+  {
+    id: 'library.quickDevelop',
+    label: tk('Show or hide Quick develop'),
+    group: 'View',
+    context: 'library',
+    keys: ['Shift+I'],
+    run: () => {
+      const u = ui()
+      const shown = u.libraryInfo && u.libraryTab === 'quick'
+      u.setLibraryTab('quick')
+      u.setLibraryInfo(!shown)
+    }
   },
   {
     id: 'library.sidebar',
@@ -439,16 +734,28 @@ export const COMMANDS: KeyCommand[] = [
       // A selected mask is what the panels edit: Esc gives them the whole photo back.
       if (scoped.layer()) return d.setLayer(null)
       if (d.zoom.scale !== 'fit') return loupeZoom.fit()
+      // Back to the Library's view it came from (the Grid, the Loupe, Compare).
       lib().setView('library')
     }
   },
   {
     id: 'develop.library',
-    label: tk('Back to the library'),
+    label: tk('Back to the Library’s Grid'),
     group: 'Navigation',
     context: 'develop',
     keys: ['G'],
-    run: () => lib().setView('library')
+    run: () => goGrid()
+  },
+  {
+    id: 'develop.toLoupe',
+    label: tk('The Library’s Loupe on this photo'),
+    group: 'Navigation',
+    context: 'develop',
+    keys: ['E'],
+    run: () => {
+      developToLoupe()
+      tellLoupeKey()
+    }
   },
   {
     id: 'zoom.in',
@@ -489,7 +796,8 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Edit',
     context: 'develop',
     keys: ['Mod+Z'],
-    run: () => dev().undo()
+    // Straight after a paste or sync on several photos: the whole batch.
+    run: () => (developBatch(false) ? void undoLibrary() : dev().undo())
   },
   {
     id: 'redo',
@@ -497,7 +805,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Edit',
     context: 'develop',
     keys: ['Mod+Shift+Z'],
-    run: () => dev().redoStep()
+    run: () => (developBatch(true) ? void redoLibrary() : dev().redoStep())
   },
   ...cards,
   {
@@ -531,28 +839,8 @@ export const COMMANDS: KeyCommand[] = [
     // Text selected (the info pane's): ⌘C copies that.
     when: () => !!dev().recipe && !document.getSelection()?.toString(),
     run: () => {
-      const d = dev()
-      if (!d.recipe) return
-      const groups = RECIPE_GROUPS.filter(
-        (g) =>
-          g !== 'crop' &&
-          g !== 'upright' &&
-          g !== 'orientation' &&
-          g !== 'localAdjustments' &&
-          g !== 'retouch'
-      )
-      lib().setClipboard({
-        // What is seen: a section switched off goes as its defaults.
-        recipe: structuredClone(effective(d.recipe, d.session?.isRaw ?? false)),
-        groups: [...groups],
-        source: d.session?.key ?? null
-      })
-      lib().say(
-        t('Settings copied ({{paste}} to paste, {{choose}} to choose)', {
-          paste: keyHint('settings.paste'),
-          choose: keyHint('sync')
-        })
-      )
+      const key = dev().session?.key
+      if (key) void copySettings(key)
     }
   },
   {
@@ -562,32 +850,8 @@ export const COMMANDS: KeyCommand[] = [
     context: 'develop',
     keys: ['Mod+V'],
     when: () => !!(lib().clipboard && dev().recipe && dev().session),
-    run: () => {
-      const l = lib()
-      const d = dev()
-      if (!l.clipboard || !d.session) return
-      const key = d.session.key
-      const targets = l.targets()
-      void api.library
-        .applyRecipe(
-          targets,
-          l.clipboard.recipe,
-          l.clipboard.groups,
-          l.clipboard.source ?? undefined
-        )
-        .then(async (items) => {
-          lib().patchItems(items)
-          // The open photo's paste is a step of its history, undone on its own.
-          if (targets.includes(key) && dev().session?.key === key) {
-            const s = await api.develop.open(key)
-            if (dev().session?.key === key) dev().replace(s.recipe, tk('Paste settings'))
-          }
-          lib().say(
-            tp('Pasted onto {{count}} photo', 'Pasted onto {{count}} photos', targets.length)
-          )
-        })
-        .catch((err) => lib().say(errorText(err), 'error'))
-    }
+    // The open photo, or the filmstrip's selection: one batch, one Undo.
+    run: () => void pasteSettings(lib().targets())
   },
   {
     id: 'virtualCopy',
@@ -684,6 +948,62 @@ export const COMMANDS: KeyCommand[] = [
     run: () => dev().setClipping(!dev().clipping)
   },
   {
+    id: 'view.gamut',
+    label: tk('Show gamut warning'),
+    group: 'View',
+    context: 'develop',
+    keys: ['Shift+J'],
+    run: () => dev().setGamut(!dev().gamut)
+  },
+  {
+    id: 'view.proof',
+    label: tk('Soft proofing'),
+    group: 'View',
+    context: 'develop',
+    keys: ['S'],
+    when: () => !!dev().session,
+    run: () => void dev().setProof(!dev().proof)
+  },
+  {
+    id: 'view.proofSetup',
+    label: tk('Proof setup'),
+    group: 'View',
+    context: 'develop',
+    keys: ['Alt+S'],
+    when: () => !!dev().session,
+    run: (e) => {
+      stop(e)
+      dev().setProofSetup(!dev().proofSetup)
+    }
+  },
+  {
+    id: 'view.proofSplit',
+    label: tk('Screen / proof split'),
+    group: 'View',
+    context: 'develop',
+    keys: ['Shift+Y'],
+    when: () => !!dev().session,
+    run: () => void toggleProofSplit()
+  },
+  {
+    id: 'proof.copy',
+    label: tk('Make a proof copy'),
+    group: 'Edit',
+    context: 'develop',
+    keys: [],
+    when: () => !!dev().session,
+    run: () => void makeProofCopy()
+  },
+  {
+    id: 'library.proofCopies',
+    label: tk('Make proof copies of the selection'),
+    group: 'Library',
+    context: 'library',
+    keys: [],
+    when: () => lib().targets().length > 0,
+    run: () => void makeProofCopies(lib().targets())
+  },
+  {
     id: 'scopes.next',
     label: tk('Next scope'),
     group: 'View',
@@ -691,7 +1011,7 @@ export const COMMANDS: KeyCommand[] = [
     keys: ['Alt+BracketRight'],
     run: () => {
       const u = useUi.getState()
-      u.setScopes({ inline: cycleScope(u.scopes.inline, 1) })
+      u.setScopes({ inline: cycleScope(u.scopes.inline, 1, u.scopes.quick) })
     }
   },
   {
@@ -702,7 +1022,7 @@ export const COMMANDS: KeyCommand[] = [
     keys: ['Alt+BracketLeft'],
     run: () => {
       const u = useUi.getState()
-      u.setScopes({ inline: cycleScope(u.scopes.inline, -1) })
+      u.setScopes({ inline: cycleScope(u.scopes.inline, -1, u.scopes.quick) })
     }
   },
   {
@@ -724,6 +1044,14 @@ export const COMMANDS: KeyCommand[] = [
       setSpace(true)
       stop(e)
     }
+  },
+  {
+    id: 'view.messages',
+    label: tk('Recent messages'),
+    group: 'View',
+    context: 'global',
+    keys: ['Mod+Shift+M'],
+    run: () => lib().setDialog('messages')
   },
   {
     id: 'tool.crop',
@@ -815,7 +1143,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'tool.tat',
-    label: tk('Targeted adjustment (HSL or Tone Curve)'),
+    label: tk('Targeted adjustment (HSL or Curves)'),
     group: 'Tools',
     context: 'develop.curve',
     keys: ['T'],
@@ -925,15 +1253,96 @@ export const COMMANDS: KeyCommand[] = [
   }
 ]
 
+/**
+ * Quick develop's nudges from the keyboard, wherever the focus is in the
+ * Library (lib/quickdevelop.ts): ⌥↑ ⌥↓ Exposure a third of a stop (⇧ a whole
+ * one), ⌥← ⌥→ Temp. Each run of presses is one batch on the selection.
+ */
+function quickNudges(): KeyCommand[] {
+  const nudges: [string, string, string, Parameters<typeof nudge>][] = [
+    ['quick.exposureUp', tk('Exposure up a third of a stop'), 'Alt+ArrowUp', ['exposure', 1]],
+    [
+      'quick.exposureDown',
+      tk('Exposure down a third of a stop'),
+      'Alt+ArrowDown',
+      ['exposure', -1]
+    ],
+    ['quick.exposureUpStop', tk('Exposure up a stop'), 'Shift+Alt+ArrowUp', ['exposure', 1, true]],
+    [
+      'quick.exposureDownStop',
+      tk('Exposure down a stop'),
+      'Shift+Alt+ArrowDown',
+      ['exposure', -1, true]
+    ],
+    ['quick.warmer', tk('Warmer'), 'Alt+ArrowRight', ['temp', 1]],
+    ['quick.cooler', tk('Cooler'), 'Alt+ArrowLeft', ['temp', -1]]
+  ]
+  return nudges.map<KeyCommand>(([id, label, key, args]) => ({
+    id,
+    label,
+    group: 'Edit',
+    context: 'library',
+    keys: [key],
+    when: () => lib().targets().length > 0,
+    run: (e) => {
+      nudge(...args)
+      stop(e)
+    }
+  }))
+}
+
+/**
+ * The grid's keyboard moves (⇧ extends the selection), listening while the
+ * grid is up and the key is not already taken (a menu or dropdown with the
+ * keyboard moves its own items with the arrows).
+ */
+function gridMoves(): KeyCommand[] {
+  const free = (e: KeyboardEvent): boolean => inGrid() && !e.defaultPrevented
+  const moves: [GridMove, string, string][] = [
+    ['up', tk('Up a row (⇧ extends the selection)'), 'ArrowUp'],
+    ['down', tk('Down a row (⇧ extends the selection)'), 'ArrowDown'],
+    ['home', tk('First photo (⇧ extends the selection)'), 'Home'],
+    ['end', tk('Last photo (⇧ extends the selection)'), 'End'],
+    ['pageUp', tk('Up a page (⇧ extends the selection)'), 'PageUp'],
+    ['pageDown', tk('Down a page (⇧ extends the selection)'), 'PageDown']
+  ]
+  const extend = (dir: 1 | -1, id: string, label: string, key: string): KeyCommand => ({
+    id,
+    label,
+    group: 'Navigation',
+    context: 'library.grid',
+    keys: [key],
+    when: free,
+    run: (e) => {
+      const l = lib()
+      const vis = l.visible()
+      const i = vis.findIndex((it) => it.key === l.focus)
+      const next = vis[Math.min(vis.length - 1, Math.max(0, i + dir))]
+      if (next) l.moveTo(next.key, true)
+      stop(e)
+    }
+  })
+  return [
+    ...moves.map<KeyCommand>(([move, label, key]) => ({
+      id: `grid.${move}`,
+      label,
+      group: 'Navigation',
+      context: 'library.grid',
+      keys: [key, `Shift+${key}`],
+      when: free,
+      run: (e) => {
+        gridStep(move, e.shiftKey)
+        stop(e)
+      }
+    })),
+    extend(-1, 'grid.extendPrev', tk('Extend the selection to the left'), 'Shift+ArrowLeft'),
+    extend(1, 'grid.extendNext', tk('Extend the selection to the right'), 'Shift+ArrowRight')
+  ]
+}
+
+/** ← and →: the next photo as the view walks them (Compare's Candidate, Survey's tiles). */
 function step(e: KeyboardEvent, dir: 1 | -1): void {
-  const l = lib()
-  const vis = l.visible()
-  const i = vis.findIndex((it) => it.key === l.focus)
-  const next = vis[Math.min(vis.length - 1, Math.max(0, i + dir))]
-  if (!next) return
-  l.setFocus(next.key)
-  if (l.view === 'develop') void dev().open(next.key)
-  stop(e)
+  if (stepPhoto(dir)) stop(e)
 }
 
 export const DEFAULT_BINDINGS: Bindings = Object.fromEntries(
@@ -989,6 +1398,23 @@ export function keyHint(id: string): string {
   return c ? chordLabel(c, IS_MAC, layoutKey) : ''
 }
 
+/** A modifier named for this platform, for a sentence ("Option-click removes"). */
+export const modName = (m: Modifier): string => modifierName(m, IS_MAC)
+
+/** A modifier ahead of a key for this platform ("⌥↑↓", "Alt+↑↓"). */
+export const modKey = (m: Modifier): string => modifierKey(m, IS_MAC)
+
+/**
+ * A key no command holds, as this platform shows it (`"Mod+Alt+E"` is ⌥⌘E on
+ * a Mac, Ctrl+Alt+E elsewhere): a menu's accelerator, Escape, Return.
+ */
+export function chordText(spec: string): string {
+  return chordLabel(parseChord(spec), IS_MAC, layoutKey)
+}
+
+/** `"Label (key)"` for a key no command holds. */
+export const withChord = (label: string, spec: string): string => `${label} (${chordText(spec)})`
+
 /** `"Label (key)"`, or just the label when the command has no key. */
 export function withKey(label: string, id: string): string {
   const k = keyHint(id)
@@ -1011,7 +1437,7 @@ export function useKeyHint(): (id: string) => string {
 /** Whether a command's context is listening in this view. */
 export function listening(context: KeyContext, inDevelop: boolean): boolean {
   if (context === 'global') return true
-  if (context === 'library') return !inDevelop
+  if (context === 'library' || context.startsWith('library.')) return !inDevelop
   return inDevelop
 }
 

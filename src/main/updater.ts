@@ -4,11 +4,16 @@
  * space-pixl's updater. Checks at launch and every four hours, downloads in
  * the background, and installs on quit or on "Restart to update".
  * PLAYROOM_UPDATE_URL reads another feed (a staging folder) instead, to test
- * an update before it goes out (RELEASING.md); the update is still checked
- * against the app's signature on both platforms.
+ * an update before it goes out (RELEASING.md), in a development build only
+ * (build.ts: staging builds are); the update is still checked against the
+ * app's signature on both platforms.
  *
  * macOS only accepts a signed, notarized update (Squirrel.Mac): until the
  * builds are signed a check there ends in an error, which the settings show.
+ *
+ * Before anything is downloaded the feed's own signature is checked
+ * (feedsig.ts): an update whose feed Pixl did not sign is refused, with a
+ * line in the log, and never downloaded or installed.
  */
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
@@ -16,6 +21,9 @@ import type { AppUpdater, ProgressInfo, UpdateInfo } from 'electron-updater'
 import { IPC, type UpdateChannel, type UpdateState } from '../shared/ipc'
 import { belowFloor } from '../shared/policy'
 import { parseReleaseNotes } from '../shared/releasenotes'
+import { t } from '../shared/i18n'
+import { devEnv, HIDDEN } from './build'
+import { checkFeed, FEED_KEYS, type FeedInfo } from './feedsig'
 import { onPolicy } from './policy'
 import { readSettings, writeSettings } from './settings'
 
@@ -35,6 +43,9 @@ let state: UpdateState = {
 }
 let enabled = false
 let timer: NodeJS.Timeout | undefined
+/** The version whose feed passed `mayDownload`: the only one downloaded and installed. */
+let verified: string | null = null
+let warnedUnchecked = false
 /** electron-updater, loaded only where updates run (a packaged build): never on a dev launch's path. */
 let autoUpdater: AppUpdater
 
@@ -77,7 +88,35 @@ export async function checkForUpdates(): Promise<UpdateState> {
 
 /** Quit and install a downloaded update. The quit drains pending edits first (index.ts). */
 export function installUpdate(): void {
-  if (enabled && state.phase === 'downloaded') setImmediate(() => autoUpdater.quitAndInstall())
+  if (enabled && state.phase === 'downloaded' && verified !== null && state.version === verified)
+    setImmediate(() => autoUpdater.quitAndInstall())
+}
+
+/** What Settings says of an update whose feed was refused. */
+const refusedText = (version: string): string =>
+  t('Update {{version}} was refused: its feed is not signed by Pixl, so it is not installed.', {
+    version
+  })
+
+/**
+ * Whether the update a feed offers may be downloaded: its feed signed by a
+ * key the app holds, of that version and those files (feedsig.ts). With no
+ * key built in yet, the feed is read as before and the log says so once.
+ */
+function mayDownload(info: UpdateInfo): boolean {
+  if (Object.keys(FEED_KEYS).length === 0) {
+    if (!warnedUnchecked)
+      log.warn('updates: no feed key is built in (feedsig.ts): the feed’s signature is not checked')
+    warnedUnchecked = true
+    return true
+  }
+  const check = checkFeed(info as unknown as FeedInfo, FEED_KEYS)
+  if (check.ok) {
+    log.info(`updates: the feed for ${info.version} is signed (${check.kid})`)
+    return true
+  }
+  log.error(`updates: refused ${info.version}: its feed is not one Pixl signed (${check.problem})`)
+  return false
 }
 
 export async function setUpdateChannel(channel: UpdateChannel): Promise<UpdateState> {
@@ -95,10 +134,7 @@ export async function setupUpdater(): Promise<void> {
   // In development there is nothing to update against. PLAYROOM_FORCE_UPDATER=1
   // reads dev-app-update.yml instead, to exercise the flow from `pnpm dev`.
   // Automation (PLAYROOM_HIDDEN) never updates.
-  if (
-    (!app.isPackaged && !process.env['PLAYROOM_FORCE_UPDATER']) ||
-    process.env['PLAYROOM_HIDDEN'] === '1'
-  ) {
+  if ((!app.isPackaged && !process.env['PLAYROOM_FORCE_UPDATER']) || HIDDEN) {
     state = { ...state, phase: 'disabled' }
     return
   }
@@ -109,10 +145,12 @@ export async function setupUpdater(): Promise<void> {
     updater.autoUpdater ?? (updater as unknown as { default: typeof updater }).default.autoUpdater
   enabled = true
   autoUpdater.logger = log
-  autoUpdater.autoDownload = true
+  // Downloaded only once the feed's signature is checked (`mayDownload`).
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
   if (!app.isPackaged) autoUpdater.forceDevUpdateConfig = true
-  const feed = process.env['PLAYROOM_UPDATE_URL']
+  // Another feed is a development build's only (build.ts): a release reads its own.
+  const feed = devEnv('PLAYROOM_UPDATE_URL')
   if (feed) {
     log.info(`updates: reading ${feed} (PLAYROOM_UPDATE_URL)`)
     autoUpdater.setFeedURL({ provider: 'generic', url: feed.replace(/\/+$/, '') })
@@ -130,6 +168,17 @@ export async function setupUpdater(): Promise<void> {
       // What it brings, from the feed (build/release-notes.md as published).
       notes: parseReleaseNotes(info.releaseNotes, info.version)
     })
+    if (!mayDownload(info)) {
+      verified = null
+      setState({
+        phase: 'error',
+        error: refusedText(info.version)
+      })
+      return
+    }
+    verified = info.version
+    // A failed download says so through the 'error' event as well.
+    autoUpdater.downloadUpdate().catch((err) => log.warn('update download failed', err))
   })
   autoUpdater.on('update-not-available', (info: UpdateInfo) => {
     setState({ phase: 'not-available', version: info.version, progress: undefined })
@@ -146,6 +195,13 @@ export async function setupUpdater(): Promise<void> {
     })
   })
   autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
+    // Only the version whose feed was checked is ever installed.
+    if (info.version !== verified) {
+      autoUpdater.autoInstallOnAppQuit = false
+      log.error(`updates: ${info.version} was downloaded without its feed checked: not installed`)
+      setState({ phase: 'error', progress: undefined, error: refusedText(info.version) })
+      return
+    }
     setState({
       phase: 'downloaded',
       version: info.version,

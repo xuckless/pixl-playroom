@@ -1,13 +1,45 @@
-import { cardSpec, panelOf, panelsFor, type CardId } from '../../../shared/cards'
+import {
+  cardBase,
+  cardChanged,
+  CARDS,
+  panelOf,
+  panelsFor,
+  type CardId,
+  type CardSpec
+} from '../../../shared/cards'
 import { useDevelop, type Tool } from '../state/develop'
-import { scoped } from '../state/scope'
+import { scoped, scopedView, scopeLayer } from '../state/scope'
 import { useUi, type Drawer, type Panel } from '../state/ui'
 
-/** A 24-unit SVG path for each canvas tool in the strip above the cards. */
-export const STRIP_ICONS = {
-  crop: 'M6 2v16h16M2 6h16v16',
-  heal: 'M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z'
-} as const
+type DevelopState = ReturnType<typeof useDevelop.getState>
+
+/** The legacy cards (Lightroom's Colour grading) holding edits in the scope shown, as one string of ids. */
+function legacyHeldIds(s: DevelopState, masksOpen: boolean): string {
+  if (!s.recipe) return ''
+  const layer = scopeLayer(s.recipe, s.layerId, masksOpen)
+  const view = scopedView(s.recipe, layer)
+  const base = cardBase(view, s.session?.isRaw ?? false, !!layer)
+  return CARDS.filter(
+    (c) => c.legacy && (!layer || c.inMask) && cardChanged(c, view, base, !!layer)
+  )
+    .map((c) => c.id)
+    .join(' ')
+}
+
+const heldBy =
+  (ids: string) =>
+  (c: CardSpec): boolean =>
+    ids.split(' ').includes(c.id)
+
+/** Whether a legacy card holds edits now (it is offered only then). */
+export const legacyHeldNow = (): ((c: CardSpec) => boolean) =>
+  heldBy(legacyHeldIds(useDevelop.getState(), useUi.getState().masksWin.open))
+
+/** The same, as a hook: re-renders only when a legacy card starts or stops holding edits. */
+export function useLegacyHeld(): (c: CardSpec) => boolean {
+  const masksOpen = useUi((s) => s.masksWin.open)
+  return heldBy(useDevelop((s) => legacyHeldIds(s, masksOpen)))
+}
 
 /** Canvas tools that belong to the masks window. */
 export const MASK_TOOLS: Tool[] = [
@@ -59,7 +91,7 @@ export function toggleDrawer(d: Exclude<Drawer, 'adjust'>): void {
 
 /** The sections the dropdown offers now (in a mask, those a mask carries), then Enhance. */
 export function visiblePanels(): Panel[] {
-  return [...panelsFor(useUi.getState().colourTools, scoped.layer() !== null), 'enhance']
+  return [...panelsFor(scoped.layer() !== null, legacyHeldNow()), 'enhance']
 }
 
 /**
@@ -70,9 +102,6 @@ export function jumpToCard(id: Panel | CardId): void {
   openDrawer('adjust')
   const ui = useUi.getState()
   const card = id !== 'enhance' && id !== 'basic' ? id : null
-  // A card of the colour tools not shown brings them.
-  const set = card ? cardSpec(card).set : undefined
-  if (set && set !== ui.colourTools) ui.setColourTools(set)
   const panel = card ? panelOf(card) : (id as Panel)
   ui.setFocusCard(panel)
   // From the top of the section, wherever the last one was scrolled to; or at the part asked for.

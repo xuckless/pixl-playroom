@@ -16,6 +16,17 @@ export const TIPS = {
     expect: tk('The whole picture shifts warmer or cooler, greener or pinker.'),
     tip: tk('Pick a grey or white with the eyedropper first, then season by eye.')
   },
+  'wb.colour': {
+    what: tk(
+      'How the camera’s colours are read before anything else: PIXL’s fit for the body, the file’s own matrix, or a DNG camera profile (.dcp).'
+    ),
+    expect: tk(
+      'A camera profile, Adobe’s or one you made (a ColorChecker, dcamprof), matches the colour another app gave the photo; its tone curve is left to Playroom’s tone tools.'
+    ),
+    tip: tk(
+      'Choose it before editing: the white balance is carried across, but heals and AI steps are made again on the new colour.'
+    )
+  },
   'wb.temp': {
     what: tk('Cools (left) or warms (right) the picture.'),
     expect: tk('Daylight sits near 5500 K; tungsten rooms want around 3200 K.'),
@@ -43,7 +54,7 @@ export const TIPS = {
     expect: tk(
       'More contrast deepens shadows, brightens highlights and saturates colour a little.'
     ),
-    tip: tk('Keep it modest here; the Tone curve gives finer control.')
+    tip: tk('Keep it modest here; Curves give finer control.')
   },
   'light.highlights': {
     what: tk('Darkens or brightens only the bright parts of the picture.'),
@@ -109,7 +120,7 @@ export const TIPS = {
       'Hazy areas regain depth and detail and keep their own brightness and colour; it does not darken the whole picture.'
     ),
     tip: tk(
-      'For a denser, darker look add Contrast or a Tone Curve. Go negative for a soft, misty look.'
+      'For a denser, darker look add Contrast or a curve. Go negative for a soft, misty look.'
     )
   },
   'hsl.luminance': {
@@ -118,12 +129,21 @@ export const TIPS = {
       'Even in feel across the range: all the way down halves a colour’s brightness, so a sky deepens without going black.'
     )
   },
+  'hsl.density': {
+    what: tk(
+      'Makes colour denser, as slide film’s dyes do: saturated colours darken (or lighten, left) while their hue stays, and greys are untouched.'
+    ),
+    expect: tk(
+      'Amount sets how much; each colour below takes that much of it (100 is all). Aqua and cyan respond about a third as strongly.'
+    ),
+    tip: tk('Pair it with a little Saturation: colour richer and deeper, not just louder.')
+  },
   'presence.smoothing': {
     what: tk(
       'Keeps colour and tone changes smooth across flat areas such as sea, sky and skin, so they don’t go blotchy or show the file’s compression blocks.'
     ),
     expect: tk(
-      'Works on Dehaze, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.'
+      'Works on Highlights, Shadows, Whites and Blacks, HSL, Dehaze, Vibrance, Point colour and Colour grading. It shows when you let go of a slider, not while you drag.'
     ),
     tip: tk('Turn it down only if you want each pixel to follow an adjustment exactly.')
   },
@@ -175,14 +195,7 @@ export const TIPS = {
     expect: tk('Left lets the highlight tint reach deeper; right lets the shadow tint climb.')
   },
 
-  // ── Tone curve ─────────────────────────────────────────────────────
-  curve: {
-    what: tk('Maps every input brightness to an output brightness, for full control of contrast.'),
-    expect: tk('An S shape adds contrast; lifting the bottom-left point fades the blacks.'),
-    tip: tk(
-      'Region sliders are the gentle way in; the point curve is for precise shapes and colour.'
-    )
-  },
+  // ── Curves (Custom is the tone curve) ─────────────────────────────
   'curve.region': {
     what: tk('Bends the curve in four broad ranges without placing points.'),
     expect: tk('Smooth, safe changes that never cross over.')
@@ -275,7 +288,7 @@ export const TIPS = {
 
   // ── Effects ────────────────────────────────────────────────────────
   effects: {
-    what: tk('Finishing touches: a vignette, film grain and a colour wash.'),
+    what: tk('Finishing touches: a vignette, a colour wash, halation, bloom and film grain.'),
     expect: tk('These run after the crop, on the finished picture.')
   },
   'effects.vignette': {
@@ -283,10 +296,50 @@ export const TIPS = {
     expect: tk('A small negative amount draws the eye to the centre.'),
     tip: tk('Raise Feather for a vignette nobody notices but everybody feels.')
   },
+  'effects.vignette.style': {
+    what: tk(
+      'How the corners change: Highlight priority darkens like light falling off, Colour priority lightens without washing colours out, Paint overlay mixes toward black or white.'
+    ),
+    expect: tk('Colour priority keeps hue and saturation: a lightening stops each pixel at white.'),
+    tip: tk('On an HDR photo a lightening keeps highlight priority: there is no white to stop at.')
+  },
   'effects.grain': {
     what: tk('Adds film-like grain.'),
     expect: tk('Hides banding and noise and adds texture; Size and Roughness shape its character.'),
     tip: tk('Judge it at 100%: grain that looks right fitted is usually too strong.')
+  },
+  'effects.grain.colour': {
+    what: tk('Adds colour grain beside the grey: the coarser dye clouds of a colour film.'),
+    expect: tk('Leaves brightness alone; with Amount at 0 it is colour grain only.'),
+    tip: tk('A little goes a long way: 20 to 40 reads as colour negative.')
+  },
+  'effects.grain.response': {
+    what: tk('Where in the tones the grain is strongest.'),
+    expect: tk(
+      'Film: in the midtones, as grain always was. Even: the same everywhere. Scanned negative: strongest in the shadows, fading in the highlights.'
+    )
+  },
+  'effects.halation': {
+    what: tk(
+      'A red glow around bright highlights, as light scattered back through a colour film’s base.'
+    ),
+    expect: tk(
+      'Lamps, neon and bright windows pick up a warm fringe. It acts on light, so brighter highlights glow more.'
+    ),
+    tip: tk('Most at home in night scenes under tungsten and neon.')
+  },
+  'effects.bloom': {
+    what: tk(
+      'Diffusion veils the whole picture as a diffusion filter does; Glow spreads only the highlights.'
+    ),
+    expect: tk(
+      'Diffusion softens contrast and lifts the shadows next to bright areas; Glow haloes lights and keeps the blacks.'
+    ),
+    tip: tk('Warmth tints the glow: warm for a dreamy haze, cool for a smoggy city.')
+  },
+  'effects.glow.threshold': {
+    what: tk('How bright, as shown, a part of the picture must be before it glows.'),
+    expect: tk('Lower it to let more of the picture glow.')
   },
   'grading.add': {
     what: tk('Adds coloured light to the whole scene, as a gel on a lamp would, after exposure.'),
@@ -371,7 +424,7 @@ export const TIPS = {
     ),
     expect: tk('Small, contained moves: warming only the shadows, cooling only the highlights.'),
     tip: tk(
-      'Use them after the Primaries, for the finer split; they add colour rather than scale it.'
+      'Use them after the Primaries, for the finer split. They grade in log, as Resolve’s do, so a push is the same number of stops however bright the tone.'
     )
   },
   qualifier: {
@@ -383,9 +436,9 @@ export const TIPS = {
     ),
     tip: tk('Blur smooths a noisy key; Invert corrects everything except the colour.')
   },
-  rcurves: {
+  curve: {
     what: tk(
-      'DaVinci Resolve’s curves. Custom is the tone curve (Y, R, G, B); the others change one thing by another: Hue vs Hue turns a colour, Hue vs Sat and Lum vs Sat make colours richer or quieter by hue or by brightness.'
+      'DaVinci Resolve’s curves. Custom is the tone curve (Y, R, G, B); the others change one thing by another: Hue vs Hue turns a colour, Hue vs Lum brightens or darkens it, and Hue vs Sat, Lum vs Sat and Sat vs Sat make colours richer or quieter by hue, brightness or saturation.'
     ),
     expect: tk('The line in the middle changes nothing. Click it to add a point, then drag.'),
     tip: tk(
@@ -451,12 +504,20 @@ export const TIPS = {
   'primaries.temp': {
     what: tk('Warmer or cooler, on top of the white balance.'),
     expect: tk(
-      'Like Resolve’s Temp. Here it is a white balance in linear light until the engine has it with the primaries.'
+      'Like Resolve’s Temp: a gain on the graded colour, beside the Primaries, that keeps greys as bright as they were. On a black-and-white photo it tones the grey.'
     )
   },
   'primaries.tint': {
     what: tk('Toward magenta or toward green, on top of the white balance.'),
     expect: tk('For the green of fluorescent light, or a magenta cast.')
+  },
+  'primaries.lumMix': {
+    what: tk(
+      'How much the Y rings of Lift, Gamma and Gain change brightness alone. At 0 they move red, green and blue alike; at 100 they keep every colour’s hue and saturation.'
+    ),
+    expect: tk(
+      'At 0 a lifted black fades the colour too, the matte look; higher keeps the shadows’ colour as you lift them. 0 is how every photo was made; Resolve starts at 100.'
+    )
   },
 
   // ── Resolve: Log wheels ────────────────────────────────────────────
@@ -474,15 +535,23 @@ export const TIPS = {
   },
   'log.offset': {
     what: tk('Adds the same colour or brightness to every tone.'),
-    expect: tk('The Primaries’ Offset, kept here so a log grade is all in one place.')
+    expect: tk(
+      'In log an offset is an exposure: every tone moves by the same number of stops, so a balance set here holds from the shadows to the highlights.'
+    )
   },
   'log.low': {
     what: tk('Where the shadows end: the Shadow wheel works below it, the Midtone wheel above.'),
-    expect: tk('Higher gives the Shadow wheel more of the picture.')
+    expect: tk('Higher gives the Shadow wheel more of the picture.'),
+    tip: tk(
+      '0.268 sits about a stop and a half under middle grey, where Resolve’s 0.333 sits in ACEScct.'
+    )
   },
   'log.high': {
     what: tk('Where the highlights begin: the Highlight wheel works above it.'),
-    expect: tk('Lower gives the Highlight wheel more of the picture.')
+    expect: tk('Lower gives the Highlight wheel more of the picture.'),
+    tip: tk(
+      '0.660 sits just under white, where Resolve’s 0.550 sits in ACEScct: the Highlight wheel takes the brightest parts. Lower it to reach the bright midtones too.'
+    )
   },
 
   // ── Resolve: Curves ────────────────────────────────────────────────
@@ -503,8 +572,10 @@ export const TIPS = {
     expect: tk('Quiet a loud green, deepen a sky.')
   },
   'rcurves.hueLum': {
-    what: tk('Makes one colour brighter or darker.'),
-    expect: tk('Waiting for the engine: the curve is kept and applies once it can.')
+    what: tk('Makes one colour brighter or darker: up to a stop either way at the top and bottom.'),
+    expect: tk(
+      'Darken a sky or brighten skin without touching greys. It finds a colour by the hue it had before Hue vs Hue turned it.'
+    )
   },
   'rcurves.lumSat': {
     what: tk('Saturation by brightness: shadows along the left, highlights along the right.'),
@@ -514,7 +585,9 @@ export const TIPS = {
     what: tk(
       'Saturation by saturation: lift the dull colours without pushing the already rich ones.'
     ),
-    expect: tk('Waiting for the engine: the curve is kept and applies once it can.')
+    expect: tk(
+      'Greys along the left, the richest colours along the right; up for more, down for less. Pull the right end down to tame colours that are already loud.'
+    )
   },
 
   // ── Resolve: Qualifier ─────────────────────────────────────────────

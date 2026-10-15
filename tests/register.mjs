@@ -1,6 +1,8 @@
 // Lets Node's built-in type stripping resolve extension-less relative imports
 // (`import { x } from './plan'`) and folders (`'./i18n'`) the way the bundler
 // does, so the pure modules under src/ run untouched under `node --test`.
+// A JSON import (`import en from './locales/en.json'`) loads as the bundler
+// loads it, without the import attribute Node otherwise asks for.
 import { register } from 'node:module'
 
 register(
@@ -19,6 +21,11 @@ export async function resolve(specifier, context, next) {
     }
     throw err
   }
+}
+export async function load(url, context, next) {
+  if (url.endsWith('.json') && !context.importAttributes?.type)
+    return next(url, { ...context, importAttributes: { ...context.importAttributes, type: 'json' } })
+  return next(url, context)
 }
 `),
   import.meta.url

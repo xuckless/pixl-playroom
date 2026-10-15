@@ -8,7 +8,7 @@ import {
 } from '../../../shared/resolve'
 import { Select } from '../components/ui'
 import { api } from '../lib/api'
-import { scoped, useScope } from '../state/scope'
+import { scoped, useScoped } from '../state/scope'
 import { useLibrary } from '../state/library'
 import { t } from '../lib/i18n'
 
@@ -29,8 +29,8 @@ const pointsOf = (vs: VsCurve, p: VsPreset): VsPreset['points'] =>
  * one of its own.
  */
 export function VsPresets({ vs, label }: { vs: VsCurve; label: string }): React.JSX.Element {
-  const { replace, recipe: shown } = useScope()
-  const pts = shown?.curvesVs[vs]
+  const { replace } = scoped
+  const pts = useScoped((r) => r.curvesVs[vs]) ?? undefined
   const [saved, setSaved] = useState<Saved>({})
   const [naming, setNaming] = useState<string | null>(null)
   useEffect(() => {
@@ -75,7 +75,7 @@ export function VsPresets({ vs, label }: { vs: VsCurve; label: string }): React.
     if (!name || !recipe) return
     const entry: VsPreset = { name, points: structuredClone(recipe.curvesVs[vs]) }
     void store([...mineList.filter((p) => p.name !== name), entry]).then(() =>
-      useLibrary.getState().say(t('Saved curve preset "{{name}}"', { name }))
+      useLibrary.getState().say(t('Saved curve preset “{{name}}”', { name }))
     )
   }
   const mine = pts && mineList.find((p) => sameVs(pointsOf(vs, p), pts))
@@ -97,7 +97,7 @@ export function VsPresets({ vs, label }: { vs: VsCurve; label: string }): React.
             { value: 'save', label: t('Save this curve as a preset…') },
             ...mineList.map((p) => ({
               value: `del:${p.name}`,
-              label: t('Delete "{{name}}"', { name: p.name })
+              label: t('Delete “{{name}}”', { name: p.name })
             }))
           ]}
         />

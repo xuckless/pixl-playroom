@@ -1,7 +1,7 @@
 /**
  * The develop mark a RAW's pixel step is made with (`params.develop`; see
  * `staleRawStep`): its camera colour's, and `+pd` when the PIXL demosaic
- * develops it (a development kit's). A step whose mark is not today's was
+ * develops it (`+pdg` on a Bayer sensor since engine 0.21.0: `pixlMark`). A step whose mark is not today's was
  * made from another develop: its patch or its mask's edge can show, and a
  * rebuild makes it again.
  */
@@ -18,5 +18,5 @@ export async function stepDevelopMark(
   ask: RawDevelopAsk
 ): Promise<string> {
   const plan = await scenePlan(info.raw_cfa, ask)
-  return pixlMark(developMark(colourOf(row)), plan.demosaic === 'pixl')
+  return pixlMark(developMark(colourOf(row)), plan.demosaic === 'pixl', info.raw_cfa)
 }

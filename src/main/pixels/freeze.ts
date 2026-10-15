@@ -16,6 +16,9 @@ import { STRIP_ALL } from '../../shared/engine-types'
 import { defaultUpright } from '../../shared/upright'
 import { newId, type Recipe } from '../../shared/recipe'
 import { brushPlanes } from '../brushes'
+import { lutsFor } from '../lutfile'
+import { paths } from '../paths'
+import { maskFramesFor } from '../maskframe'
 import type { ProxyFile } from '../proxy'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import { lensMap, moves } from './lensmap'
@@ -25,6 +28,8 @@ export interface FreezeContext {
   photoId: number
   isRaw: boolean
   asShot: Parameters<typeof compile>[1]['asShot']
+  /** A camera profile's BaselineExposureOffset (`exposureOffsetOf`): the picture the mask was drawn on. */
+  exposureOffset?: number
   seed: number
   /** The working pixels at full size (the frame the step is made on). */
   master: ProxyFile
@@ -56,15 +61,20 @@ export async function freezeMask(
   const r = onSourceFrame(recipe)
   const { master } = ctx
   const { user } = orientedFrame(r, master.width, master.height)
+  // On the lens it is rendered with, as the develop view shows it.
+  const maskFrames = await maskFramesFor(deps, r, ctx.isRaw, master.width, master.height)
   const compiled = compile(r, {
     isRaw: ctx.isRaw,
     asShot: ctx.asShot,
+    exposureOffset: ctx.exposureOffset,
     sourceOrientation: 'Normal',
     frameWidth: master.width,
     frameHeight: master.height,
     scale: 1,
     seed: ctx.seed,
-    brushPaths: await brushPlanes(ctx.photoId, r, user),
+    brushPaths: await brushPlanes(ctx.photoId, r, user, { isRaw: ctx.isRaw, frames: maskFrames }),
+    maskFrames,
+    luts: await lutsFor(r, paths.luts()),
     applyCrop: false
   })
   const index = compiled.layerIndex[layerId]

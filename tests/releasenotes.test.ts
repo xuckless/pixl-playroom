@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   latestNotes,
+  notesPages,
   notesToShow,
   RELEASE_NOTES,
   versionLabel,
@@ -52,4 +53,22 @@ test('the notes are newest first, each a version, with something to say', () => 
     assert.match(r.version, /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/)
     assert.ok(r.headline && r.sections.every((s) => s.items.length > 0))
   }
+})
+
+test('What’s new pages back through every release, newest first, from the one it opens on', () => {
+  assert.deepEqual(versions(notesPages('0.3.0-beta', notes)), [
+    '0.3.0-beta',
+    '0.2.0-beta.1',
+    '0.2.0-beta'
+  ])
+  // Opened on an older release: nothing newer than it is a page.
+  assert.deepEqual(versions(notesPages('0.2.0-beta.1', notes)), ['0.2.0-beta.1', '0.2.0-beta'])
+  // Out of order in the list, still newest first.
+  assert.deepEqual(versions(notesPages('0.3.0-beta', [notes[2], notes[0], notes[1]])), [
+    '0.3.0-beta',
+    '0.2.0-beta.1',
+    '0.2.0-beta'
+  ])
+  // The real catalogue: the first page is the newest release.
+  assert.equal(notesPages(RELEASE_NOTES[0].version)[0].version, RELEASE_NOTES[0].version)
 })

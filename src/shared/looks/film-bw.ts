@@ -1,5 +1,5 @@
 /** Press, fine-grain and night black-and-white stocks. */
-import { collection, fade, grain, look, mono, presence, rolloff, sCurve, tone, wheel } from './dsl'
+import { collection, grain, look, matte, mono, offset, presence, prim, sCurve, tone } from './dsl'
 import { tk } from '../i18n'
 
 export const FILM_BW = collection('film/bw', [
@@ -22,11 +22,13 @@ export const FILM_BW = collection('film/bw', [
     {
       tags: ['bw', 'mono', 'film', 'pushed', 'night', 'grain', 'kodak', 'tri-x'],
       inspiredBy: 'Kodak Tri-X pushed to 1600',
-      description: tk('Pushed hard: inky shadows and big grain.')
+      description: tk('Pushed hard: inky shadows and big grain.'),
+      version: 2
     },
     mono({ red: -5, blue: 8 }),
     sCurve(50),
-    tone({ contrast: 25, blacks: -25, shadows: -15, whites: 10 }),
+    prim({ contrast: 1.15 }),
+    tone({ blacks: -25, shadows: -15, whites: 10 }),
     grain(55, 45, 75)
   ),
   look(
@@ -35,11 +37,13 @@ export const FILM_BW = collection('film/bw', [
     {
       tags: ['bw', 'mono', 'film', 'fine grain', 'kodak', 't-max', '100'],
       inspiredBy: 'Kodak T-MAX 100',
-      description: tk('Smooth, modern and nearly grainless.')
+      description: tk('Smooth, modern and nearly grainless.'),
+      version: 2
     },
     mono({ red: 14, orange: 10, blue: -4 }),
-    tone({ contrast: 6, highlights: -10, shadows: 6 }),
-    wheel('global', 220, 4),
+    prim({ contrast: 1.04 }),
+    tone({ highlights: -10, shadows: 6 }),
+    offset(220, 4),
     grain(6, 12, 25)
   ),
   look(
@@ -61,11 +65,13 @@ export const FILM_BW = collection('film/bw', [
     {
       tags: ['bw', 'mono', 'film', 'night', 'grain', 'kodak', 't-max', 'p3200'],
       inspiredBy: 'Kodak T-MAX P3200',
-      description: tk('Low-light mono with soft blacks and large grain.')
+      description: tk('Low-light mono with soft blacks and large grain.'),
+      version: 2
     },
     mono({ red: 8, orange: 6 }),
-    tone({ contrast: 22, shadows: -12 }),
-    fade(0.03),
+    prim({ contrast: 1.13 }),
+    tone({ shadows: -12 }),
+    matte(0.03),
     grain(60, 50, 70)
   ),
   look(
@@ -100,11 +106,13 @@ export const FILM_BW = collection('film/bw', [
     {
       tags: ['bw', 'mono', 'film', 'fine grain', 'contrast', 'ilford', 'pan f', '50'],
       inspiredBy: 'Ilford Pan F Plus 50',
-      description: tk('Contrasty, deep and almost grainless.')
+      description: tk('Contrasty, deep and almost grainless.'),
+      version: 2
     },
     mono({ red: -15, orange: -10, blue: 6 }),
     sCurve(40),
-    tone({ contrast: 10, blacks: -10 }),
+    prim({ contrast: 1.06 }),
+    tone({ blacks: -10 }),
     grain(4, 10, 20)
   ),
   look(
@@ -127,11 +135,13 @@ export const FILM_BW = collection('film/bw', [
     {
       tags: ['bw', 'mono', 'film', 'night', 'grain', 'ilford', 'delta', '3200'],
       inspiredBy: 'Ilford Delta 3200',
-      description: tk('Soft, grainy and atmospheric.')
+      description: tk('Soft, grainy and atmospheric.'),
+      version: 2
     },
     mono({ orange: 6 }),
-    tone({ contrast: -8, shadows: 12, highlights: -12 }),
-    fade(0.05),
+    prim({ contrast: 0.95 }),
+    tone({ shadows: 12, highlights: -12 }),
+    matte(0.05),
     grain(65, 55, 80)
   ),
   look(
@@ -140,12 +150,14 @@ export const FILM_BW = collection('film/bw', [
     {
       tags: ['bw', 'mono', 'film', 'c41', 'smooth', 'ilford', 'xp2'],
       inspiredBy: 'Ilford XP2 Super',
-      description: tk('Smooth, faintly warm mono from colour chemistry.')
+      description: tk('Smooth, faintly warm mono from colour chemistry.'),
+      version: 2
     },
     mono({ orange: 8, yellow: 4 }),
-    tone({ contrast: -12, highlights: -18, shadows: 8 }),
-    rolloff(0.03),
-    wheel('global', 35, 7),
+    prim({ contrast: 0.93 }),
+    tone({ highlights: -18, shadows: 8 }),
+    matte(0, 0.03),
+    offset(35, 7),
     grain(8, 15, 30)
   ),
   look(
@@ -154,11 +166,13 @@ export const FILM_BW = collection('film/bw', [
     {
       tags: ['bw', 'mono', 'film', 'vintage', 'foma', 'fomapan', '100'],
       inspiredBy: 'Fomapan 100 Classic',
-      description: tk('Old-fashioned tonality with soft highlights.')
+      description: tk('Old-fashioned tonality with soft highlights.'),
+      version: 2
     },
     mono({ red: -18, orange: -10, blue: 14, aqua: 8 }),
-    tone({ contrast: 15, highlights: -15 }),
-    fade(0.015),
+    prim({ contrast: 1.09 }),
+    tone({ highlights: -15 }),
+    matte(0.015),
     grain(15, 22, 45)
   ),
   look(

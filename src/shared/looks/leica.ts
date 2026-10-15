@@ -4,17 +4,21 @@
  */
 import {
   collection,
-  fade,
+  gain,
+  gamma,
   grain,
   hsl,
+  hueCurve,
+  lift,
   look,
+  matte,
   mono,
+  offset,
   presence,
-  rolloff,
+  prim,
   sCurve,
-  split,
   tone,
-  wheel
+  lumSat
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -27,13 +31,24 @@ export const LEICA = collection('camera/leica', [
     {
       tags: ['natural', 'accurate', 'subtle', 'leica'],
       inspiredBy: insp('Looks: Natural'),
-      description: tk('Accurate colour with a long, quiet highlight roll-off.')
+      description: tk('Accurate colour with a long, quiet highlight roll-off.'),
+      version: 2
     },
     sCurve(12),
     tone({ highlights: -22, shadows: 6 }),
-    rolloff(0.03),
-    presence({ saturation: -8 }),
-    hsl({ yellow: [0, -10, 0], green: [5, -10, 0] })
+    matte(0, 0.03),
+    prim({ sat: -8 }),
+    hueCurve('hueHue', [[120, 1.5]]),
+    hueCurve('hueSat', [
+      [60, 0.9],
+      [120, 0.9]
+    ]),
+    // Colour eases off with the highlights.
+    lumSat([
+      [0, 1],
+      [0.65, 1],
+      [1, 0.8]
+    ])
   ),
   look(
     'contemporary-clean',
@@ -41,13 +56,19 @@ export const LEICA = collection('camera/leica', [
     {
       tags: ['contemporary', 'clean', 'modern', 'leica'],
       inspiredBy: insp('Looks: Contemporary'),
-      description: tk('Clean modern contrast with smooth mid-to-highlight transitions.')
+      description: tk('Clean modern contrast with smooth mid-to-highlight transitions.'),
+      version: 2
     },
     sCurve(25),
     tone({ highlights: -10, blacks: -6 }),
     presence({ saturation: 6, clarity: 8 }),
-    split(205, 10, 30, 4),
-    hsl({ red: [0, 6, -4], blue: [0, 10, -8] })
+    lift(205, 10),
+    gain(30, 4),
+    hueCurve('hueSat', [
+      [0, 1.06],
+      [240, 1.1]
+    ]),
+    hsl({ red: [0, 0, -4], blue: [0, 0, -8] })
   ),
   look(
     'analog-cinema',
@@ -55,12 +76,15 @@ export const LEICA = collection('camera/leica', [
     {
       tags: ['classic', 'analog', 'film', 'cinema', 'leica'],
       inspiredBy: insp('Looks: Classic'),
-      description: tk('Soft, faded film character with teal shadows and warm highlights.')
+      description: tk('Soft, faded film character with teal shadows and warm highlights.'),
+      version: 2
     },
-    tone({ contrast: -5, highlights: -10 }),
-    fade(0.03),
+    prim({ contrast: 0.97 }),
+    tone({ highlights: -10 }),
+    matte(0.03),
     presence({ saturation: -15 }),
-    split(190, 10, 45, 12),
+    lift(190, 10),
+    gain(45, 12),
     grain(8, 20, 40)
   ),
   look(
@@ -69,11 +93,13 @@ export const LEICA = collection('camera/leica', [
     {
       tags: ['punchy', 'saturated', 'contrast', 'bold', 'leica'],
       inspiredBy: insp('Looks: Eternal'),
-      description: tk('Bold contrast and colour; lovely at half strength.')
+      description: tk('Bold contrast and colour; lovely at half strength.'),
+      version: 2
     },
-    tone({ contrast: 30, blacks: -5 }),
+    prim({ contrast: 1.18 }),
+    tone({ blacks: -5 }),
     presence({ saturation: 25 }),
-    wheel('global', 320, 4)
+    offset(320, 4)
   ),
   look(
     'muted-slide',
@@ -81,12 +107,17 @@ export const LEICA = collection('camera/leica', [
     {
       tags: ['chrome', 'slide', 'muted', 'restrained', 'leica'],
       inspiredBy: insp('Looks: Chrome'),
-      description: tk('Slide-like restraint: firm contrast, quiet colour.')
+      description: tk('Slide-like restraint: firm contrast, quiet colour.'),
+      version: 2
     },
-    tone({ contrast: 18 }),
+    prim({ contrast: 1.11 }),
     presence({ saturation: -25 }),
-    split(195, 8, 50, 10),
-    hsl({ yellow: [0, -20, 0], green: [0, -25, 0] })
+    lift(195, 8),
+    gain(50, 10),
+    hueCurve('hueSat', [
+      [60, 0.8],
+      [120, 0.75]
+    ])
   ),
   look(
     'teal-tone',
@@ -94,11 +125,14 @@ export const LEICA = collection('camera/leica', [
     {
       tags: ['teal', 'cool', 'cinematic', 'leica'],
       inspiredBy: insp('Looks: Teal'),
-      description: tk('Teal shadows with skin protected.')
+      description: tk('Teal shadows with skin protected.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
-    split(185, 25, 35, 10),
-    hsl({ orange: [0, 5, 0], blue: [-15, 0, 0] })
+    prim({ contrast: 1.06 }),
+    lift(185, 25),
+    gain(35, 10),
+    hueCurve('hueHue', [[240, -4.5]]),
+    hueCurve('hueSat', [[30, 1.05]])
   ),
   look(
     'brass-tone',
@@ -106,13 +140,14 @@ export const LEICA = collection('camera/leica', [
     {
       tags: ['brass', 'warm', 'gold', 'vintage', 'leica'],
       inspiredBy: insp('Looks: Brass'),
-      description: tk('Golden midtones and soft blacks, blues pulled back.')
+      description: tk('Golden midtones and soft blacks, blues pulled back.'),
+      version: 2
     },
-    tone({ contrast: 5 }),
-    fade(0.02),
-    wheel('midtones', 45, 20),
-    wheel('highlights', 50, 15),
-    hsl({ blue: [0, -30, 0] })
+    prim({ contrast: 1.03 }),
+    matte(0.02),
+    gamma(45, 20),
+    gain(50, 15),
+    hueCurve('hueSat', [[240, 0.7]])
   ),
   look(
     'blue-tone',
@@ -120,12 +155,13 @@ export const LEICA = collection('camera/leica', [
     {
       tags: ['blue', 'cool', 'monochromatic', 'mood', 'leica'],
       inspiredBy: insp('Looks: Blue'),
-      description: tk('A cool blue cast over muted colour.')
+      description: tk('A cool blue cast over muted colour.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: -30 }),
-    wheel('global', 215, 25),
-    wheel('shadows', 225, 20)
+    offset(215, 25),
+    lift(225, 20)
   ),
   look(
     'selenium-mono',
@@ -133,11 +169,12 @@ export const LEICA = collection('camera/leica', [
     {
       tags: ['bw', 'mono', 'selenium', 'toned', 'leica'],
       inspiredBy: insp('Looks: Selenium'),
-      description: tk('Deep blacks with a cool purple-brown selenium tone.')
+      description: tk('Deep blacks with a cool purple-brown selenium tone.'),
+      version: 2
     },
     mono(),
-    tone({ contrast: 20 }),
-    wheel('shadows', 280, 12)
+    prim({ contrast: 1.12 }),
+    lift(280, 12)
   ),
   look(
     'sensor-mono',

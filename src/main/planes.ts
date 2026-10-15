@@ -10,8 +10,10 @@ import { threadId } from 'worker_threads'
 import type { Orientation } from '../shared/engine-types'
 import { rasteriseGradient } from '../shared/gradients'
 import { orientPlane } from '../shared/orientation'
+import { warpPlane, type PlaneWarp } from '../shared/lensframe'
 import { applyEdge, type MaskEdge } from '../shared/maskedge'
-import type { GradientComponent } from '../shared/recipe'
+import { paintStrokes } from '../shared/brush'
+import type { BrushStrokeSetting, GradientComponent } from '../shared/recipe'
 import { decodePng, encodeGreyPng } from './pngio'
 
 /** Gradient planes kept per photo: dragging a gradient writes a new one per settled position. */
@@ -39,9 +41,56 @@ export function writeGradientPlane(file: string, c: GradientComponent, user: Ori
   writeAtomic(file, encodeGreyPng(turned.data, turned.width, turned.height, PLANE_DEFLATE))
 }
 
+/** A grey plane, 8 bits, row by row. */
+export interface GreyPlane {
+  data: Uint8Array
+  width: number
+  height: number
+}
+
+/**
+ * A brush's strokes to paint into its plane (shared/strokes.ts: where they
+ * can't go to the engine as they are). `width × height` is the brush's
+ * plane size: they are painted at BAKE_SCALE times it.
+ */
+export interface PaintedStrokes {
+  list: BrushStrokeSetting[]
+  width: number
+  height: number
+}
+
+/** Strokes painted into a plane at twice a brush plane's size: 2048 px on the long edge. */
+const BAKE_SCALE = 2
+
+/**
+ * A brush's plane as the engine would paint it: its PNG (if any), and its
+ * strokes painted over it at BAKE_SCALE times the brush's size (the plane
+ * stretched to that, bilinearly). Without strokes, the PNG as it is.
+ */
+export function paintedPlane(png: string, strokes?: PaintedStrokes): GreyPlane {
+  const d = png ? decodePng(Buffer.from(png, 'base64')) : null
+  const given = d ? { data: new Uint8Array(d.rows), width: d.width, height: d.height } : null
+  if (!strokes || strokes.list.length === 0)
+    return given ?? { data: new Uint8Array(1), width: 1, height: 1 }
+  const w = Math.max(1, Math.round(strokes.width * BAKE_SCALE))
+  const h = Math.max(1, Math.round(strokes.height * BAKE_SCALE))
+  const plane = new Float32Array(w * h)
+  if (given) {
+    const full = { data: new Uint8Array(w * h).fill(255), width: w, height: h }
+    const under = cutToObject(given, full)
+    for (let i = 0; i < plane.length; i++) plane[i] = under.data[i] / 255
+  }
+  paintStrokes(plane, w, h, strokes.list)
+  const data = new Uint8Array(w * h)
+  for (let i = 0; i < data.length; i++) data[i] = Math.round(plane[i] * 255)
+  return { data, width: w, height: h }
+}
+
 /**
  * A painted (or AI) plane turned to the user's orientation, its edge moved
- * and hardened; with `object` (Snap to edges on a stroke), first cut to the
+ * and hardened; with `strokes`, painted over first (`paintedPlane`); with
+ * `warp`, then re-warped from the lens it was drawn under to the one
+ * rendered; with `object` (Snap to edges on a stroke), then cut to the
  * object at the object's size, so its edge is the object's.
  */
 export function writeBrushPlane(
@@ -49,16 +98,15 @@ export function writeBrushPlane(
   png: string,
   user: Orientation,
   edge?: MaskEdge,
-  object?: { data: Uint8Array; width: number; height: number }
+  object?: GreyPlane,
+  warp?: PlaneWarp,
+  strokes?: PaintedStrokes
 ): void {
-  const buf = Buffer.from(png, 'base64')
-  if (user === 'Normal' && !edge && !object) return writeAtomic(file, buf)
-  const d = decodePng(buf)
-  let plane: { data: Uint8Array; width: number; height: number } = {
-    data: new Uint8Array(d.rows),
-    width: d.width,
-    height: d.height
-  }
+  const painted = strokes && strokes.list.length > 0
+  if (user === 'Normal' && !edge && !object && !warp && !painted)
+    return writeAtomic(file, Buffer.from(png, 'base64'))
+  let plane = paintedPlane(png, strokes)
+  if (warp) plane = { ...plane, data: warpPlane(plane.data, plane.width, plane.height, warp) }
   if (object) plane = cutToObject(plane, object)
   const shaped = applyEdge(plane.data, plane.width, plane.height, edge)
   const turned = orientPlane(user, shaped, plane.width, plane.height)

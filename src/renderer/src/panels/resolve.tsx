@@ -1,26 +1,31 @@
 /**
- * DaVinci Resolve's colour tools as cards (Settings → Interface → Colour
- * tools: Resolve). The recipe and the engine's side are shared/resolve.ts.
+ * Playroom's colour tools after DaVinci Resolve's: Curves, Primaries, Log
+ * wheels and the Qualifier, as cards. The recipe and the engine's side are
+ * shared/resolve.ts.
  */
-import { CurvePresets } from './CurvePresets'
 import { VsPresets } from './VsPresets'
 import { useEffect, useState } from 'react'
 import { GradeWheel, type WheelScale } from '../components/grading/GradeWheel'
 import { CurveEditor } from '../components/editors'
 import { Tabs, Toggle, ToolPanel } from '../components/ui'
 import { Icon } from '../components/icons'
-import { useDevelop, type CurveChannel } from '../state/develop'
+import { useDevelop } from '../state/develop'
 import { t, tk } from '../lib/i18n'
-import { useScope } from '../state/scope'
-import { RS } from './global'
+import { scoped, useInMask, useScoped } from '../state/scope'
+import { AddColourSection, RS, ToneCurveCustom } from './global'
 import { TIPS } from './tips'
 import { InfoTip } from '../components/InfoTip'
 import {
+  DEFAULT_PIVOT,
+  LOG_FLOOR,
+  LOG_HIGH,
+  LOG_LOW,
+  LOG_MIN_GAP,
+  LOG_TOP,
   MAX_QUALIFIERS,
-  VS_WAITING,
+  qualifierRest,
   vsPeriodic,
   type KeyBandSetting,
-  type PrimariesSetting,
   type QualifierSetting,
   type VsCurve,
   type Yrgb
@@ -57,22 +62,28 @@ const pct = (v: number): string => v.toFixed(2)
 const TEMP_TRACK = 'linear-gradient(90deg,#5b8cff,#fff,#ffb44d)'
 const TINT_TRACK = 'linear-gradient(90deg,#4dff6a,#fff,#ff4de1)'
 
-export function PrimariesBody(): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
-  if (!recipe) return null
-  const p: PrimariesSetting = recipe.primaries
-  const wheel = (key: WheelKey): React.JSX.Element => (
+/** One of the primaries' wheels, drawn again only when its own value moves. */
+function PrimaryWheel({ wheel: key }: { wheel: WheelKey }): React.JSX.Element | null {
+  const value = useScoped((r) => r.primaries[key])
+  if (!value) return null
+  return (
     <GradeWheel
-      key={key}
       label={t(NAMES[key])}
-      value={p[key]}
+      value={value}
       scale={SCALES[key]}
       size={96}
       tip={TIPS[`primaries.${key}`]}
-      onChange={(v: Yrgb, live) => edit((r) => (r.primaries[key] = v), live)}
-      onCommit={() => commit(`Primaries: ${NAMES[key]}`)}
+      onChange={(v: Yrgb, live) => scoped.edit((r) => (r.primaries[key] = v), live)}
+      onCommit={() => scoped.commit(`Primaries: ${NAMES[key]}`)}
     />
   )
+}
+
+export function PrimariesBody(): React.JSX.Element | null {
+  // Each slider and wheel reads its own value: the body reads none.
+  const hasRecipe = useDevelop((s) => s.recipe !== null)
+  if (!hasRecipe) return null
+  const wheel = (key: WheelKey): React.JSX.Element => <PrimaryWheel key={key} wheel={key} />
   return (
     <ToolPanel>
       <RS
@@ -94,7 +105,7 @@ export function PrimariesBody(): React.JSX.Element | null {
         min={0}
         max={1}
         step={0.005}
-        def={0.435}
+        def={DEFAULT_PIVOT}
         format={(v) => v.toFixed(3)}
       />
       <RS
@@ -133,12 +144,23 @@ export function PrimariesBody(): React.JSX.Element | null {
         write={(r, v) => (r.primaries.tint = v)}
         track={TINT_TRACK}
       />
+      <RS
+        label={tk('Lum Mix')}
+        tip={TIPS['primaries.lumMix']}
+        read={(r) => r.primaries.lumMix}
+        write={(r, v) => (r.primaries.lumMix = v)}
+        min={0}
+        max={100}
+        step={1}
+        def={0}
+      />
       <div className="gwheels">
         {wheel('lift')}
         {wheel('gamma')}
         {wheel('gain')}
         {wheel('offset')}
       </div>
+      <AddColourSection />
     </ToolPanel>
   )
 }
@@ -175,52 +197,37 @@ const SWATCHES = [
   { at: 5 / 6, colour: '#ff40ff' }
 ]
 
-const CHANNEL_COLOUR: Record<CurveChannel, string> = {
-  master: '#c9bdf7',
-  red: '#ff5a5a',
-  green: '#5aff78',
-  blue: '#5a8cff'
-}
-
 export function ResolveCurvesBody(): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
-  const [tab, setTab] = useState<CurvesTab>('custom')
-  const channel = useDevelop((s) => s.curveChannel)
-  const setChannel = useDevelop((s) => s.setCurveChannel)
-  if (!recipe) return null
+  const inMask = useInMask()
+  const { edit, commit } = scoped
+  const [chosen, setTab] = useState<CurvesTab>('custom')
+  // The vs curves need colour: on a black-and-white photo they would change
+  // nothing (a mask's still can, before the mono conversion).
+  const bw = useScoped((r) => r.treatment === 'bw' || r.profile.kind === 'monochrome')
+  const vsShown: VsCurve | null =
+    bw === null || (!inMask && bw) || chosen === 'custom' ? null : chosen
+  const vsPoints = useScoped((r) => (vsShown ? r.curvesVs[vsShown] : null))
+  if (bw === null) return null
+  const mono = !inMask && bw
+  const tab = mono ? 'custom' : chosen
   const label = CURVE_TABS.find((x) => x.value === tab)!.label
   if (tab === 'custom')
     return (
       <ToolPanel>
-        <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf()} />
-        <CurvePresets />
-        <div className="row rc-channels">
-          <InfoTip tip={TIPS['rcurves.custom']} label={t('Custom')} />
-          <span className="spacer" />
-          <Tabs
-            value={channel}
-            onChange={setChannel}
-            tabs={[
-              { value: 'master', label: 'Y' },
-              { value: 'red', label: 'R' },
-              { value: 'green', label: 'G' },
-              { value: 'blue', label: 'B' }
-            ]}
-          />
-        </div>
-        <CurveEditor
-          points={recipe.toneCurve[channel]}
-          colour={CHANNEL_COLOUR[channel]}
-          onChange={(p: CurvePointSetting[], live) => edit((r) => (r.toneCurve[channel] = p), live)}
-          onCommit={() => commit(`Curves: Custom (${channel})`)}
-        />
-        <p className="muted small">{t('The same curve as the Tone curve card’s point curve.')}</p>
+        <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf(mono)} />
+        {mono && (
+          <p className="muted small">
+            {t(
+              'Black and white: the vs curves need colour. To set how bright each colour turns, use the B&W mix in HSL.'
+            )}
+          </p>
+        )}
+        <ToneCurveCustom />
       </ToolPanel>
     )
   const vs = tab
-  const waiting = VS_WAITING[vs]
   const periodic = vsPeriodic(vs)
-  const pts = recipe.curvesVs[vs]
+  const pts = vsPoints ?? []
   const addAt = (h: number): void => {
     // Three points on the line, the middle one at the hue: drag it to move that hue alone.
     const wrap = (x: number): number => ((x % 1) + 1) % 1
@@ -238,18 +245,13 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
         <InfoTip tip={TIPS[`rcurves.${vs}`]} label={t(label)} />
       </div>
       <VsPresets key={vs} vs={vs} label={label} />
-      {waiting && (
-        <p className="rc-waiting">
-          {t('Waiting for the engine')} ({waiting}):{' '}
-          {t('the curve is kept with the photo and applies once the engine has it.')}
-        </p>
-      )}
       <CurveEditor
         vs
         periodic={periodic}
         background={STRIP[vs]}
         points={pts}
-        colour="#e8e6f2"
+        colour="var(--ch-y)"
+        label={t(label)}
         onChange={(p: CurvePointSetting[], live) => edit((r) => (r.curvesVs[vs] = p), live)}
         onCommit={() => commit(`Curves: ${label}`)}
       />
@@ -281,8 +283,17 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
   )
 }
 
-function tabsOf(): { value: CurvesTab; label: string }[] {
-  return CURVE_TABS.map((x) => ({ ...x, label: t(x.label) }))
+/** The tabs, the vs curves greyed out on a black-and-white photo (`mono`). */
+function tabsOf(
+  mono = false
+): { value: CurvesTab; label: string; disabled?: boolean; title?: string }[] {
+  return CURVE_TABS.map((x) => ({
+    ...x,
+    label: t(x.label),
+    ...(mono && x.value !== 'custom'
+      ? { disabled: true, title: t('Black and white: use the B&W mix in HSL') }
+      : {})
+  }))
 }
 
 // ── Log wheels ───────────────────────────────────────────────────────────────
@@ -296,25 +307,33 @@ const LOG_NAMES: Record<LogKey, string> = {
   offset: tk('Offset')
 }
 
-/** Log wheels add small amounts: the disc and ring reach less far than the primaries'. */
-const LOG_SCALE: WheelScale = { neutral: 0, reach: 0.08, ringStep: 0.0015, min: -1, max: 1 }
+/**
+ * Log wheels add small amounts: the disc and ring reach less far than the
+ * primaries'. In PixlLog 0.01 is about a tenth of a stop at grey.
+ */
+const LOG_SCALE: WheelScale = { neutral: 0, reach: 0.055, ringStep: 0.001, min: -1, max: 1 }
 
-export function LogWheelsBody(): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
-  if (!recipe) return null
-  const l = recipe.logWheels
-  const wheel = (key: LogKey): React.JSX.Element => (
+/** One of the log wheels, drawn again only when its own value moves. */
+function LogWheel({ wheel: key }: { wheel: LogKey }): React.JSX.Element | null {
+  const value = useScoped((r) => r.logWheels[key])
+  if (!value) return null
+  return (
     <GradeWheel
-      key={key}
       label={t(LOG_NAMES[key])}
-      value={l[key]}
+      value={value}
       scale={LOG_SCALE}
       size={96}
       tip={TIPS[`log.${key}`]}
-      onChange={(v: Yrgb, live) => edit((r) => (r.logWheels[key] = v), live)}
-      onCommit={() => commit(`Log wheels: ${LOG_NAMES[key]}`)}
+      onChange={(v: Yrgb, live) => scoped.edit((r) => (r.logWheels[key] = v), live)}
+      onCommit={() => scoped.commit(`Log wheels: ${LOG_NAMES[key]}`)}
     />
   )
+}
+
+export function LogWheelsBody(): React.JSX.Element | null {
+  const hasRecipe = useDevelop((s) => s.recipe !== null)
+  if (!hasRecipe) return null
+  const wheel = (key: LogKey): React.JSX.Element => <LogWheel key={key} wheel={key} />
   return (
     <ToolPanel>
       <div className="gwheels">
@@ -327,29 +346,24 @@ export function LogWheelsBody(): React.JSX.Element | null {
         label={tk('Low range')}
         tip={TIPS['log.low']}
         read={(r) => r.logWheels.low}
-        write={(r, v) => (r.logWheels.low = Math.min(v, r.logWheels.high - 0.05))}
-        min={0.02}
-        max={0.9}
+        write={(r, v) => (r.logWheels.low = Math.min(v, r.logWheels.high - LOG_MIN_GAP))}
+        min={LOG_FLOOR}
+        max={LOG_TOP - LOG_MIN_GAP}
         step={0.001}
-        def={0.333}
+        def={LOG_LOW}
         format={(v) => v.toFixed(3)}
       />
       <RS
         label={tk('High range')}
         tip={TIPS['log.high']}
         read={(r) => r.logWheels.high}
-        write={(r, v) => (r.logWheels.high = Math.max(v, r.logWheels.low + 0.05))}
-        min={0.07}
-        max={0.98}
+        write={(r, v) => (r.logWheels.high = Math.max(v, r.logWheels.low + LOG_MIN_GAP))}
+        min={LOG_FLOOR + LOG_MIN_GAP}
+        max={LOG_TOP}
         step={0.001}
-        def={0.55}
+        def={LOG_HIGH}
         format={(v) => v.toFixed(3)}
       />
-      <p className="muted small">
-        {t(
-          'Close to Resolve’s, not the same: each range is keyed on brightness with a soft edge until the engine grades in log (it has been asked to).'
-        )}
-      </p>
     </ToolPanel>
   )
 }
@@ -415,7 +429,7 @@ function BandBar({
             <stop offset="1" stopColor="#fff" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <rect x={0} y={0} width={100} height={10} fill="rgba(0,0,0,0.55)" />
+        <rect x={0} y={0} width={100} height={10} fill="#000" fillOpacity={0.55} />
         {copies.map((o) => (
           <g key={o}>
             <rect
@@ -430,7 +444,8 @@ function BandBar({
               y={0}
               width={pct(band.width)}
               height={10}
-              fill="rgba(255,255,255,0.9)"
+              fill="#fff"
+              fillOpacity={0.9}
             />
             <rect x={pct(hi + o)} y={0} width={pct(band.soft)} height={10} fill="url(#bb-out)" />
           </g>
@@ -448,7 +463,9 @@ function swatchOf(q: QualifierSetting): string {
 }
 
 export function QualifierBody(): React.JSX.Element | null {
-  const { recipe, edit, commit, replace } = useScope()
+  const { edit, commit, replace } = scoped
+  // The qualifiers alone: another card's slider leaves the keys be.
+  const qs = useScoped((r) => r.qualifiers)
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const selectedId = useDevelop((s) => s.qualifierId)
@@ -464,15 +481,18 @@ export function QualifierBody(): React.JSX.Element | null {
     },
     []
   )
-  if (!recipe) return null
-  const qs = recipe.qualifiers
+  if (!qs) return null
   const q = qs.find((x) => x.id === selectedId) ?? qs[qs.length - 1]
   const at = (r: Recipe): QualifierSetting | undefined => r.qualifiers.find((x) => x.id === q?.id)
   const full = qs.length >= MAX_QUALIFIERS
+  // Each band's sliders reset to where the pick keyed it, never to where they are.
+  const rest = q ? qualifierRest(q) : null
   const remove = (id: string): void => {
+    const recipe = scoped.recipe()
+    if (!recipe) return
     const next = structuredClone(recipe)
     next.qualifiers = next.qualifiers.filter((x) => x.id !== id)
-    void replace(next, 'Qualifier: remove')
+    void replace(next, tk('Qualifier: remove'))
     if (id === selectedId) select(null)
   }
   return (
@@ -489,7 +509,8 @@ export function QualifierBody(): React.JSX.Element | null {
               : t('Click a colour in the photo to key it')
           }
         >
-          ⌖ {t('Pick a colour')}
+          <Icon name="picker" />
+          {t('Pick a colour')}
         </Toggle>
         <span className="spacer" />
         <Toggle
@@ -500,7 +521,8 @@ export function QualifierBody(): React.JSX.Element | null {
           }}
           title={t('Show the key: white where the qualifier selects, black where it does not')}
         >
-          ◐ {t('Key')}
+          <Icon name="matte" />
+          {t('Key')}
         </Toggle>
       </div>
       {qs.length === 0 ? (
@@ -517,8 +539,9 @@ export function QualifierBody(): React.JSX.Element | null {
               </button>
               <button
                 className="icon sm ghost"
-                aria-label={x.enabled ? t('Switch off') : t('Switch on')}
-                title={x.enabled ? t('Switch off') : t('Switch on')}
+                aria-pressed={x.enabled}
+                aria-label={t('Show {{name}}', { name: t('Qualifier {{n}}', { n: i + 1 }) })}
+                title={x.enabled ? t('Turn off') : t('Turn on')}
                 onClick={() => {
                   edit((r) => {
                     const y = r.qualifiers.find((z) => z.id === x.id)
@@ -541,7 +564,7 @@ export function QualifierBody(): React.JSX.Element | null {
           ))}
         </ul>
       )}
-      {q && (
+      {q && rest && (
         <>
           {BANDS.map((b) => (
             <div key={b.key} className="q-band">
@@ -573,7 +596,7 @@ export function QualifierBody(): React.JSX.Element | null {
                     min={0}
                     max={b.top}
                     step={b.step}
-                    def={q[b.key].centre}
+                    def={rest[b.key].centre}
                     format={(v) => (b.top === 360 ? `${Math.round(v)}°` : v.toFixed(2))}
                   />
                   <RS
@@ -586,7 +609,7 @@ export function QualifierBody(): React.JSX.Element | null {
                     min={0}
                     max={b.top}
                     step={b.step}
-                    def={q[b.key].width}
+                    def={rest[b.key].width}
                     format={(v) => (b.top === 360 ? `${Math.round(v)}°` : v.toFixed(2))}
                   />
                   <RS
@@ -599,7 +622,7 @@ export function QualifierBody(): React.JSX.Element | null {
                     min={0}
                     max={b.top / 2}
                     step={b.step}
-                    def={q[b.key].soft}
+                    def={rest[b.key].soft}
                     format={(v) => (b.top === 360 ? `${Math.round(v)}°` : v.toFixed(2))}
                   />
                 </>

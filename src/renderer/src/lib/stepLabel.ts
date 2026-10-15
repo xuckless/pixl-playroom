@@ -26,6 +26,14 @@ const STEP_HEADS = [
 ]
 void STEP_HEADS
 
+/** Labels no longer written that histories made before still hold (auto white balance's, 0.5). */
+const OLDER_LABELS = [
+  tk('Before auto WB'),
+  tk('Before restoring white balance'),
+  tk('White balance: restored')
+]
+void OLDER_LABELS
+
 export function stepLabel(stored: string): string {
   const label = shownLabel(stored)
   const whole = t(label)

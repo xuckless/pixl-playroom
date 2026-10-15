@@ -228,6 +228,14 @@ export class MaskGl {
     this.haveEngine = true
   }
 
+  private readonly bitmapIds = new WeakMap<ImageBitmap, number>()
+  private nextBitmapId = 0
+  private bitmapId(b: ImageBitmap): number {
+    let id = this.bitmapIds.get(b)
+    if (id === undefined) this.bitmapIds.set(b, (id = ++this.nextBitmapId))
+    return id
+  }
+
   /** A component's plane, redrawn only when what shapes it changed. */
   private plane(j: Join, f: Frame, cw: number, ch: number): Plane | null {
     const gl = this.gl
@@ -242,8 +250,10 @@ export class MaskGl {
     const bw = Math.max(8, Math.round(fullW * k))
     const bh = Math.max(8, Math.round(fullH * k))
     const sigma = sigmaFull * k
+    // A painted plane by the bitmap itself: the same reference shows re-warped
+    // onto another lens frame as another one.
     const key = `${planeKey(c)}|${bw}x${bh}|${c.kind === 'range' ? f.pictureKey : ''}|${
-      c.kind === 'brush' ? (j.bitmap ? 'bmp' : 'none') : ''
+      c.kind === 'brush' ? (j.bitmap ? `bmp${this.bitmapId(j.bitmap)}` : 'none') : ''
     }`
     const had = this.planes.get(c.id)
     if (had && had.key === key) return had

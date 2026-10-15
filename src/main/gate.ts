@@ -3,21 +3,23 @@
  * window shows, told to it on `app:gate-changed`, and what IPC a gated
  * window may still make (ipc.ts refuses the rest). Coming back to the window
  * while gated asks the account again, so joining the beta in the browser
- * opens the app without a button. Development and automation skip it;
- * PLAYROOM_BETA_GATE=1 brings it back to try it out.
+ * opens the app without a button. A development build skips it, unpacked or
+ * hidden for automation (build.ts); PLAYROOM_BETA_GATE=1 brings it back to
+ * try it out. A release build never skips it.
  */
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { allowedWhileGated, gateFor, type GateState } from '../shared/gate'
+import { DEV_BUILD, HIDDEN } from './build'
 import { IPC } from '../shared/ipc'
 import { accountStatus, onAccountChange } from './account'
 import { licence, licenceReady, onLicenceChange, refreshLicence } from './licence'
 import { onPolicy, policy } from './policy'
 
 const betaBuild = app.getVersion().includes('-beta')
-const skip =
-  (!app.isPackaged || process.env['PLAYROOM_HIDDEN'] === '1') &&
-  process.env['PLAYROOM_BETA_GATE'] !== '1'
+// A development build only (build.ts): a release's gate is never skipped,
+// however it is started.
+const skip = DEV_BUILD && (!app.isPackaged || HIDDEN) && process.env['PLAYROOM_BETA_GATE'] !== '1'
 
 let shown: GateState = { kind: 'pending' }
 

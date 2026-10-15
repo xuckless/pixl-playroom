@@ -6,12 +6,14 @@
  * tool.
  */
 import { useMemo, useState } from 'react'
-import { compile } from '../../../shared/compile'
+import { compile, lutNamesOf } from '../../../shared/compile'
+import { developmentCommit } from '../../../shared/crash'
 import { rasterGradient } from '../../../shared/gradients'
 import type { GradeLayer } from '../../../shared/engine-types'
 import { migrateLook } from '../../../shared/migratelook'
 import { fromExif } from '../../../shared/orientation'
 import { newId } from '../../../shared/recipe'
+import { basePlaneId } from '../../../shared/strokes'
 import { Icon } from '../components/icons'
 import { Modal, Section } from '../components/ui'
 import { useDevelop } from '../state/develop'
@@ -54,7 +56,7 @@ function CustomLayers(): React.JSX.Element | null {
     <div className="custom-layers">
       <p className="muted small">
         {rich(
-          "Layers in the engine's own terms (a {{type}} as JSON: stages in any space, any op — CDL, qualifiers, LUTs, blend modes). They run after the panels and masks. The engine names the field when one is wrong.",
+          'Layers in the engine’s own terms (a {{type}} as JSON: stages in any space, any op — CDL, qualifiers, LUTs, blend modes). They run after the panels and masks. The engine names the field when one is wrong.',
           { type: <code>GradeLayer</code> }
         )}
       </p>
@@ -118,7 +120,11 @@ function CustomLayers(): React.JSX.Element | null {
               onChange={(e) => setDraft((d) => ({ ...d, [c.id]: e.target.value }))}
               onKeyDown={(e) => e.stopPropagation()}
             />
-            {bad[c.id] && <p className="error small">{bad[c.id]}</p>}
+            {bad[c.id] && (
+              <p className="error small" role="alert">
+                {bad[c.id]}
+              </p>
+            )}
           </div>
         )
       })}
@@ -155,6 +161,7 @@ export function EngineReportDialog(): React.JSX.Element | null {
     return compile(recipe, {
       isRaw: session.isRaw,
       asShot: session.asShot,
+      exposureOffset: session.cameraProfile?.exposureOffset ?? 0,
       sourceOrientation: session.isRaw ? 'Normal' : fromExif(session.info.orientation),
       frameWidth: session.frameWidth,
       frameHeight: session.frameHeight,
@@ -169,9 +176,15 @@ export function EngineReportDialog(): React.JSX.Element | null {
                 ((c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional') &&
                   rasterGradient(c))
             )
-            .map((c) => [c.id, `<${c.kind} plane ${c.id}>`])
+            // A brush whose strokes go as they are names its plane apart.
+            .flatMap((c) => [
+              [c.id, `<${c.kind} plane ${c.id}>`],
+              ...(c.kind === 'brush' ? [[basePlaneId(c.id), `<brush plane ${c.id}>`]] : [])
+            ])
         )
       ),
+      // Main hands the engine the LUTs it found in Playroom's LUT folder.
+      luts: Object.fromEntries(lutNamesOf(recipe).map((n) => [n, `<lut ${n}>`])),
       applyCrop: true,
       hdr: session.isHdr
     })
@@ -186,7 +199,15 @@ export function EngineReportDialog(): React.JSX.Element | null {
       onClose={() => setDialog(null)}
     >
       <p className="muted small engine-line">
-        {t('PIXL engine {{version}}', { version: engine?.version ?? '—' })}
+        {developmentCommit(engine?.build)
+          ? t('PIXL engine {{version}} (development build, {{commit}})', {
+              version: engine?.version ?? '—',
+              commit: developmentCommit(engine?.build)
+            })
+          : t('PIXL engine {{version}}', { version: engine?.version ?? '—' })}
+        {engine?.build?.features.length
+          ? ` · ${t('features: {{list}}', { list: engine.build.features.join(', ') })}`
+          : ''}
         {engine?.runtime
           ? ` · ONNX Runtime ${engine.runtime.version} (${engine.runtime.providers.join(', ')})`
           : ''}

@@ -25,8 +25,7 @@ import { t, tk } from '../../shared/i18n'
 import { readFile, rm } from 'fs/promises'
 import { dirname, join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
-import { estimate } from '../../shared/ai'
-import type { EnhancerRef } from '../../shared/engine-types'
+import type { EnhancerRef, Progress } from '../../shared/engine-types'
 import { activeSteps, pixelStepRefusal, type PixelStep } from '../../shared/pixels'
 import {
   aiDenoiseModel,
@@ -44,7 +43,15 @@ import type { Library } from '../library'
 import { paths } from '../paths'
 import { ensureProxies, type ProxyFile } from '../proxy'
 import type { DevelopSessions } from '../render'
-import { BACKGROUND_THREADS, blankRequest, heavyThreads, seedOf, versionStamp } from '../source'
+import {
+  BACKGROUND_THREADS,
+  blankRequest,
+  colourOf,
+  heavyThreads,
+  seedOf,
+  versionStamp
+} from '../source'
+import { exposureOffsetOf } from '../../shared/rawcolour'
 import { askOf } from './rawdevelop'
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
@@ -53,6 +60,7 @@ import { ensureWorking, modelInput } from '../pixels/working'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, modelName, type ModelStore } from './models'
 import { DENOISE_RATE_KEY } from './rates'
+import { stageBar, type StageBar } from './stagebar'
 
 export const DENOISE_SHORT: Record<AiDenoiseModel, string> = {
   'nafnet-sidd-w32': 'NAFNet',
@@ -88,7 +96,9 @@ async function denoise(
   from: ProxyFile,
   out: string,
   signal: AbortSignal,
-  threads: number
+  threads: number,
+  /** What the engine counts as it runs (its windows: engine 0.21.0, E68). */
+  onProgress?: (p: Progress) => void
 ): Promise<ProxyFile> {
   // A RAW's float frame is read clipped to 0..1 (the result is laid back under its headroom guard).
   const input = await modelInput(engine, dirname(out), from, threads)
@@ -105,7 +115,7 @@ async function denoise(
           color: 'Preserve',
           threads
         },
-        { signal }
+        { signal, onProgress }
       ),
     signal
   )
@@ -226,11 +236,8 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         if (ctx.signal.aborted) throw new Cancelled()
         throw err
       })
-    const tick = (expected: number): (() => void) => {
-      const t0 = Date.now()
-      const timer = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
-      return () => clearInterval(timer)
-    }
+    // The engine's count once it counts (E68); the clock's guess until then.
+    const bar = (expected: number): StageBar => stageBar(ctx.progress, expected)
 
     // The pixels it runs on: the photo with the steps it already has.
     const deps = pixelDeps(this.engine, this.library.index, row)
@@ -250,16 +257,25 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       if (!layer && !old && sessions) {
         ctx.stage('preview', 0, t('Denoising a preview'))
         const draft = working.px.draft
-        const stop = tick(Math.max(1500, ((draft.width * draft.height) / 1e6) * rate))
+        const counted = bar(Math.max(1500, ((draft.width * draft.height) / 1e6) * rate))
         try {
           const out = join(dir, `denoise-preview-${stamp}.tiff`)
           files.push(out)
           const preview = await guard(
-            denoise(this.engine, this.models, req.model, draft, out, ctx.signal, BACKGROUND_THREADS)
+            denoise(
+              this.engine,
+              this.models,
+              req.model,
+              draft,
+              out,
+              ctx.signal,
+              BACKGROUND_THREADS,
+              counted.onProgress
+            )
           )
           sessions.pixelPreview(req.key, preview)
         } finally {
-          stop()
+          counted.stop()
         }
       }
 
@@ -276,14 +292,23 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       const result = kept ?? join(dir, `denoise-${stamp}.tiff`)
       if (!kept) {
         files.push(result)
-        const stop = tick(Math.max(3000, mp * rate))
+        const counted = bar(Math.max(3000, mp * rate))
         const t0 = Date.now()
         try {
           await guard(
-            denoise(this.engine, this.models, req.model, master, result, ctx.signal, heavyThreads())
+            denoise(
+              this.engine,
+              this.models,
+              req.model,
+              master,
+              result,
+              ctx.signal,
+              heavyThreads(),
+              counted.onProgress
+            )
           )
         } finally {
-          stop()
+          counted.stop()
         }
         void this.remember(
           req.model,
@@ -327,6 +352,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
             photoId: row.id,
             isRaw: row.is_raw === 1,
             asShot: info.as_shot_white,
+            exposureOffset: exposureOffsetOf(colourOf(row)),
             seed: seedOf(row),
             master
           },

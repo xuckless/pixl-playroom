@@ -1,13 +1,18 @@
 /**
- * Export, as four steps (Format, Size & colour, Metadata & HDR, Review), each
- * made of the same folding cards as the editor's panels: a title, an (i), a
- * reset, sliders in the same glass. The guards (`shared/exportGuards.ts`, and
- * the disk's through `api.export.check`) are said where they arise and gather
- * on the last step; a block stops Export, a warning does not, and nothing is
- * changed for the person. Review can also render the first photo through the
- * real export request, at a reduced size, to see it as it will be written.
+ * Export, as one sheet: presets on the left (the previous export first,
+ * Playroom's own, then the person's), the settings on the right as the
+ * editor's own folding cards (Format & quality and Size open, the rest one
+ * line each until opened), and what is about to happen always in view
+ * below: the settings in a sentence, the photos' makeup, about how large
+ * the files will be, and the guards (`shared/exportGuards.ts`, and the
+ * disk's through `api.export.check`). A block stops Export, a warning does
+ * not, and nothing is changed for the person. Export hands the photos as
+ * they are now to the queue in main and closes; the top bar's pill follows
+ * it. ⌘↵ exports from anywhere in the sheet, ⌘S keeps the settings as a
+ * preset.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { GlassSelect } from '../components/GlassSelect'
 import {
   CEILING_MAX,
   CEILING_MIN,
@@ -25,29 +30,34 @@ import {
   FORMAT_NAME,
   INTENT_INFO,
   blocked,
-  exportGuards,
-  type ExportSource,
-  type ExportStep,
+  type ExportCard,
   type Guard
 } from '../../../shared/exportGuards'
-import type { ExportPreset, ExportPreview, ExportProgress } from '../../../shared/ipc'
+import { BUILT_IN_PRESETS, copyName, sameSettings } from '../../../shared/exportPresets'
+import {
+  SAMPLED_PAST,
+  estimateExport,
+  exportMakeup,
+  formatBytes,
+  isLossless,
+  selectionGuards
+} from '../../../shared/exportSummary'
+import type { ExportFacts, ExportPreset, ExportPreview } from '../../../shared/ipc'
 import { BUY_URL } from '../../../shared/licence'
 import { InfoTip, type Tip } from '../components/InfoTip'
 import { LocationField } from '../components/LocationField'
+import { Popover } from '../components/Popover'
 import { useLocations } from '../lib/useLocations'
 import { Card, Modal, Slider, StepSlider } from '../components/ui'
 import { Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
+import { IS_MAC } from '../lib/commands'
+import { askConfirm, useConfirm } from '../state/confirm'
+import { useExports } from '../state/exports'
 import { useLibrary, useTargets } from '../state/library'
 import { WatermarkSection } from './WatermarkSection'
+import { PresetList, type Naming, type PresetRow } from './export/PresetList'
 import { t, tk, tp } from '../lib/i18n'
-
-const STEPS: { id: ExportStep; label: string }[] = [
-  { id: 'format', label: tk('Format') },
-  { id: 'size', label: tk('Size & colour') },
-  { id: 'delivery', label: tk('Metadata & HDR') },
-  { id: 'review', label: tk('Review') }
-]
 
 const FORMATS: { value: ExportFormat; label: string }[] = (
   ['jpeg', 'png', 'tiff', 'webp', 'avif', 'jxl'] as ExportFormat[]
@@ -90,6 +100,35 @@ const RESIZE_MODES: { value: ResizeMode; label: string }[] = [
   { value: 'box', label: tk('Fit inside width × height') },
   { value: 'megapixels', label: tk('Megapixels') },
   { value: 'percent', label: tk('Percent') }
+]
+
+const HDR_MODES: Record<ExportSettings['hdr']['mode'], string> = {
+  sdr: 'SDR',
+  keep: tk('Keep HDR'),
+  expand: tk('Expand to HDR'),
+  gainmap: tk('Gain map')
+}
+
+/** The cards, in the order the sheet shows them; Format & quality and Size open at first. */
+const CARDS: ExportCard[] = [
+  'format',
+  'size',
+  'colour',
+  'sharpen',
+  'hdr',
+  'metadata',
+  'location',
+  'watermark'
+]
+const OPEN_FIRST: ExportCard[] = ['format', 'size']
+
+/** What a field the keyboard can reach is, for a guard's card to put the focus in. */
+const FIELDS = [
+  'input:not(:disabled)',
+  'select:not(:disabled)',
+  'textarea:not(:disabled)',
+  '[role="slider"]',
+  'button:not(:disabled):not([tabindex="-1"])'
 ]
 
 /** A list of options, its labels translated. */
@@ -168,43 +207,137 @@ const intentTip = (): Tip => ({
   tip: t('Relative colorimetric with black point compensation is the usual choice for photographs.')
 })
 
+const byName = (a: ExportPreset, b: ExportPreset): number =>
+  a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+
 export function ExportDialog(): React.JSX.Element {
   const targets = useTargets()
   const setDialog = useLibrary((s) => s.setDialog)
   const say = useLibrary((s) => s.say)
   const items = useLibrary((s) => s.items)
-  const [s, setS] = useState<ExportSettings>(defaultExportSettings())
+  // The previous export as it was when the sheet opened.
+  const [last] = useState(() => useExports.getState().last)
+  const queueBusy = useExports((s) => s.jobs.some((j) => !j.finished))
+  const [s, setS] = useState<ExportSettings>(() =>
+    last ? normaliseExportSettings(last.settings) : defaultExportSettings()
+  )
   const [presets, setPresets] = useState<ExportPreset[]>([])
-  const [progress, setProgress] = useState<ExportProgress | null>(null)
-  const [presetName, setPresetName] = useState('')
-  const [step, setStep] = useState<ExportStep>('format')
+  const [selected, setSelected] = useState<string | null>(last ? 'previous' : 'default')
+  const [naming, setNaming] = useState<Naming | null>(null)
+  const [open, setOpen] = useState(
+    () =>
+      Object.fromEntries(CARDS.map((c) => [c, OPEN_FIRST.includes(c)])) as Record<
+        ExportCard,
+        boolean
+      >
+  )
   /** Why a lapsed licence refuses exporting (never while licensing isn't enforced). */
   const [locked, setLocked] = useState<string | null>(null)
   /** The disk's and the photos' checks, from main. */
   const [remote, setRemote] = useState<Guard[]>([])
-  const [shown, setShown] = useState<{
-    state: 'idle' | 'busy' | 'ready' | 'error'
-    preview?: ExportPreview
-    error?: string
-    /** The settings it was made from: it is out of date when they change. */
-    of?: string
-  }>({ state: 'idle' })
+  /** What main read of the photos, and for which selection. */
+  const [read, setRead] = useState<{ of: string[]; facts: ExportFacts } | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [shown, setShown] = useState<PreviewState>({ state: 'idle' })
+  const cards = useRef<HTMLDivElement>(null)
+  const previewButton = useRef<HTMLButtonElement>(null)
   const d = useMemo(() => defaultExportSettings(), [])
 
   useEffect(() => {
-    void api.app
-      .getSetting<ExportSettings>('export.last')
-      .then((last) => last && setS(normaliseExportSettings(last)))
     void api.export.presets().then(setPresets)
     void api.licence.status().then((l) => setLocked(l.locked))
     const offLicence = api.licence.onChange((l) => setLocked(l.locked))
-    const offProgress = api.export.onProgress(setProgress)
     return () => {
       offLicence()
-      offProgress()
       void api.export.cancelPreview()
     }
   }, [])
+
+  // ── presets ──
+  const rows: PresetRow[] = [
+    last
+      ? { id: 'previous', name: t('Previous'), group: 'previous', note: last.label ?? undefined }
+      : { id: 'default', name: t('Defaults'), group: 'previous' },
+    ...BUILT_IN_PRESETS.map((p): PresetRow => ({ id: p.id, name: t(p.name), group: 'builtin' })),
+    ...[...presets].sort(byName).map((p): PresetRow => ({ id: p.id, name: p.name, group: 'yours' }))
+  ]
+  const settingsOf = (id: string | null): ExportSettings | null =>
+    id === 'previous'
+      ? (last?.settings ?? null)
+      : id === 'default'
+        ? d
+        : (BUILT_IN_PRESETS.find((p) => p.id === id)?.settings ??
+          presets.find((p) => p.id === id)?.settings ??
+          null)
+  const base = settingsOf(selected)
+  const edited = base !== null && !sameSettings(s, base)
+  const row = rows.find((r) => r.id === selected) ?? null
+  /** The preset the export is made with, as the pill and Export with previous name it. */
+  const label =
+    !row || edited || row.id === 'default'
+      ? null
+      : row.id === 'previous'
+        ? (last?.label ?? null)
+        : row.name
+
+  const choose = (id: string): void => {
+    const next = settingsOf(id)
+    if (!next) return
+    setSelected(id)
+    setNaming(null)
+    setS(normaliseExportSettings(next))
+  }
+  const keep = async (p: Omit<ExportPreset, 'id'> & { id?: string }): Promise<void> => {
+    try {
+      const saved = await api.export.savePreset(p)
+      setPresets(await api.export.presets())
+      setSelected(saved.id)
+    } catch (err) {
+      say(errorText(err), 'error')
+    }
+  }
+  const update = (): void => {
+    const p = presets.find((x) => x.id === selected)
+    if (p) void keep({ id: p.id, name: p.name, settings: s })
+  }
+  const named = (name: string): void => {
+    const n = naming
+    setNaming(null)
+    if (n?.kind === 'rename') {
+      const p = presets.find((x) => x.id === n.id)
+      if (p) void keep({ ...p, name })
+    } else void keep({ name, settings: s })
+  }
+  const duplicate = (id: string): void => {
+    const from = settingsOf(id)
+    const r = rows.find((x) => x.id === id)
+    if (!from || !r) return
+    const taken = presets.map((p) => p.name)
+    void keep({ name: copyName(r.name, taken, t('copy|duplicate')), settings: from })
+  }
+  const remove = async (id: string): Promise<void> => {
+    const p = presets.find((x) => x.id === id)
+    if (!p) return
+    const yes = await askConfirm({
+      title: t('Delete “{{name}}”?', { name: p.name }),
+      body: t('The preset is deleted. Files exported with it stay as they are.'),
+      confirm: t('Delete'),
+      danger: true
+    })
+    if (!yes) return
+    try {
+      await api.export.removePreset(id)
+      setPresets(await api.export.presets())
+      if (selected === id) setSelected(null)
+    } catch (err) {
+      say(errorText(err), 'error')
+    }
+  }
+  /** ⌘S: Update one's own preset changed, else Save as new. */
+  const save = (): void => {
+    if (edited && row?.group === 'yours') update()
+    else setNaming({ kind: 'new' })
+  }
 
   const up = <K extends keyof ExportSettings>(k: K, v: ExportSettings[K]): void =>
     setS((x) => ({ ...x, [k]: v }))
@@ -215,27 +348,39 @@ export function ExportDialog(): React.JSX.Element {
     (): void =>
       setS((x) => ({ ...x, ...Object.fromEntries(keys.map((k) => [k, d[k]])) }))
 
-  const sources: ExportSource[] = useMemo(
-    () =>
-      targets.flatMap((key) => {
-        const it = items.find((i) => i.key === key)
-        return it
-          ? [
-              {
-                ext: it.ext,
-                isRaw: it.isRaw,
-                isHdr: it.hdr === 'pq' || it.hdr === 'hlg',
-                hasGainMap: it.hdr === 'gainmap'
-              }
-            ]
-          : []
-      }),
-    [targets, items]
+  // ── the photos ──
+  const byKey = useMemo(() => new Map(items.map((i) => [i.key, i])), [items])
+  const targetItems = useMemo(
+    () => targets.flatMap((k) => (byKey.has(k) ? [byKey.get(k)!] : [])),
+    [targets, byKey]
   )
+  // What the photos are, read once for the selection (sizes and HDR, as probed).
+  useEffect(() => {
+    let live = true
+    if (targets.length > 0)
+      void api.export.facts(targets).then(
+        (facts) => live && setRead({ of: targets, facts }),
+        () => undefined
+      )
+    return () => {
+      live = false
+    }
+  }, [targets])
+  const facts = read?.of === targets ? read.facts : null
+  const makeup = useMemo(() => exportMakeup(targetItems, facts?.sample), [targetItems, facts])
+  const written = makeup.photos - makeup.offline
+  const estimate = useMemo(
+    () => (facts ? estimateExport(s, facts.sample, written) : null),
+    [s, facts, written]
+  )
+
   // Where exports are saved (one setting, Settings' too): the checks follow it.
   const locations = useLocations()
   const dest = locations.info?.exports.location ?? 'beside'
-  const local = useMemo(() => exportGuards(s, sources, dest === 'beside'), [s, sources, dest])
+  const local = useMemo(
+    () => selectionGuards(s, targetItems, dest === 'beside', facts?.sample),
+    [s, targetItems, facts, dest]
+  )
   // The disk's checks follow the settings, a moment after the last change.
   const asked = useRef(0)
   useEffect(() => {
@@ -256,14 +401,36 @@ export function ExportDialog(): React.JSX.Element {
     )
   }, [local, remote])
   const stop = blocked(guards)
+  const blocks = guards.filter((g) => g.severity === 'block')
+  const warns = guards.filter((g) => g.severity === 'warn')
+  const canExport = targets.length > 0 && locked === null && !stop
 
-  const start = async (): Promise<void> => {
-    try {
-      await api.export.start(targets, s)
-    } catch (err) {
-      say(errorText(err), 'error')
-    }
+  // Queued in main, from the photos as they are now: the sheet closes, and
+  // the top bar's pill follows the export and keeps its receipt.
+  const start = (): void => {
+    if (!canExport) return
+    setDialog(null)
+    void useExports.getState().start(targets, s, label)
   }
+
+  // ⌘↵ exports and ⌘S saves from anywhere in the sheet, a text field included.
+  const keys = useRef({ start, save })
+  useEffect(() => {
+    keys.current = { start, save }
+  })
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (useConfirm.getState().open || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
+      if (e.key === 'Enter') keys.current.start()
+      else if (e.code === 'KeyS') keys.current.save()
+      else return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
+
   const settingsKey = JSON.stringify(s)
   const makePreview = async (): Promise<void> => {
     if (targets.length === 0) return
@@ -278,18 +445,66 @@ export function ExportDialog(): React.JSX.Element {
     }
   }
 
-  const running = progress !== null && !progress.finished
-  const failed = progress?.errors.filter((e) => !e.warning) ?? []
-  const warned = progress?.errors.filter((e) => e.warning) ?? []
+  // ── the cards ──
+  const fold = (card: ExportCard): { open: boolean; onOpenChange: (o: boolean) => void } => ({
+    open: open[card],
+    onOpenChange: (o) => setOpen((x) => ({ ...x, [card]: o }))
+  })
+  /** A card's line when folded, and its mark when a guard is in it. */
+  const right = (card: ExportCard, line: string): React.JSX.Element => {
+    const mine = guards.filter((g) => g.card === card && g.severity !== 'minor')
+    const bad = mine.some((g) => g.severity === 'block')
+    const said = mine.map((g) => g.message)
+    return (
+      <>
+        {!open[card] && <span className="es-line">{line}</span>}
+        {mine.length > 0 && (
+          <span
+            className={`es-mark ${bad ? 'block' : 'warn'}`}
+            role="img"
+            title={said.join('\n')}
+            aria-label={said.join(' ')}
+          >
+            {bad ? '!' : '▲'}
+          </span>
+        )}
+      </>
+    )
+  }
+  const notes = (card: ExportCard): React.JSX.Element | null => {
+    const g = guards.filter((x) => x.card === card)
+    return g.length === 0 ? null : <GuardList guards={g} />
+  }
+  /** The first guard's card, opened and brought into view, its first field focused. */
+  const guardCard = [...blocks, ...warns].find((x) => x.card)?.card ?? null
+  const goToGuard = (): void => {
+    const card = guardCard
+    if (!card) return
+    setOpen((x) => ({ ...x, [card]: true }))
+    requestAnimationFrame(() => {
+      const el = cards.current?.querySelector<HTMLElement>(`[data-card="export.${card}"]`)
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      el?.querySelector<HTMLElement>(FIELDS.map((f) => `.card-body ${f}`).join(', '))?.focus()
+    })
+  }
+
   const depths = depthsFor(s.format)
   const hdrOut = s.hdr.mode !== 'sdr'
-  const at = STEPS.findIndex((x) => x.id === step)
-  const last = at === STEPS.length - 1
-  const issues = (id: ExportStep): Guard[] => guards.filter((g) => g.step === id)
-  const notes = (id: ExportStep): React.JSX.Element | null => {
-    const g = issues(id)
-    return g.length === 0 ? null : <GuardList guards={g} onGo={setStep} here={id} />
-  }
+  const space = COLOUR_SPACES.find((c) => c.value === s.colorSpace)?.label ?? s.colorSpace
+  const exportsPath = locations.info?.exports.path ?? null
+  const where =
+    dest === 'beside'
+      ? t('Beside the original')
+      : (exportsPath?.split(/[\\/]/).filter(Boolean).pop() ?? '')
+  const makeupLine = [
+    tp('{{count}} photo', '{{count}} photos', makeup.photos),
+    makeup.hdr > 0 ? t('{{count}} HDR', { count: makeup.hdr }) : null,
+    makeup.offline > 0 ? t('{{count}} offline', { count: makeup.offline }) : null,
+    makeup.unread > 0 ? t('{{count}} not yet read', { count: makeup.unread }) : null
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const intentName = t(INTENT_INFO.find((i) => i.value === s.intent)?.name ?? '')
 
   return (
     <Modal
@@ -297,73 +512,88 @@ export function ExportDialog(): React.JSX.Element {
       onClose={() => setDialog(null)}
       wide
       icon="export"
-      className="export-wizard"
+      className="export-sheet"
       footer={
         <>
-          {progress && (
-            <span className="progress">
-              <Spinner
-                size={34}
-                progress={progress.total > 0 ? progress.done / progress.total : null}
-              />
-              <span className="big">
-                {progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0}%
-              </span>
-              <span>
-                {progress.done}/{progress.total}{' '}
-                {progress.current
-                  ? `· ${progress.current}`
-                  : progress.finished
-                    ? `· ${t('done')}`
-                    : ''}
-                {failed.length > 0 && (
-                  <span className="error">
-                    {' '}
-                    ·{' '}
-                    {t('{{count}} failed: {{message}}', {
-                      count: failed.length,
-                      message: failed[0].message
-                    })}
-                  </span>
-                )}
-              </span>
-            </span>
-          )}
-          {!progress && guards.some((g) => g.severity !== 'minor') && (
-            <button
-              className={`ew-chip ${stop ? 'block' : 'warn'}`}
-              onClick={() => setStep('review')}
-              title={t('Show on the last step')}
-            >
-              {stop
-                ? t('{{count}} to fix', {
-                    count: guards.filter((g) => g.severity === 'block').length
-                  })
-                : t('{{count}} to know', {
-                    count: guards.filter((g) => g.severity === 'warn').length
+          <div className="es-summary">
+            <p className="es-sentence">{summary(s, written)}</p>
+            <p className="es-facts">
+              <span>{makeupLine}</span>
+              {estimate && (
+                <span
+                  className="t-num"
+                  title={t(
+                    'An estimate from the size of the first {{count}} photos and what the format usually spends on a photograph’s pixel. Detail and noise move it either way; crops are not counted.',
+                    { count: estimate.sampled }
+                  )}
+                >
+                  {t('≈ {{each}} each · ≈ {{all}} in all', {
+                    each: formatBytes(estimate.each),
+                    all: formatBytes(estimate.all)
                   })}
-            </button>
-          )}
-          {!running && at > 0 && (
-            <button onClick={() => setStep(STEPS[at - 1].id)}>{t('Back')}</button>
-          )}
-          {running ? (
-            <button onClick={() => void api.export.cancel(progress.jobId)}>
-              {t('Cancel after this file')}
-            </button>
-          ) : last ? (
-            <button
-              className="primary"
-              disabled={targets.length === 0 || locked !== null || stop}
-              title={stop ? t('Fix what is marked first') : undefined}
-              onClick={() => void start()}
+                  {makeup.photos > SAMPLED_PAST &&
+                    ` · ${t('from a sample of {{count}}', { count: estimate.sampled })}`}
+                </span>
+              )}
+              {(blocks.length > 0 || warns.length > 0) && (
+                <GuardChip
+                  stop={stop}
+                  count={stop ? blocks.length : warns.length}
+                  said={[...blocks, ...warns].map((g) => g.message)}
+                  // Only what no setting changes (photos offline): nothing to go to.
+                  onGo={guardCard ? goToGuard : undefined}
+                />
+              )}
+            </p>
+          </div>
+          <button
+            ref={previewButton}
+            disabled={targets.length === 0 || stop}
+            title={
+              stop
+                ? t('Fix what is marked first')
+                : t('Render the first photo as it will be written')
+            }
+            aria-expanded={previewing}
+            onClick={() => {
+              if (previewing) return setPreviewing(false)
+              setPreviewing(true)
+              void makePreview()
+            }}
+          >
+            {t('Preview')}
+          </button>
+          <button onClick={() => setDialog(null)}>{t('Cancel')}</button>
+          <button
+            className="primary"
+            disabled={!canExport}
+            title={
+              targets.length === 0
+                ? t('Select photos first')
+                : stop
+                  ? t('Fix what is marked first')
+                  : undefined
+            }
+            onClick={start}
+          >
+            {t('Export')}
+            <span className="kbd">{IS_MAC ? '⌘↵' : 'Ctrl+↵'}</span>
+          </button>
+          {previewing && (
+            <Popover
+              className="es-preview-pop"
+              anchor={previewButton}
+              align="right"
+              side="top"
+              onClose={() => setPreviewing(false)}
             >
-              {t('Export')}
-            </button>
-          ) : (
-            <button className="primary" onClick={() => setStep(STEPS[at + 1].id)}>
-              {t('Next')}
-            </button>
+              <ExportPreviewBody
+                shown={shown}
+                stale={shown.state === 'ready' && shown.of !== settingsKey}
+                waits={queueBusy && shown.state === 'busy'}
+                onAgain={() => void makePreview()}
+              />
+            </Popover>
           )}
         </>
       }
@@ -379,32 +609,29 @@ export function ExportDialog(): React.JSX.Element {
           </div>
         </div>
       )}
-      <nav className="ew-steps" aria-label={t('Export steps')}>
-        {STEPS.map((x, i) => {
-          const bad = issues(x.id).some((g) => g.severity === 'block')
-          return (
-            <button
-              key={x.id}
-              className={`ew-step${x.id === step ? ' on' : ''}${i < at ? ' done' : ''}${bad ? ' bad' : ''}`}
-              aria-current={x.id === step ? 'step' : undefined}
-              onClick={() => setStep(x.id)}
-            >
-              <span className="ew-n">{bad ? '!' : i + 1}</span>
-              {t(x.label)}
-            </button>
-          )
-        })}
-      </nav>
-
-      {step === 'format' && (
-        <div className="ew-body">
+      <div className="es-grid">
+        <PresetList
+          rows={rows}
+          selected={selected}
+          edited={edited}
+          naming={naming}
+          onSelect={choose}
+          onExport={start}
+          onUpdate={update}
+          onNaming={setNaming}
+          onName={named}
+          onDuplicate={duplicate}
+          onDelete={(id) => void remove(id)}
+        />
+        <div className="es-cards" ref={cards}>
           <Card
             id="export.format"
-            title={t('Format')}
+            title={t('Format & quality')}
             tip={formatTip()}
-            defaultOpen
-            changed={differs('format', 'bitDepth', 'dither')}
-            onReset={reset('format', 'bitDepth', 'dither')}
+            {...fold('format')}
+            right={right('format', formatLine(s))}
+            changed={differs(...FORMAT_KEYS)}
+            onReset={reset(...FORMAT_KEYS)}
           >
             <StepSlider
               label={t('Format')}
@@ -427,44 +654,6 @@ export function ExportDialog(): React.JSX.Element {
                 onChange={(v) => up('bitDepth', v)}
               />
             )}
-            <Check on={s.dither} onChange={(v) => up('dither', v)}>
-              {t('Dither 8-bit output')}
-            </Check>
-          </Card>
-          <Card
-            id="export.quality"
-            title={t('Quality & detail')}
-            defaultOpen
-            tip={qualityTip()}
-            changed={differs(
-              'quality',
-              'jpegSubsampling',
-              'chroma',
-              'lossless',
-              'avifSpeed',
-              'jxlDistance',
-              'jxlEffort',
-              'jxlLossless',
-              'webpMethod',
-              'webpLossless',
-              'pngCompression',
-              'tiffCompression'
-            )}
-            onReset={reset(
-              'quality',
-              'jpegSubsampling',
-              'chroma',
-              'lossless',
-              'avifSpeed',
-              'jxlDistance',
-              'jxlEffort',
-              'jxlLossless',
-              'webpMethod',
-              'webpLossless',
-              'pngCompression',
-              'tiffCompression'
-            )}
-          >
             {['jpeg', 'webp', 'avif'].includes(s.format) &&
               !(s.format === 'avif' && s.lossless) &&
               !(s.format === 'webp' && s.webpLossless) && (
@@ -589,32 +778,27 @@ export function ExportDialog(): React.JSX.Element {
             {s.format === 'png' || s.format === 'tiff' ? (
               <p className="muted small">{t('Lossless: the picture is kept exactly.')}</p>
             ) : null}
+            <Check on={s.dither} onChange={(v) => up('dither', v)}>
+              {t('Dither 8-bit output')}
+            </Check>
+            {notes('format')}
           </Card>
-          {notes('format')}
-        </div>
-      )}
 
-      {step === 'size' && (
-        <div className="ew-body">
           <Card
             id="export.size"
             title={t('Size')}
-            defaultOpen
             tip={sizeTip()}
+            {...fold('size')}
+            right={right('size', sizeText(s))}
             changed={differs('resize')}
             onReset={reset('resize')}
           >
             <Field label={t('Resize')}>
-              <select
+              <GlassSelect
                 value={s.resize.mode}
-                onChange={(e) => up('resize', { ...s.resize, mode: e.target.value as ResizeMode })}
-              >
-                {RESIZE_MODES.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {t(m.label)}
-                  </option>
-                ))}
-              </select>
+                onChange={(mode) => up('resize', { ...s.resize, mode })}
+                options={RESIZE_MODES.map((m) => ({ value: m.value, label: t(m.label) }))}
+              />
             </Field>
             {s.resize.mode === 'box' ? (
               <div className="ew-box">
@@ -668,12 +852,15 @@ export function ExportDialog(): React.JSX.Element {
                 {t('Allow enlarging')}
               </Check>
             )}
+            {notes('size')}
           </Card>
+
           <Card
             id="export.colour"
             title={t('Colour')}
-            defaultOpen
             tip={colourTip()}
+            {...fold('colour')}
+            right={right('colour', `${space} · ${intentName}`)}
             changed={differs('colorSpace', 'intent', 'blackPointCompensation')}
             onReset={reset('colorSpace', 'intent', 'blackPointCompensation')}
           >
@@ -685,16 +872,11 @@ export function ExportDialog(): React.JSX.Element {
             />
             <div className="ew-intent">
               <Field label={t('Intent')}>
-                <select
+                <GlassSelect
                   value={s.intent}
-                  onChange={(e) => up('intent', e.target.value as ExportSettings['intent'])}
-                >
-                  {INTENT_INFO.map((i) => (
-                    <option key={i.value} value={i.value}>
-                      {t(i.name)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => up('intent', v)}
+                  options={INTENT_INFO.map((i) => ({ value: i.value, label: t(i.name) }))}
+                />
               </Field>
               <InfoTip tip={intentTip()} label={t('Intent')} />
             </div>
@@ -709,11 +891,19 @@ export function ExportDialog(): React.JSX.Element {
                 'Keeps the darkest shadows from being lifted or crushed when the new space’s black differs.'
               )}
             </p>
+            {notes('colour')}
           </Card>
+
           <Card
             id="export.sharpen"
             title={t('Output sharpening')}
-            defaultOpen={false}
+            {...fold('sharpen')}
+            right={right(
+              'sharpen',
+              s.outputSharpen.enabled && !hdrOut
+                ? `${sharpenMedia(s.outputSharpen.media)} · ${sharpenAmount(s.outputSharpen.amount)}`
+                : t('Off')
+            )}
             changed={differs('outputSharpen')}
             onReset={reset('outputSharpen')}
           >
@@ -725,20 +915,16 @@ export function ExportDialog(): React.JSX.Element {
               {t('Sharpen for output')}
             </Check>
             <Field label={t('Media')}>
-              <select
+              <GlassSelect<ExportSettings['outputSharpen']['media']>
                 value={s.outputSharpen.media}
                 disabled={hdrOut || !s.outputSharpen.enabled}
-                onChange={(e) =>
-                  up('outputSharpen', {
-                    ...s.outputSharpen,
-                    media: e.target.value as ExportSettings['outputSharpen']['media']
-                  })
-                }
-              >
-                <option value="screen">{t('Screen|medium')}</option>
-                <option value="matte">{t('Matte paper')}</option>
-                <option value="glossy">{t('Glossy paper')}</option>
-              </select>
+                onChange={(media) => up('outputSharpen', { ...s.outputSharpen, media })}
+                options={[
+                  { value: 'screen', label: t('Screen|medium') },
+                  { value: 'matte', label: t('Matte paper') },
+                  { value: 'glossy', label: t('Glossy paper') }
+                ]}
+              />
             </Field>
             <StepSlider
               label={t('Amount')}
@@ -756,91 +942,46 @@ export function ExportDialog(): React.JSX.Element {
                 ? t('Not applied to HDR output.')
                 : t('Applied after the resize, at the size the picture will be seen.')}
             </p>
+            {notes('sharpen')}
           </Card>
-          <WatermarkSection
-            value={s.watermark}
-            onChange={(v) => up('watermark', v)}
-            thumbUrl={items.find((i) => i.key === targets[0])?.thumbUrl ?? null}
-          />
-          {notes('size')}
-        </div>
-      )}
 
-      {step === 'delivery' && (
-        <div className="ew-body">
-          <Card
-            id="export.metadata"
-            title={t('Metadata')}
-            defaultOpen
-            tip={{
-              what: t('Which blocks of the original’s metadata the export keeps.'),
-              expect: t(
-                'Each block is copied whole or left out; the title, caption, keywords and copyright are then written into the ones kept.'
-              )
-            }}
-            changed={differs('metaMode', 'metadata', 'removeLocation', 'copyright')}
-            onReset={reset('metaMode', 'metadata', 'removeLocation', 'copyright')}
-          >
-            <Field label={t('Include')}>
-              <select
-                value={s.metaMode}
-                onChange={(e) => up('metaMode', e.target.value as ExportSettings['metaMode'])}
-              >
-                <option value="all">{t('All')}</option>
-                <option value="copyrightOnly">{t('Copyright only')}</option>
-              </select>
-            </Field>
-            <div className="ew-checks">
-              {(['exif', 'icc', 'xmp', 'iptc'] as const).map((k) => (
-                <Check
-                  key={k}
-                  on={s.metadata[k]}
-                  // Copyright only keeps the profile and writes the copyright alone.
-                  disabled={s.metaMode === 'copyrightOnly' && k !== 'icc'}
-                  onChange={(v) => up('metadata', { ...s.metadata, [k]: v })}
-                >
-                  {k.toUpperCase()}
-                </Check>
-              ))}
-            </div>
-            <Check on={s.removeLocation} onChange={(v) => up('removeLocation', v)}>
-              {t('Remove location')}
-            </Check>
-            <Field label={t('Copyright')}>
-              <input
-                value={s.copyright}
-                placeholder={t('Used when a photo has none')}
-                onChange={(e) => up('copyright', e.target.value)}
-                onKeyDown={(e) => e.stopPropagation()}
-              />
-            </Field>
-          </Card>
           <Card
             id="export.hdr"
             title="HDR"
-            defaultOpen
             tip={hdrTip()}
+            {...fold('hdr')}
+            right={right(
+              'hdr',
+              s.hdr.mode !== 'sdr' && makeup.hdr > 0
+                ? `${t(HDR_MODES[s.hdr.mode])} (${tp('{{count}} photo', '{{count}} photos', makeup.hdr)})`
+                : t(HDR_MODES[s.hdr.mode])
+            )}
             changed={differs('hdr')}
             onReset={reset('hdr')}
           >
             <Field label={t('Mode')}>
-              <select
+              <GlassSelect<ExportSettings['hdr']['mode']>
                 value={s.hdr.mode}
-                onChange={(e) =>
-                  up('hdr', { ...s.hdr, mode: e.target.value as ExportSettings['hdr']['mode'] })
-                }
-              >
-                <option value="sdr">{t('SDR (tone map HDR sources)')}</option>
-                <option value="keep" disabled={!supportsHdr(s.format)}>
-                  {t('Keep HDR sources HDR')}
-                </option>
-                <option value="expand" disabled={!supportsHdr(s.format)}>
-                  {t('Expand SDR to HDR')}
-                </option>
-                <option value="gainmap" disabled={!supportsGainMap(s.format)}>
-                  {t('SDR + gain map (HDR sources)')}
-                </option>
-              </select>
+                onChange={(mode) => up('hdr', { ...s.hdr, mode })}
+                options={[
+                  { value: 'sdr', label: t('SDR (tone map HDR sources)') },
+                  {
+                    value: 'keep',
+                    label: t('Keep HDR sources HDR'),
+                    disabled: !supportsHdr(s.format)
+                  },
+                  {
+                    value: 'expand',
+                    label: t('Expand SDR to HDR'),
+                    disabled: !supportsHdr(s.format)
+                  },
+                  {
+                    value: 'gainmap',
+                    label: t('SDR + gain map (HDR sources)'),
+                    disabled: !supportsGainMap(s.format)
+                  }
+                ]}
+              />
             </Field>
             {s.hdr.mode === 'gainmap' && (
               <p className="muted small">
@@ -884,20 +1025,16 @@ export function ExportDialog(): React.JSX.Element {
             {!s.hdr.pixl && (s.hdr.mode === 'sdr' || s.hdr.mode === 'gainmap') && (
               <>
                 <Field label={t('Operator')}>
-                  <select
+                  <GlassSelect<ExportSettings['hdr']['operator']>
                     value={s.hdr.operator}
-                    onChange={(e) =>
-                      up('hdr', {
-                        ...s.hdr,
-                        operator: e.target.value as ExportSettings['hdr']['operator']
-                      })
-                    }
-                  >
-                    <option value="Bt2390">BT.2390</option>
-                    <option value="Hable">Hable</option>
-                    <option value="Reinhard">Reinhard</option>
-                    <option value="Clip">Clip</option>
-                  </select>
+                    onChange={(operator) => up('hdr', { ...s.hdr, operator })}
+                    options={[
+                      { value: 'Bt2390', label: 'BT.2390' },
+                      { value: 'Hable', label: 'Hable' },
+                      { value: 'Reinhard', label: 'Reinhard' },
+                      { value: 'Clip', label: t('Clip|operator') }
+                    ]}
+                  />
                 </Field>
                 <Field label={t('Target white (nits)')}>
                   <Num
@@ -925,19 +1062,15 @@ export function ExportDialog(): React.JSX.Element {
             {s.hdr.mode !== 'sdr' && !s.hdr.pixl && (
               <>
                 <Field label={t('Highlights')}>
-                  <select
+                  <GlassSelect<ExportSettings['hdr']['limit']>
                     value={s.hdr.limit}
-                    onChange={(e) =>
-                      up('hdr', {
-                        ...s.hdr,
-                        limit: e.target.value as ExportSettings['hdr']['limit']
-                      })
-                    }
+                    onChange={(limit) => up('hdr', { ...s.hdr, limit })}
                     title={t('What happens to highlights an edit pushes above the peak')}
-                  >
-                    <option value="clip">{t('Clip at the peak')}</option>
-                    <option value="rolloff">{t('Roll off (BT.2390)')}</option>
-                  </select>
+                    options={[
+                      { value: 'clip', label: t('Clip at the peak') },
+                      { value: 'rolloff', label: t('Roll off (BT.2390)') }
+                    ]}
+                  />
                 </Field>
                 {s.hdr.limit === 'rolloff' && (
                   <Slider
@@ -984,17 +1117,75 @@ export function ExportDialog(): React.JSX.Element {
                 </Field>
               </>
             )}
+            {notes('hdr')}
           </Card>
-          {notes('delivery')}
-        </div>
-      )}
 
-      {step === 'review' && (
-        <div className="ew-body">
+          <Card
+            id="export.metadata"
+            title={t('Metadata')}
+            tip={{
+              what: t('Which blocks of the original’s metadata the export keeps.'),
+              expect: t(
+                'Each block is copied whole or left out; the title, caption, keywords and copyright are then written into the ones kept.'
+              )
+            }}
+            {...fold('metadata')}
+            right={right(
+              'metadata',
+              s.metaMode === 'copyrightOnly'
+                ? t('Copyright only')
+                : s.removeLocation
+                  ? t('All, no location')
+                  : t('All')
+            )}
+            changed={differs('metaMode', 'metadata', 'removeLocation', 'copyright')}
+            onReset={reset('metaMode', 'metadata', 'removeLocation', 'copyright')}
+          >
+            <Field label={t('Include')}>
+              <GlassSelect<ExportSettings['metaMode']>
+                value={s.metaMode}
+                onChange={(v) => up('metaMode', v)}
+                options={[
+                  { value: 'all', label: t('All') },
+                  { value: 'copyrightOnly', label: t('Copyright only') }
+                ]}
+              />
+            </Field>
+            <div className="ew-checks">
+              {(['exif', 'icc', 'xmp', 'iptc'] as const).map((k) => (
+                <Check
+                  key={k}
+                  on={s.metadata[k]}
+                  // Copyright only keeps the profile and writes the copyright alone.
+                  disabled={s.metaMode === 'copyrightOnly' && k !== 'icc'}
+                  onChange={(v) => up('metadata', { ...s.metadata, [k]: v })}
+                >
+                  {k.toUpperCase()}
+                </Check>
+              ))}
+            </div>
+            <Check on={s.removeLocation} onChange={(v) => up('removeLocation', v)}>
+              {t('Remove location')}
+            </Check>
+            <Field label={t('Copyright')}>
+              <input
+                value={s.copyright}
+                placeholder={t('Used when a photo has none')}
+                onChange={(e) => up('copyright', e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
+              />
+            </Field>
+            {notes('metadata')}
+          </Card>
+
           <Card
             id="export.location"
             title={t('Location & name')}
-            defaultOpen
+            {...fold('location')}
+            right={right(
+              'location',
+              s.subfolder.trim() ? `${where} / ${s.subfolder.trim()}` : where
+            )}
             changed={differs('subfolder', 'template', 'collision', 'reveal')}
             onReset={reset('subfolder', 'template', 'collision', 'reveal')}
           >
@@ -1018,138 +1209,152 @@ export function ExportDialog(): React.JSX.Element {
               />
             </Field>
             <Field label={t('If it exists')}>
-              <select
+              <GlassSelect<ExportSettings['collision']>
                 value={s.collision}
-                onChange={(e) => up('collision', e.target.value as ExportSettings['collision'])}
-              >
-                <option value="suffix">{t('Add a number')}</option>
-                <option value="skip">{t('Skip')}</option>
-                <option value="overwrite">{t('Overwrite')}</option>
-              </select>
+                onChange={(v) => up('collision', v)}
+                options={[
+                  { value: 'suffix', label: t('Add a number') },
+                  { value: 'skip', label: t('Skip') },
+                  { value: 'overwrite', label: t('Overwrite') }
+                ]}
+              />
             </Field>
             <Check on={s.reveal} onChange={(v) => up('reveal', v)}>
-              {t('Show in folder when done')}
+              {t('Show in folder when done, if Playroom is in the background')}
             </Check>
+            {notes('location')}
           </Card>
-          <Card id="export.presets" title={t('Presets')} defaultOpen={false}>
-            <select
-              value=""
-              onChange={(e) => {
-                const p = presets.find((x) => x.id === e.target.value)
-                if (p) setS(normaliseExportSettings(p.settings))
-              }}
-            >
-              <option value="">{t('Load preset…')}</option>
-              {presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <div className="row">
-              <input
-                placeholder={t('Preset name')}
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-                onKeyDown={(e) => e.stopPropagation()}
-              />
-              <button
-                disabled={!presetName.trim()}
-                onClick={() =>
-                  void api.export.savePreset({ name: presetName.trim(), settings: s }).then(() => {
-                    setPresetName('')
-                    void api.export.presets().then(setPresets)
-                  })
-                }
-              >
-                {t('Save')}
-              </button>
-            </div>
-          </Card>
-          <Card id="export.summary" title={t('Before you export')} defaultOpen>
-            <p className="ew-summary">{summary(s, targets.length)}</p>
-            {guards.length === 0 ? (
-              <p className="muted small">{t('Nothing to flag.')}</p>
-            ) : (
-              <GuardList guards={guards} onGo={setStep} here="review" />
-            )}
-          </Card>
-          <Card id="export.preview" title={t('Preview')} defaultOpen>
-            <div className="ew-preview-bar">
-              <button
-                disabled={targets.length === 0 || shown.state === 'busy' || stop}
-                title={
-                  stop
-                    ? t('Fix what is marked first')
-                    : t('Render the first photo as it will be written')
-                }
-                onClick={() => void makePreview()}
-              >
-                {shown.state === 'ready' ? t('Preview again') : t('Preview the first photo')}
-              </button>
-              {shown.state === 'busy' && <Spinner size={22} progress={null} />}
-              {shown.state === 'ready' && shown.of !== settingsKey && (
-                <span className="muted small">{t('Settings changed since: preview again.')}</span>
-              )}
-            </div>
-            {shown.state === 'error' && <p className="error small">{shown.error}</p>}
-            {shown.state === 'ready' && shown.preview && (
-              <figure className="ew-preview">
-                <img src={shown.preview.url} alt={t('The first photo as it will be exported')} />
-                <figcaption>
-                  {shown.preview.width} × {shown.preview.height} px ·{' '}
-                  {FORMAT_NAME[shown.preview.format as ExportFormat] ?? shown.preview.format} ·{' '}
-                  {t('{{size}} KB at this size', {
-                    size: Math.max(1, Math.round(shown.preview.bytes / 1024))
-                  })}
-                  {shown.preview.notes.map((n) => (
-                    <span key={n} className="muted small">
-                      {' '}
-                      · {n}
-                    </span>
-                  ))}
-                </figcaption>
-              </figure>
-            )}
-          </Card>
-          {progress?.finished && (
-            <Card id="export.receipt" title={t('Receipt')} defaultOpen>
-              <p className="ew-summary">
-                {failed.length > 0
-                  ? t('{{count}} written, {{failed}} failed.', {
-                      count: progress.outputs.length,
-                      failed: failed.length
-                    })
-                  : t('{{count}} written.', { count: progress.outputs.length })}
-              </p>
-              {failed.map((e, i) => (
-                <p key={`f${i}`} className="error small">
-                  {e.name}: {e.message}
-                </p>
-              ))}
-              {warned.map((e, i) => (
-                <p key={`w${i}`} className="muted small">
-                  {e.name}: {e.message}
-                </p>
-              ))}
-            </Card>
-          )}
+
+          <WatermarkSection
+            value={s.watermark}
+            onChange={(v) => up('watermark', v)}
+            thumbUrl={byKey.get(targets[0])?.thumbUrl ?? null}
+            {...fold('watermark')}
+            right={right('watermark', s.watermark.enabled && s.watermark.path ? t('On') : t('Off'))}
+          />
         </div>
-      )}
+      </div>
     </Modal>
   )
 }
 
-/** The guards, each saying what and where; a click goes to the step that holds the setting. */
-function GuardList({
-  guards,
-  onGo,
-  here
+/** What Format & quality's reset puts back. */
+const FORMAT_KEYS: (keyof ExportSettings)[] = [
+  'format',
+  'bitDepth',
+  'dither',
+  'quality',
+  'jpegSubsampling',
+  'chroma',
+  'lossless',
+  'avifSpeed',
+  'jxlDistance',
+  'jxlEffort',
+  'jxlLossless',
+  'webpMethod',
+  'webpLossless',
+  'pngCompression',
+  'tiffCompression'
+]
+
+interface PreviewState {
+  state: 'idle' | 'busy' | 'ready' | 'error'
+  preview?: ExportPreview
+  error?: string
+  /** The settings it was made from: it is out of date when they change. */
+  of?: string
+}
+
+/** The preview popover: the first photo rendered through the real export request. */
+function ExportPreviewBody({
+  shown,
+  stale,
+  waits,
+  onAgain
 }: {
-  guards: Guard[]
-  onGo: (s: ExportStep) => void
-  here: ExportStep
+  shown: PreviewState
+  stale: boolean
+  /** The background engine is writing an export: the preview takes its turn after. */
+  waits: boolean
+  onAgain: () => void
 }): React.JSX.Element {
+  return (
+    <div className="es-preview">
+      {shown.state === 'busy' && (
+        <p className="es-preview-wait">
+          <Spinner size={22} progress={null} />
+          <span className="muted small">
+            {waits ? t('Waits for the running export') : t('Rendering the first photo…')}
+          </span>
+        </p>
+      )}
+      {shown.state === 'error' && <p className="error small">{shown.error}</p>}
+      {shown.state === 'ready' && shown.preview && (
+        <figure className="ew-preview">
+          <img src={shown.preview.url} alt={t('The first photo as it will be exported')} />
+          <figcaption>
+            {shown.preview.width} × {shown.preview.height} px ·{' '}
+            {FORMAT_NAME[shown.preview.format as ExportFormat] ?? shown.preview.format} ·{' '}
+            {t('{{size}} KB at this size', {
+              size: Math.max(1, Math.round(shown.preview.bytes / 1024))
+            })}
+            {shown.preview.notes.map((n) => (
+              <span key={n} className="muted small">
+                {' '}
+                · {n}
+              </span>
+            ))}
+          </figcaption>
+        </figure>
+      )}
+      {stale && (
+        <p className="ew-preview-bar">
+          <span className="muted small">{t('Settings changed since: preview again.')}</span>
+          <button className="sm" onClick={onAgain}>
+            {t('Preview again')}
+          </button>
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * What the guards come to, in the summary: a button to the first one's card,
+ * or only words when none of them has a card (photos offline).
+ */
+function GuardChip({
+  stop,
+  count,
+  said,
+  onGo
+}: {
+  stop: boolean
+  count: number
+  said: string[]
+  onGo?: () => void
+}): React.JSX.Element {
+  const inner = (
+    <>
+      <span aria-hidden>{stop ? '!' : '▲'}</span>
+      {stop ? t('{{count}} to fix', { count }) : t('{{count}} to know', { count })}
+    </>
+  )
+  const className = `ew-chip ${stop ? 'block' : 'warn'}`
+  const title = said.join('\n')
+  return onGo ? (
+    <button className={className} onClick={onGo} title={title}>
+      {inner}
+    </button>
+  ) : (
+    <span className={className} title={title} aria-label={said.join(' ')} role="note">
+      {inner}
+    </span>
+  )
+}
+
+/** A card's guards, each saying what is wrong or lost. */
+function GuardList({ guards }: { guards: Guard[] }): React.JSX.Element {
   return (
     <ul className="ew-guards">
       {guards.map((g) => (
@@ -1157,51 +1362,67 @@ function GuardList({
           <span className="ew-mark" aria-hidden>
             {g.severity === 'block' ? '!' : g.severity === 'warn' ? '▲' : '·'}
           </span>
-          <span>
-            {g.message}
-            {g.step !== here && (
-              <>
-                {' '}
-                <button type="button" className="link" onClick={() => onGo(g.step)}>
-                  {t(STEPS.find((x) => x.id === g.step)?.label ?? '')}
-                </button>
-              </>
-            )}
-          </span>
+          <span>{g.message}</span>
         </li>
       ))}
     </ul>
   )
 }
 
+const sharpenMedia = (m: ExportSettings['outputSharpen']['media']): string =>
+  m === 'screen' ? t('Screen|medium') : m === 'matte' ? t('Matte paper') : t('Glossy paper')
+const sharpenAmount = (a: ExportSettings['outputSharpen']['amount']): string =>
+  a === 'low' ? t('Low') : a === 'standard' ? t('Standard') : t('High')
+
+/** The format and its quality, as Format & quality's folded line says them. */
+function formatLine(s: ExportSettings): string {
+  const detail = isLossless(s)
+    ? t('lossless')
+    : s.format === 'jpeg' || s.format === 'webp' || s.format === 'avif'
+      ? `q${s.quality}`
+      : s.format === 'jxl'
+        ? `d${s.jxlDistance}`
+        : null
+  const depth = depthsFor(s.format).length > 1 ? `${s.bitDepth}-bit` : null
+  return [FORMAT_NAME[s.format], detail, depth].filter(Boolean).join(' · ')
+}
+
+/** The size the settings ask, in a few words. */
+function sizeText(s: ExportSettings): string {
+  const value = s.resize.value
+  return s.resize.mode === 'none'
+    ? t('full size')
+    : s.resize.mode === 'box'
+      ? t('inside {{width}} × {{height}} px', { width: value, height: s.resize.valueH })
+      : s.resize.mode === 'megapixels'
+        ? `${value} MP`
+        : s.resize.mode === 'percent'
+          ? `${value}%`
+          : s.resize.mode === 'long'
+            ? t('long edge {{value}} px', { value })
+            : s.resize.mode === 'short'
+              ? t('short {{value}} px', { value })
+              : s.resize.mode === 'width'
+                ? t('width {{value}} px', { value })
+                : t('height {{value}} px', { value })
+}
+
 /** The settings in a sentence: what the person is about to do. */
 function summary(s: ExportSettings, photos: number): string {
   const name = FORMAT_NAME[s.format]
-  const format =
-    s.format === 'jpeg' || s.format === 'webp' || s.format === 'avif'
-      ? s.lossless || s.webpLossless
-        ? t('{{format}} lossless', { format: name })
-        : t('{{format}} quality {{quality}}', { format: name, quality: s.quality })
+  const format = isLossless(s)
+    ? t('{{format}} lossless', { format: name })
+    : s.format === 'jpeg' || s.format === 'webp' || s.format === 'avif'
+      ? t('{{format}} quality {{quality}}', { format: name, quality: s.quality })
       : name
-  const value = s.resize.value
-  const size =
-    s.resize.mode === 'none'
-      ? t('full size')
-      : s.resize.mode === 'box'
-        ? t('inside {{width}} × {{height}} px', { width: value, height: s.resize.valueH })
-        : s.resize.mode === 'megapixels'
-          ? `${value} MP`
-          : s.resize.mode === 'percent'
-            ? `${value}%`
-            : s.resize.mode === 'long'
-              ? t('long edge {{value}} px', { value })
-              : s.resize.mode === 'short'
-                ? t('short {{value}} px', { value })
-                : s.resize.mode === 'width'
-                  ? t('width {{value}} px', { value })
-                  : t('height {{value}} px', { value })
   const space = COLOUR_SPACES.find((c) => c.value === s.colorSpace)?.label ?? s.colorSpace
-  const values = { format, depth: s.bitDepth, size, space, hdr: s.hdr.mode }
+  const values = {
+    format,
+    depth: s.bitDepth,
+    size: sizeText(s),
+    space,
+    hdr: t(HDR_MODES[s.hdr.mode])
+  }
   return s.hdr.mode === 'sdr'
     ? tp(
         '{{count}} photo as {{format}}, {{depth}}-bit, {{size}}, in {{space}}.',
@@ -1219,16 +1440,15 @@ function summary(s: ExportSettings, photos: number): string {
 
 const formatTip = (): Tip => ({
   what: t('The file type each photo is written as.'),
-  expect: t(
-    'JPEG is the most widely read. PNG and TIFF keep every pixel. WebP, AVIF and JPEG XL are smaller for the same quality; AVIF and JPEG XL can also hold HDR.'
-  ),
+  expect: [
+    t(
+      'JPEG is the most widely read. PNG and TIFF keep every pixel. WebP, AVIF and JPEG XL are smaller for the same quality; AVIF and JPEG XL can also hold HDR.'
+    ),
+    t(
+      'Higher is closer to the picture and larger. Chroma is how much of the colour detail is kept: 4:4:4 keeps all of it, 4:2:0 keeps a quarter.'
+    )
+  ].join('\n'),
   tip: t('JPEG XL is not shown by every program yet.')
-})
-const qualityTip = (): Tip => ({
-  what: t('How much detail the encoder keeps against how big the file is.'),
-  expect: t(
-    'Higher is closer to the picture and larger. Chroma is how much of the colour detail is kept: 4:4:4 keeps all of it, 4:2:0 keeps a quarter.'
-  )
 })
 const chromaTip = (): Tip => ({
   what: t('How finely colour is stored beside brightness.'),

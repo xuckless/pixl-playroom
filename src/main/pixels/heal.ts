@@ -16,12 +16,11 @@ import { t } from '../../shared/i18n'
 import { existsSync, readFileSync } from 'fs'
 import { rm } from 'fs/promises'
 import { join } from 'path'
-import type { LensCorrection } from '../../shared/engine-types'
+import type { ConvertReport, LensCorrection } from '../../shared/engine-types'
 import type { PixelStep } from '../../shared/pixels'
 import { newId, type Recipe } from '../../shared/recipe'
 import {
   compileRetouch,
-  refineRefused,
   featherOf,
   SPOT_LABEL,
   type P,
@@ -152,8 +151,8 @@ export async function bakeSpot(
   if (!retouch) return null
   const region = spotBounds(onPhoto, W, H)
   const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-  const render = async (out: string, withStroke: boolean): Promise<void> => {
-    await deps.engine.convert({
+  const render = (out: string, withStroke: boolean): Promise<ConvertReport> =>
+    deps.engine.convert({
       ...blankRequest(master.path, out, master.input),
       pixel: { depth: 'Sixteen', channels: 3 },
       encode: { Png: { compression: 'Fast', filter: 'Sub' } },
@@ -163,23 +162,24 @@ export async function bakeSpot(
       region: { ...region, margin: 16 },
       threads: BACKGROUND_THREADS
     })
-  }
   const a = join(deps.cacheDir, `heal-${stamp}-with.png`)
   const b = join(deps.cacheDir, `heal-${stamp}-without.png`)
   const patchFile = join(deps.cacheDir, `heal-${stamp}-patch.png`)
-  // An edge the engine won't refine here (a flat area takes the whole
-  // spot's surroundings in, and it refuses the step): the spot healed plain.
+  // An edge refine that selects nothing here (Edge snap across flat
+  // content, Matting with nothing known inside) is a step that changes
+  // nothing (engine 0.21.0, E60): the spot is healed plain instead, and the
+  // step says so (`params.refineFoundNothing`), for the loupe's note.
+  const plain = onPhoto.refine
+    ? compileRetouch([{ ...onPhoto, refine: undefined }], 'Normal', W, H, inpainter)
+    : null
+  const refined = plain !== null && JSON.stringify(plain) !== JSON.stringify(retouch)
+  let foundNothing = false
   const stroke = async (): Promise<void> => {
-    try {
-      await render(a, true)
-    } catch (err) {
-      const plain = onPhoto.refine
-        ? compileRetouch([{ ...onPhoto, refine: undefined }], 'Normal', W, H, inpainter)
-        : null
-      if (!plain || !refineRefused(err)) throw err
-      retouch = plain
-      await render(a, true)
-    }
+    const report = await render(a, true)
+    if (!refined || report.retouch?.steps[0]?.pixels !== 0) return
+    retouch = plain!
+    foundNothing = true
+    await render(a, true)
   }
   const bake = async (): Promise<PixelStep | null> => {
     await Promise.all([stroke(), render(b, false)])
@@ -237,7 +237,11 @@ export async function bakeSpot(
       height: H,
       rect: { x: region.x + placed.x, y: region.y + placed.y, w: placed.w, h: placed.h },
       // The spot itself too, so a later develop can bake it again.
-      params: { spot: spot.kind, geometry: JSON.stringify(spot) }
+      params: {
+        spot: spot.kind,
+        geometry: JSON.stringify(spot),
+        ...(foundNothing && spot.refine ? { refineFoundNothing: spot.refine } : {})
+      }
     }
   }
   // Its renders and patch are only on the way to the project: gone after.

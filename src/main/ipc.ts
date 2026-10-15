@@ -1,7 +1,7 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
 import { pipeline } from './pipeline'
 import type { VersionReason } from '../shared/versions'
-import { keepWrittenOn } from '../shared/edits'
+import { effective, keepWrittenOn } from '../shared/edits'
 import {
   DISPLAY_SETTING_KEY,
   displayHdr,
@@ -22,6 +22,7 @@ import {
   type AppError,
   type Collection,
   type CrashConsent,
+  type BatchResult,
   type ErrorReport,
   type ExportPreset,
   type HistoryLog,
@@ -31,7 +32,9 @@ import {
   type MetaPatch,
   type MetaTextPatch,
   type Preset,
+  type ProofBrowsed,
   type RegionRequest,
+  type ScopesRequest,
   type Prefs,
   type Snapshot,
   type UpdateChannel,
@@ -40,6 +43,7 @@ import {
 import { convertWb, type WbContext } from '../shared/wbconvert'
 import { LicenceError } from '../shared/licence'
 import { applyGroups, NAFNET_DENOISE, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
+import type { LensFrame } from '../shared/lensframe'
 import { applyLook } from '../shared/looks/apply'
 import { resolveLook } from '../shared/looks/catalog'
 import { planeRef } from './planeref'
@@ -47,13 +51,31 @@ import { equivalentFocal } from '../shared/upright'
 import { orientedFrame } from '../shared/compile'
 import { cropAtAspect } from '../shared/crop'
 import { ensureProxies } from './proxy'
+import { DEV_BUILD } from './build'
 import { BACKGROUND_THREADS, IMAGE_EXTENSIONS } from './source'
 import type { IndexClient } from './indexer/client'
 import { IndexError } from './indexer/client'
 import type { PlaneStore } from './planestore'
 import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
-import { autoWbBatch, setWbBatch } from './autowb'
+import { autoWbBatch } from './autowb'
+import {
+  autoToneBatch,
+  lookBatch,
+  nudgeBatch,
+  QuickPreviews,
+  recipeStamps,
+  type QuickHelpers
+} from './quickdevelop'
+import { quickDeltaOf, type QuickDelta } from '../shared/quickdevelop'
+import {
+  batchTagOf,
+  commitBatch,
+  currentRecipes,
+  stepRefsOf,
+  undoBatch,
+  type BatchChange
+} from './batchcommit'
 import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
 import { freeDevice, licence, refreshLicence, requireLicence, startTrial } from './licence'
 import {
@@ -70,12 +92,14 @@ import type { BrainStore } from './ai/brain'
 import type { Namer } from './ai/namer'
 import type { PlaneFinder } from './ai/found'
 import type { CullMeasurer } from './cull'
+import type { Previews } from './previews'
 import { readNames } from '../shared/naming'
 import { benchmarkSam3 } from './ai/sam3bench'
 import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/smart'
 import type { LookRunRequest, PickAnswer } from '../shared/looks/run'
 import { LookRuns } from './looks/runner'
 import { editPhotoRecipe } from './ai/apply'
+import { answerPixlCpu, pixlCpuPending } from './ai/pixlcpu'
 import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
@@ -104,7 +128,10 @@ import { appPage } from './guard'
 import { gate, gateRefuses } from './gate'
 import { openTopMenu, popupMenu, setMenuSpec, topMenus } from './menu'
 import { languageState, setLanguage } from './i18n'
-import { isLanguageSetting, t, type LanguageSetting, tk } from '../shared/i18n'
+import { isLanguageSetting, t, type LanguageSetting } from '../shared/i18n'
+import { normaliseProof } from '../shared/proof'
+import { chooseProfile, proofProfiles, readProfile } from './iccprofiles'
+import type { CopyOptions } from './indexer/service'
 import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
 import { accountStatus, cancelSignIn, signIn, signOut } from './account'
 import { AccountError } from './account/api'
@@ -139,7 +166,7 @@ function toAppError(err: unknown): AppError {
 /** The window's own page (src/main/app.ts loads it); no other frame may call in. */
 const isAppPage = appPage(
   pathToFileURL(join(MAIN_DIR, '../renderer/index.html')).href,
-  is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
+  DEV_BUILD && is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
 )
 
 /**
@@ -235,6 +262,8 @@ export interface Services {
   namer: Namer
   /** Cull signals and suggestions. */
   cull: CullMeasurer
+  /** The Library's screen previews and 1:1 pictures. */
+  previews: Previews
 }
 
 /** What AI can do with the killswitch thrown: nothing a model does, and why. */
@@ -282,6 +311,32 @@ async function lensShotOf(s: Services, key: string): Promise<LensShot> {
     width: info.width,
     height: info.height
   }
+}
+
+/**
+ * Ask before looking in folders only a file names (`IndexService.foldersToAsk`):
+ * the folders the user allows, none when they decline. Nothing to ask, nothing asked.
+ */
+async function askToLook(folders: string[], what: 'project' | 'collections'): Promise<string[]> {
+  if (folders.length === 0) return []
+  const opts: Electron.MessageBoxOptions = {
+    type: 'question',
+    buttons: [t('Look in them'), t('Not now')],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    message:
+      what === 'project'
+        ? t('This project names folders Playroom has not opened')
+        : t('This collections file names folders Playroom has not opened'),
+    detail: `${folders.join('\n')}\n\n${t(
+      'Playroom looks in them for the photos only if you say so. A file someone else made can name any folder.'
+    )}`
+  }
+  const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const { response } = w ? await dialog.showMessageBox(w, opts) : await dialog.showMessageBox(opts)
+  log.info(`folders a ${what} file names: ${response === 0 ? 'looked in' : 'declined'}`, folders)
+  return response === 0 ? folders : []
 }
 
 export function registerIpc(s: Services): void {
@@ -339,17 +394,15 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.restart, () => restart())
 
   handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))
-  handle(IPC.app.reportProblem, (r: ProblemInput) =>
-    sendProblemReport(r, s.engine.getStatus().version)
-  )
+  handle(IPC.app.reportProblem, (r: ProblemInput) => sendProblemReport(r, s.engine.getStatus()))
   handle(IPC.app.openNotices, async () => {
     const err = await shell.openPath(paths.notices())
     if (err)
-      throw new Error(t("Couldn't open the third-party notices: {{reason}}", { reason: err }))
+      throw new Error(t('Couldn’t open the third-party notices: {{reason}}', { reason: err }))
   })
   handle(IPC.app.openBetaTerms, async () => {
     const err = await shell.openPath(paths.betaTerms())
-    if (err) throw new Error(t("Couldn't open the beta terms: {{reason}}", { reason: err }))
+    if (err) throw new Error(t('Couldn’t open the beta terms: {{reason}}', { reason: err }))
   })
 
   // ── the account, updates and preferences ──
@@ -413,9 +466,14 @@ export function registerIpc(s: Services): void {
   handle(IPC.library.forgetFolder, (folder: string) => s.index.forgetFolder(folder))
   handle(IPC.library.subfolders, (folder: string) => s.index.subfolders(folder))
   handle(IPC.library.setMeta, (keys: string[], patch: MetaPatch) => s.index.setMeta(keys, patch))
-  handle(IPC.library.createCopy, async (key: string) => {
+  handle(IPC.library.createCopy, async (key: string, opts?: CopyOptions) => {
     await s.sessions.flush(key)
-    const item = await s.index.createCopy(key)
+    // Named in the language main speaks (the index's process speaks none).
+    const item = await s.index.createCopy(key, {
+      ...(typeof opts?.name === 'string' ? { name: opts.name } : {}),
+      ...(opts?.proof ? { proof: opts.proof } : {}),
+      template: t('Copy {{n}}')
+    })
     s.library.queueThumb(item.photoId, item.copyId)
     return item
   })
@@ -423,10 +481,21 @@ export function registerIpc(s: Services): void {
     await s.sessions.close(key)
     await s.index.deleteCopy(key)
   })
-  /** Copy groups of `recipe` onto every key's recipe (paste, sync, presets on a selection). */
+  /**
+   * Copy groups of `recipe` onto every key's recipe (paste, sync, presets on
+   * a selection): a chunk of the Library batch `tag`, one step in each
+   * photo's history (batchcommit.ts).
+   */
   handle(
     IPC.library.applyRecipe,
-    async (keys: string[], slim: Recipe, groups: RecipeGroup[], sourceKey?: string) => {
+    async (
+      keys: string[],
+      slim: Recipe,
+      groups: RecipeGroup[],
+      sourceKey: string | undefined,
+      batch: unknown
+    ) => {
+      const tag = batchTagOf(batch)
       const recipe = await s.planes.hydrate(slim)
       // A white balance means different numbers on a RAW (absolute Kelvin from
       // its as-shot white) and anything else (relative sliders); crossing
@@ -435,23 +504,18 @@ export function registerIpc(s: Services): void {
       if (groups.includes('whiteBalance') && recipe.wb.mode === 'custom' && sourceKey) {
         sourceWb = await wbContext(s.library, sourceKey)
       }
-      await Promise.all(keys.map((key) => s.sessions.flush(key)))
-      const saved = new Map((await s.index.recipes(keys)).map((r) => [r.key, r.recipe]))
-      const pairs: { key: string; recipe: Recipe }[] = []
-      for (const key of keys) {
+      const current = await currentRecipes(s, keys)
+      const changes: BatchChange[] = []
+      const failed: BatchResult['failed'] = []
+      // One photo that can't be read (its RAW offline, for a white balance's
+      // units) is said and left; the rest of the chunk goes on.
+      const change = async (key: string): Promise<BatchChange | null> => {
         const target = sourceWb ? await wbContext(s.library, key) : null
         const from =
           sourceWb && target ? { ...recipe, wb: convertWb(recipe.wb, sourceWb, target) } : recipe
         const live = s.sessions.liveRecipe(key)
-        const base = live ?? saved.get(key)
-        if (!base) continue
-        // What it had before the settings came over it, a Version to step back to.
-        await s.library.addVersion(key, {
-          name: tk('Before pasted settings'),
-          kind: 'auto',
-          reason: 'paste',
-          recipe: base
-        })
+        const base = current.get(key)?.recipe
+        if (!base) return null
         // What was pasted is meant to show: a section it wrote is on again.
         const next = keepWrittenOn(base, applyGroups(base, from, groups))
         // A crop locked to an aspect keeps it on a photo of another shape:
@@ -482,20 +546,50 @@ export function registerIpc(s: Services): void {
             log.info('lens profile not re-resolved for', key, (err as Error).message)
           }
         }
-        pairs.push({ key, recipe: next })
+        return { key, before: base, next }
       }
-      // One message, one transaction: a batch commits once. Planes by reference.
-      const items = await s.index.saveRecipes(
-        pairs.map((p) => ({ key: p.key, recipe: s.planes.slim(p.recipe) }))
-      )
-      for (const { key, recipe: next } of pairs) {
-        if (s.sessions.liveRecipe(key)) s.sessions.update(key, next, false)
-        const { photoId, copyId } = parseKey(key)
-        s.library.queueThumb(photoId, copyId, true)
+      for (const key of keys) {
+        try {
+          const c = await change(key)
+          if (c) changes.push(c)
+        } catch (err) {
+          failed.push({ key, message: err instanceof Error ? err.message : String(err) })
+        }
       }
-      return items
+      // Each photo's Version (paste and sync keep one) and step; planes by reference.
+      return commitBatch(s, changes, tag, failed)
     }
   )
+  handle(IPC.library.undoBatch, (steps: unknown) => undoBatch(s, stepRefsOf(steps)))
+  handle(IPC.library.redoBatch, (steps: unknown) => undoBatch(s, stepRefsOf(steps), true))
+  /** A photo's settings as seen (a section switched off goes as its defaults), for the clipboard. */
+  handle(IPC.library.copyRecipe, async (key: string) => {
+    const cur = (await currentRecipes(s, [key])).get(key)
+    if (!cur) throw new Error(t('the photo is not in the library'))
+    return s.planes.slim(effective(cur.recipe, cur.row.is_raw === 1))
+  })
+  handle(IPC.library.itemsOf, (keys: string[]) => s.index.itemsFor(keys))
+  handle(IPC.library.preview, (key: string) => s.previews.screen(String(key)))
+  handle(IPC.library.warmPreviews, (keys: unknown, shown: unknown) => {
+    const strings = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []
+    s.previews.warm(strings(keys), strings(shown))
+  })
+  handle(IPC.library.focus, (key: string) => s.previews.focus(String(key)))
+  handle(IPC.library.focusRegion, (key: string, rect: unknown) => {
+    const r = rect as Record<string, unknown> | null
+    const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+    return s.previews.region(String(key), {
+      x: n(r?.x),
+      y: n(r?.y),
+      width: n(r?.width),
+      height: n(r?.height)
+    })
+  })
+  handle(IPC.library.previewCache, () => s.previews.state())
+  handle(IPC.library.setPreviewCap, (bytes: number) => s.previews.setCap(Number(bytes)))
+  handle(IPC.library.clearPreviews, () => s.previews.clear())
+  handle(IPC.library.shotGroup, (key: string) => s.index.shotGroup(String(key)))
   handle(IPC.library.prioritize, (keys: string[]) => s.library.prioritize(keys))
   handle(IPC.library.resetRecipe, async (keys: string[]) => {
     const { items, recipes } = await s.index.resetRecipes(keys)
@@ -509,8 +603,15 @@ export function registerIpc(s: Services): void {
 
   // ── library sources, metadata, collections, stacks, duplicates ── workstream D1
   handle(IPC.library.openSource, (src: LibrarySource) => s.library.openSource(src))
-  handle(IPC.library.resolvePaths, (paths: string[]) => s.index.resolvePaths(paths))
-  handle(IPC.library.photoPaths, (paths: string[]) => s.index.photoPaths(paths))
+  // A project names the folder its photo was in: one the library has never
+  // opened is looked at only once the user says so (a file someone else made
+  // names folders of their choosing).
+  handle(IPC.library.resolvePaths, async (paths: string[]) =>
+    s.index.resolvePaths(paths, await askToLook(await s.index.foldersToAsk(paths), 'project'))
+  )
+  handle(IPC.library.photoPaths, async (paths: string[]) =>
+    s.index.photoPaths(paths, await askToLook(await s.index.foldersToAsk(paths), 'project'))
+  )
   handle(IPC.library.projectInfo, (key: string) => s.index.originalState(key))
   handle(IPC.library.setMetadata, (keys: string[], patch: MetaTextPatch) =>
     s.index.setMetadata(keys, patch)
@@ -551,7 +652,8 @@ export function registerIpc(s: Services): void {
     } catch {
       throw new Error(t('{{name}} is not a collections file', { name: basename(r.filePaths[0]) }))
     }
-    return s.index.importCollections(parsed)
+    const allowed = await askToLook(await s.index.collectionFoldersToAsk(parsed), 'collections')
+    return s.index.importCollections(parsed, allowed)
   })
   handle(IPC.library.stack, (keys: string[], cover: string) => s.index.stack(keys, cover))
   handle(IPC.library.unstack, (keys: string[]) => s.index.unstack(keys))
@@ -566,8 +668,9 @@ export function registerIpc(s: Services): void {
   // ── batch auto white balance ── workstream B
   // Each photo measured on its own draft proxy by the background engine;
   // the renderer sends a few keys at a time so it can show progress and stop.
-  handle(IPC.library.autoWb, (keys: string[]) => autoWbBatch(s, keys))
-  handle(IPC.library.setWb, (pairs: { key: string; wb: Recipe['wb'] }[]) => setWbBatch(s, pairs))
+  handle(IPC.library.autoWb, (keys: string[], batch: unknown) =>
+    autoWbBatch(s, keys, batchTagOf(batch))
+  )
 
   // ── develop ──
   // Recipes go out with their brush planes by reference and come back in
@@ -604,6 +707,21 @@ export function registerIpc(s: Services): void {
     const now = await s.library.setRawColour(key, colour)
     await s.sessions.close(key)
     return now
+  })
+  handle(IPC.develop.cameraProfiles, (key: string) => s.library.cameraProfiles(key))
+  handle(IPC.develop.addCameraProfile, async (key: string, path: string | null) => {
+    // A path from the renderer is one of Adobe's profiles it was offered
+    // (checked against that list); any other file the person picks here.
+    if (typeof path === 'string') return s.library.addCameraProfile(key, path, 'adobe')
+    const w = win()
+    const opts = {
+      title: t('Import a camera profile'),
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: t('DNG camera profile'), extensions: ['dcp'] }]
+    }
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    if (r.canceled || !r.filePaths[0]) return null
+    return s.library.addCameraProfile(key, r.filePaths[0])
   })
   handle(
     IPC.develop.update,
@@ -672,6 +790,34 @@ export function registerIpc(s: Services): void {
   )
   handle(IPC.develop.sample, (key: string, x: number, y: number) => s.sessions.sample(key, x, y))
   handle(IPC.develop.autoTone, (key: string) => s.sessions.autoTone(key))
+  handle(IPC.develop.scopes, (req: ScopesRequest) => s.sessions.scopes(req))
+  handle(IPC.develop.gamutCoverage, (key: string) => s.sessions.gamutCoverage(key))
+  // Soft proofing: the profiles found (scanned again as the setup opens), one
+  // chosen from a file, and settings tried on the engine before they are used.
+  handle(IPC.develop.proofProfiles, (named: unknown) =>
+    proofProfiles(
+      Array.isArray(named)
+        ? named.filter((p): p is string => typeof p === 'string').slice(0, 16)
+        : []
+    )
+  )
+  handle(IPC.develop.proofBrowse, async (): Promise<ProofBrowsed | null> => {
+    const w = win()
+    const opts = {
+      title: t('Choose an ICC profile'),
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: t('ICC profile'), extensions: ['icc', 'icm'] }]
+    }
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    if (r.canceled || !r.filePaths[0]) return null
+    const read = await readProfile(r.filePaths[0])
+    if (!('found' in read)) return { error: read.error }
+    chooseProfile(read.found.path)
+    return { profile: read.found }
+  })
+  handle(IPC.develop.proofCheck, (key: string, settings: unknown) =>
+    s.sessions.proofCheck(key, normaliseProof(settings))
+  )
   handle(IPC.develop.autoWb, (key: string) => s.sessions.autoWb(key))
   handle(IPC.develop.noise, (key: string) => s.sessions.noise(key))
   handle(IPC.develop.putPlane, (png: string) => {
@@ -679,6 +825,21 @@ export function registerIpc(s: Services): void {
     s.planes.put(ref, png)
     return ref
   })
+  // The recipe crosses slim (planes by reference): its points are what move.
+  handle(IPC.develop.rebaseMasks, (key: string, recipe: Recipe) =>
+    s.sessions.rebaseMasks(key, recipe)
+  )
+  handle(IPC.develop.maskGrid, (key: string, masks: LensFrame, rendered: LensFrame) =>
+    s.sessions.maskGrid(key, masks, rendered)
+  )
+  handle(
+    IPC.develop.planeOnFrame,
+    async (key: string, ref: string, from: LensFrame, to: LensFrame) => {
+      const png = await s.planes.get(ref)
+      if (png === undefined) throw new Error('a painted mask is missing from the plane store')
+      return s.sessions.planeOnFrame(key, png, from, to)
+    }
+  )
   handle(IPC.develop.getPlane, async (ref: string) => {
     const png = await s.planes.get(ref)
     if (png === undefined) throw new Error('a painted mask is missing from the plane store')
@@ -721,6 +882,9 @@ export function registerIpc(s: Services): void {
     ...(log.head ? { head: s.planes.slim(log.head) } : {})
   })
   handle(IPC.develop.warm, (keys: string[]) => s.library.warm(keys))
+  handle(IPC.develop.firstLook, (key: string, edge: number) =>
+    s.library.firstLook(key, edge, s.engine)
+  )
   handle(IPC.develop.historyList, async (key: string) => slimLog(await s.index.history(key)))
   handle(IPC.develop.historyAppend, async (key: string, label: string, recipe: Recipe) => {
     // The step and the recipe the photo has now go into its project together.
@@ -779,10 +943,30 @@ export function registerIpc(s: Services): void {
     await s.index.removePreset(id)
   })
 
+  // What Quick develop asks of the rest of main (quickdevelop.ts).
+  const quick: QuickHelpers = {
+    wbContext: async (key) => s.sessions.wbContext(key) ?? wbContext(s.library, key),
+    look: async (id) => {
+      userPresets ??= s.index.presets()
+      return resolveLook(id) ?? (await userPresets).find((u) => u.id === id) ?? null
+    },
+    lensResolved: async (key, p) => {
+      const shot = s.sessions.liveRecipe(key)
+        ? await s.sessions.lensShot(key)
+        : await lensShotOf(s, key)
+      return s.lenses.resolve(shot, p.recipe.lens.profile.id).resolved
+    },
+    frame: (key) => baseFrame(s, key)
+  }
+  const quickPreviews = new QuickPreviews(s, quick, (e) => {
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.looks.thumb, e)
+  })
+
   // ── the Looks browser's cards ──
   handle(IPC.looks.thumbs, async (req: LookThumbRequest) => {
     const wb = s.sessions.wbContext(req.key)
-    if (!wb) return
+    // No Develop session (Quick develop's preview): made from the Library.
+    if (!wb || !req.base) return quickPreviews.request(req)
     const base = await s.planes.hydrate(req.base)
     userPresets ??= s.index.presets()
     const user = await userPresets
@@ -808,7 +992,10 @@ export function registerIpc(s: Services): void {
     })
     s.sessions.lookThumbs(req.key, req.token, jobs, req.edge)
   })
-  handle(IPC.looks.cancel, (key: string) => s.sessions.cancelLookThumbs(key))
+  handle(IPC.looks.cancel, (key: string) => {
+    s.sessions.cancelLookThumbs(key)
+    quickPreviews.cancel()
+  })
   // Smart looks' model work: one job at a time on the AI queue, landing on its photo.
   const runs = new LookRuns({
     startJob: (req) => s.ai.start(req),
@@ -853,6 +1040,28 @@ export function registerIpc(s: Services): void {
     if (by.key) runs.cancelFor(by.key)
   })
   handle(IPC.looks.answer, (runId: string, a: PickAnswer) => runs.answer(runId, a))
+
+  // ── Quick develop: the Library's nudges, looks and Auto tone (quickdevelop.ts) ──
+  handle(IPC.library.nudge, (keys: string[], delta: QuickDelta, batch: unknown, prior: unknown) =>
+    nudgeBatch(s, quick, keys, quickDeltaOf(delta), batchTagOf(batch), stepRefsOf(prior ?? []))
+  )
+  handle(
+    IPC.library.applyLook,
+    (keys: string[], lookId: string, amount: number, batch: unknown, prior: unknown) =>
+      lookBatch(
+        s,
+        quick,
+        keys,
+        String(lookId),
+        Number(amount),
+        batchTagOf(batch),
+        stepRefsOf(prior ?? [])
+      )
+  )
+  handle(IPC.library.autoTone, (keys: string[], batch: unknown) =>
+    autoToneBatch(s, keys, batchTagOf(batch))
+  )
+  handle(IPC.library.stamps, (keys: string[]) => recipeStamps(s, keys))
   handle(IPC.presets.luts, async (): Promise<LutProfile[]> =>
     (await readdir(paths.luts()))
       .filter((f) => f.toLowerCase().endsWith('.cube'))
@@ -914,12 +1123,20 @@ export function registerIpc(s: Services): void {
     return r.canceled || !r.filePaths[0] ? null : readWatermark(r.filePaths[0])
   })
   handle(IPC.export.readWatermark, (path: string) => readWatermark(path))
-  handle(IPC.export.start, (keys: string[], settings: ExportSettings) => {
+  handle(IPC.export.start, (keys: string[], settings: ExportSettings, label?: string | null) => {
     requireLicence('export')
+    // Export with previous: these settings, and the preset they were (null: the person's own).
     void s.index.setSetting('export.last', settings).catch(() => {})
-    return s.exporter.start(keys, settings)
+    void s.index.setSetting('export.lastLabel', label ?? null).catch(() => {})
+    return s.exporter.enqueue(keys, settings, label ?? null)
   })
   handle(IPC.export.cancel, (id: string) => s.exporter.cancel(id))
+  handle(IPC.export.jobs, () => s.exporter.jobs())
+  handle(IPC.export.retry, (id: string) => {
+    requireLicence('export')
+    return s.exporter.retry(id)
+  })
+  handle(IPC.export.show, (id: string) => s.exporter.show(id))
   handle(IPC.export.preview, (key: string, settings: ExportSettings) =>
     s.exporter.preview(key, settings)
   )
@@ -927,6 +1144,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.export.check, (keys: string[], settings: ExportSettings) =>
     s.exporter.preflight(keys, settings)
   )
+  handle(IPC.export.facts, (keys: string[]) => s.exporter.facts(keys))
   handle(IPC.export.presets, () => s.index.exportPresets())
   handle(IPC.export.savePreset, async (p: Omit<ExportPreset, 'id'> & { id?: string }) => {
     const preset: ExportPreset = { ...p, id: p.id ?? newId() }
@@ -996,9 +1214,15 @@ export function registerIpc(s: Services): void {
   handle(IPC.ai.setPixlCpu, async (answer: unknown) => {
     const a = answer === 'yes' || answer === 'no' ? answer : 'ask'
     const switches = await s.switches.setPixlCpu(a)
+    // A question open meanwhile is answered by it.
+    answerPixlCpu(a === 'ask' ? 'later' : a)
     // A RAW planned around the PIXL demosaic for a "no" is planned again.
     if (a !== 'no') s.sessions.tilesStale()
     return switches
+  })
+  handle(IPC.ai.pixlCpuPending, () => pixlCpuPending())
+  handle(IPC.ai.answerPixlCpu, (reply: unknown) => {
+    if (reply === 'yes' || reply === 'no' || reply === 'later') answerPixlCpu(reply)
   })
   handle(IPC.ai.setPixlDemosaic, async (on: boolean) => {
     const switches = await s.switches.setPixlDemosaic(on === true)

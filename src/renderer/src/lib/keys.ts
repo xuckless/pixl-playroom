@@ -20,11 +20,19 @@ export interface Chord {
  * Where a command listens. `global` works in both views; the develop
  * sub-contexts (`develop.heal` …) are commands that only act while that tool is
  * up, so they may share a key with a general develop command (the more specific
- * one is listed first and wins while its tool is showing).
+ * one is listed first and wins while its tool is showing). The library's
+ * sub-contexts are its views of the photos, the same way: `library.grid`,
+ * `library.loupe` (the Loupe and Compare, which zoom), `library.compare` and
+ * `library.survey`; a key may mean one thing in one view and another in the
+ * next (↑ a row in the Grid, the Candidate promoted in Compare).
  */
 export type KeyContext =
   | 'global'
   | 'library'
+  | 'library.grid'
+  | 'library.loupe'
+  | 'library.compare'
+  | 'library.survey'
   | 'develop'
   | 'develop.heal'
   | 'develop.masks'
@@ -102,9 +110,15 @@ export function isModifierCode(code: string): boolean {
   )
 }
 
-/** Two contexts can both be listening at once. */
+/**
+ * Two contexts can both be listening at once. A Library view's keys
+ * (`library.grid`) listen whenever the Library's own do, and are listed
+ * after them: a Library key on the same chord would silence the view's.
+ */
 export function overlaps(a: KeyContext, b: KeyContext): boolean {
-  return a === b || a === 'global' || b === 'global'
+  if (a === b || a === 'global' || b === 'global') return true
+  const view = (c: KeyContext): boolean => c.startsWith('library.')
+  return (a === 'library' && view(b)) || (b === 'library' && view(a))
 }
 
 /** The defaults with the user's overrides on top (an override of `[]` unbinds). */
@@ -198,6 +212,24 @@ export function keyName(
   const n = NAMES[code]
   if (n) return mac ? n[0] : n[1]
   return code
+}
+
+export type Modifier = 'alt' | 'shift' | 'mod'
+
+/**
+ * A modifier as a sentence names it ("Option-click removes"): Option, Shift
+ * and Command on a Mac, Alt, Shift and Ctrl elsewhere.
+ */
+export function modifierName(m: Modifier, mac: boolean): string {
+  if (m === 'shift') return 'Shift'
+  if (m === 'alt') return mac ? 'Option' : 'Alt'
+  return mac ? 'Command' : 'Ctrl'
+}
+
+/** A modifier ahead of a key, as a chord shows it: `⌥` on a Mac, `Alt+` elsewhere. */
+export function modifierKey(m: Modifier, mac: boolean): string {
+  if (mac) return m === 'alt' ? '⌥' : m === 'shift' ? '⇧' : '⌘'
+  return m === 'alt' ? 'Alt+' : m === 'shift' ? 'Shift+' : 'Ctrl+'
 }
 
 /** How a chord reads: `⇧⌘Z` on a Mac, `Ctrl+Shift+Z` elsewhere. */

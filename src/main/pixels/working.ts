@@ -18,7 +18,7 @@
 import { t } from '../../shared/i18n'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
 import { join } from 'path'
-import type { Overlay } from '../../shared/engine-types'
+import type { Overlay, RasterRef } from '../../shared/engine-types'
 import { stackSignature, type PixelStep } from '../../shared/pixels'
 import { hash32 } from '../../shared/recipe'
 import type { EngineClient } from '../engine/client'
@@ -27,6 +27,7 @@ import type { Proxies, ProxyFile } from '../proxy'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import type { PixelsJob } from '../workers/pool'
 import { encodeGreyPng } from '../pngio'
+import { isTiffPath } from '../tiffio'
 import { traceRegion } from '../trace'
 import { headroomGuard } from './ops'
 
@@ -57,6 +58,11 @@ export interface WorkingSet {
 const TIFF = { Tiff: { compression: 'None' } } as const
 const PNG = { Png: { compression: 'Fast', filter: 'Sub' } } as const
 const ICC_ONLY = { exif: false, icc: true, xmp: false, iptc: false } as const
+
+/** An overlay's source by its file's format: a PNG blob, or a TIFF made at a proxy's size. */
+export function rasterOf(path: string): RasterRef {
+  return isTiffPath(path) ? { Tiff: path } : { Png: path }
+}
 
 /** The key of a photo version's working set for these steps. */
 export function workingKey(version: string, steps: PixelStep[]): string {
@@ -165,7 +171,9 @@ async function sized(
   h: number
 ): Promise<string> {
   if (w === step.width && h === step.height) return src
-  const out = src.replace(/\.png$/, `-${w}x${h}.png`)
+  // An uncompressed TIFF (engine 0.21, E33): nothing deflated here, nothing
+  // inflated on every working-set build. The full-size blobs stay PNG.
+  const out = src.replace(/\.png$/, `-${w}x${h}.tiff`)
   await makeOnce(
     out,
     (tmp) =>
@@ -176,7 +184,7 @@ async function sized(
         // Downscaled in linear light, as the proxies are; alpha (a mask) kept.
         linear_resample: true,
         pixel: { depth: 'Sixteen', channels: step.alpha ? 4 : 3 },
-        encode: PNG,
+        encode: TIFF,
         metadata: ICC_ONLY,
         color: 'Preserve',
         threads: BACKGROUND_THREADS
@@ -215,7 +223,7 @@ async function patchOverlay(
     throw new Error(t('{{step}}: its pixels are missing from the project', { step: step.label }))
   let path = src
   if (pw !== r.w || ph !== r.h) {
-    path = src.replace(/\.png$/, `-${pw}x${ph}.png`)
+    path = src.replace(/\.png$/, `-${pw}x${ph}.tiff`)
     await makeOnce(
       path,
       (tmp) =>
@@ -224,7 +232,7 @@ async function patchOverlay(
           resize: { Exact: { width: pw, height: ph } },
           resampler: 'Lanczos3',
           pixel: { depth: 'Sixteen', channels: 4 },
-          encode: PNG,
+          encode: TIFF,
           metadata: ICC_ONLY,
           color: 'Preserve'
         }),
@@ -232,7 +240,7 @@ async function patchOverlay(
     )
   }
   return {
-    source: { Png: path },
+    source: rasterOf(path),
     rect: { x: x0 / w, y: y0 / h, width: pw / w },
     opacity: Math.min(1, step.opacity / 100),
     blend: { mode: 'Normal', space: 'LinearWorking' },
@@ -243,8 +251,11 @@ async function patchOverlay(
 /**
  * What a step's model clipped: an AI denoise or Enhance saw a float frame
  * clipped at 1.0, so where the frame is over it its own value stays (the
- * owner, 2026-10-08, until PIXL's own models take values over 1.0). A heal,
- * fill or remove is a replacement, made by the engine in float: never guarded.
+ * owner, 2026-10-08). PIXL Enhance reads the float frame whole since engine
+ * 0.21.0 (E70), but its step is still kept in 16 bits and laid on as an
+ * overlay, which cannot carry light above white (engine ask E79): guarded
+ * too (the owner, 2026-10-14). A heal, fill or remove is a replacement,
+ * made by the engine in float: never guarded.
  */
 function guards(step: PixelStep): boolean {
   return step.kind === 'denoise' || step.kind === 'enhance'
@@ -305,9 +316,11 @@ async function guardOf(deps: PixelDeps, from: ProxyFile): Promise<string | null>
 /**
  * What a model reads of a frame: a float frame (a RAW's Scene master, engine
  * 0.18) as a 16-bit copy, its values clipped to 0..1, since the engine
- * refuses an enhance chain on unbounded samples; the step's result is laid
- * back under the headroom guard (`guards`), so the frame's light over white
- * stays its own. A 16-bit frame is read as it is. Made once per frame file.
+ * refuses unbounded samples to an sRGB model (AI Denoise, an upscale, a
+ * deblur; PIXL Enhance alone reads the frame as it is since 0.21.0: E70,
+ * `readsFloat`); the step's result is laid back under the headroom guard
+ * (`guards`), so the frame's light over white stays its own. A 16-bit frame
+ * is read as it is. Made once per frame file.
  */
 export async function modelInput(
   engine: EngineClient,
@@ -347,16 +360,17 @@ async function guarded(
   at: { x: number; y: number }
 ): Promise<string> {
   const g = guard.match(/guard-([0-9a-z]+)\.png$/)?.[1] ?? 'g'
-  const out = src.replace(/\.png$/, `-g${g}-${at.x}-${at.y}.png`)
+  // In the source's own format: a TIFF at a proxy's size stays one.
+  const out = src.replace(/\.(png|tiff)$/, `-g${g}-${at.x}-${at.y}.$1`)
   await makeOnce(out, (tmp) => deps.work({ op: 'guard', src, guard, out: tmp, at }))
   return out
 }
 
 /**
- * A 16-bit PNG made to be laid on a float frame at `at` (whole pixels),
- * guarded as an AI step is (`guards`): where the frame is at or over white
- * its own value stays. On a 16-bit frame, the PNG as it is. PIXL Enhance's
- * preview (main/enhance.ts) lays its square on with it.
+ * A 16-bit PNG or TIFF made to be laid on a float frame at `at` (whole
+ * pixels), guarded as an AI step is (`guards`): where the frame is at or over
+ * white its own value stays. On a 16-bit frame, the file as it is. PIXL
+ * Enhance's preview (main/enhance.ts) lays its square on with it.
  */
 export async function guardPatch(
   deps: PixelDeps,
@@ -387,7 +401,7 @@ export async function overlaysOf(
     }
     const src = await sized(deps, await overlaySource(deps, s), s, w, h)
     out.push({
-      source: { Png: guard && guards(s) ? await guarded(deps, src, guard, { x: 0, y: 0 }) : src },
+      source: rasterOf(guard && guards(s) ? await guarded(deps, src, guard, { x: 0, y: 0 }) : src),
       rect: { x: 0, y: 0, width: 1 },
       opacity: Math.min(1, s.opacity / 100),
       // In linear light, as light mixes; a step at 100% replaces exactly.

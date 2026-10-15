@@ -5,6 +5,7 @@
  * (`shared/watermark.ts`).
  */
 import { useEffect, useState } from 'react'
+import { GlassSelect } from '../components/GlassSelect'
 import type { WatermarkFile } from '../../../shared/ipc'
 import {
   placeMark,
@@ -39,12 +40,20 @@ const BLEND_CSS: Record<WatermarkBlend, React.CSSProperties['mixBlendMode']> = {
 export function WatermarkSection({
   value: w,
   onChange,
-  thumbUrl
+  thumbUrl,
+  open,
+  onOpenChange,
+  right
 }: {
   value: WatermarkSettings
   onChange: (w: WatermarkSettings) => void
   /** The first photo's thumbnail, to preview on. */
   thumbUrl: string | null
+  /** Folded and unfolded by the export sheet (its own when not given). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** Its value in a word, beside the title. */
+  right?: React.ReactNode
 }): React.JSX.Element {
   const [read, setRead] = useState<WatermarkFile | null>(null)
   // Only the file the settings name (a removed or changed one is not shown).
@@ -86,7 +95,14 @@ export function WatermarkSection({
   const mark = file && thumb ? placeMark(w, thumb.w, thumb.h, file.width, file.height) : null
 
   return (
-    <Card id="export.watermark" title={t('Watermark')} defaultOpen={w.enabled || !!w.path}>
+    <Card
+      id="export.watermark"
+      title={t('Watermark')}
+      defaultOpen={w.enabled || !!w.path}
+      open={open}
+      onOpenChange={onOpenChange}
+      right={right}
+    >
       <label className="check">
         <input
           type="checkbox"
@@ -112,7 +128,11 @@ export function WatermarkSection({
           </button>
         )}
       </div>
-      {error && <p className="error small">{error}</p>}
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
       {w.path && (
         <div className="wm-body">
           <div className="wm-preview" aria-label={t('Preview')}>
@@ -166,7 +186,7 @@ export function WatermarkSection({
               max={100}
               def={20}
               format={(v) => `${Math.round(v)}%`}
-              title={t("The mark's width, as a share of the picture's shorter edge")}
+              title={t('The mark’s width, as a share of the picture’s shorter edge')}
               onChange={(size) => set({ size })}
               onCommit={() => undefined}
             />
@@ -178,7 +198,7 @@ export function WatermarkSection({
               step={0.5}
               def={3}
               format={(v) => `${v.toFixed(1)}%`}
-              title={t("From the nearest edges, as a share of the picture's shorter edge")}
+              title={t('From the nearest edges, as a share of the picture’s shorter edge')}
               onChange={(inset) => set({ inset })}
               onCommit={() => undefined}
             />
@@ -197,14 +217,15 @@ export function WatermarkSection({
               title={t('Multiply suits a dark mark on light pictures, Screen a light one on dark')}
             >
               <span>{t('Blend')}</span>
-              <select
+              <GlassSelect<WatermarkBlend>
                 value={w.blend}
-                onChange={(e) => set({ blend: e.target.value as WatermarkBlend })}
-              >
-                <option value="Normal">{t('Normal')}</option>
-                <option value="Multiply">{t('Multiply · darkens')}</option>
-                <option value="Screen">{t('Screen · lightens')}</option>
-              </select>
+                onChange={(blend) => set({ blend })}
+                options={[
+                  { value: 'Normal', label: t('Normal') },
+                  { value: 'Multiply', label: t('Multiply · darkens') },
+                  { value: 'Screen', label: t('Screen · lightens') }
+                ]}
+              />
             </label>
           </div>
         </div>

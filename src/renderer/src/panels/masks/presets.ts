@@ -70,7 +70,7 @@ export function useMaskPresets(): {
         amount: layer.amount
       }
       await store([...presets.filter((p) => p.name !== name), entry])
-      useLibrary.getState().say(t('Saved mask preset "{{name}}"', { name }))
+      useLibrary.getState().say(t('Saved mask preset “{{name}}”', { name }))
     },
     apply: (layer, p) =>
       patchMask(layer.id, `${layer.name}: preset ${p.name}`, (l) => {

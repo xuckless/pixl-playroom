@@ -178,7 +178,7 @@ test('a preset keeps its smart instructions; a bad column loses only those', asy
   }
 })
 
-test('RAWs the old decoder could not read are tried again; other failures stay', () => {
+test('failures marked before 0.21 are tried again once; a later mark stays', () => {
   const dir = tmp()
   try {
     const file = join(dir, 'playroom.db')
@@ -191,6 +191,8 @@ test('RAWs the old decoder could not read are tried again; other failures stay',
     add.run('/a/x.cr2', 'x.cr2', 'cr2', 1)
     add.run('/a/y.jpg', 'y.jpg', 'jpg', 0)
     // As an index from 0.15 would stand: every migration before LibRaw's (the 12th) run.
+    // LibRaw's tried RAWs again; migration 20 tries every photo again, since a
+    // refused request was marked like an unreadable file.
     db.exec('PRAGMA user_version = 11')
     migrate(db)
     const failed = (name: string): unknown =>
@@ -200,7 +202,11 @@ test('RAWs the old decoder could not read are tried again; other failures stay',
         }
       ).failed_key
     assert.equal(failed('x.cr2'), null)
-    assert.equal(failed('y.jpg'), 'k')
+    assert.equal(failed('y.jpg'), null)
+    // Marked after: kept through the next launch's migrate.
+    db.exec("UPDATE photos SET failed_key = 'k2' WHERE name = 'y.jpg'")
+    migrate(db)
+    assert.equal(failed('y.jpg'), 'k2')
     db.close()
   } finally {
     rmSync(dir, { recursive: true, force: true })

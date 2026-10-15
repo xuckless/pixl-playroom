@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { compile, isP3Floor, type CompileContext } from '../src/shared/compile'
+import { compile, type CompileContext } from '../src/shared/compile'
 import type { Curves, GradeOp, SourceInfo } from '../src/shared/engine-types'
 import {
   defaultExportSettings,
@@ -166,10 +166,12 @@ test("a LUT profile keeps an HDR photo's headroom and clamps an SDR one as befor
   const r = defaultRecipe(false)
   r.profile = { kind: 'lut', name: 'Film', path: '/luts/film.cube' }
   r.profileAmount = 80
+  // As main found it in Playroom's LUT folder (main/lutfile.ts).
+  const luts = { '/luts/film.cube': '/luts/film.cube' }
   const lut = (c: ReturnType<typeof compile>): Extract<GradeOp, { Lut: unknown }>['Lut'] =>
-    (ops(c).find((o) => 'Lut' in o && !isP3Floor(o)) as Extract<GradeOp, { Lut: unknown }>).Lut
-  assert.equal(lut(compile(r, ctx)).out_of_domain, 'Clamp')
-  assert.equal(lut(compile(r, { ...ctx, hdr: true })).out_of_domain, 'ScaleHeadroom')
+    (ops(c).find((o) => 'Lut' in o) as Extract<GradeOp, { Lut: unknown }>).Lut
+  assert.equal(lut(compile(r, { ...ctx, luts })).out_of_domain, 'Clamp')
+  assert.equal(lut(compile(r, { ...ctx, luts, hdr: true })).out_of_domain, 'ScaleHeadroom')
   // The SDR shoulder is a table on 0…1, clamped as it always was.
   const e = defaultRecipe(false)
   e.basic.exposure = 1

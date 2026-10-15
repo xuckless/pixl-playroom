@@ -5,6 +5,7 @@ import type { ModelSpeed } from './modelSpeed'
 import type { RawColour } from './rawcolour'
 /** IPC channel names and the app-level types both sides of the bridge share. */
 import type {
+  BuildInfo,
   ConvertReport,
   ImageStats,
   LateralCa,
@@ -13,6 +14,7 @@ import type {
   WhitePoint
 } from './engine-types'
 import type { ExportSettings } from './export'
+import type { ScopeKind } from './scopes'
 import type { Step } from './history'
 import type { BasicSetting, Recipe, RecipeGroup } from './recipe'
 import type { SmartGroup } from './smart'
@@ -20,6 +22,7 @@ import type { LookMeta } from './looks/types'
 import type { SmartPart } from './looks/smart'
 
 import type { ReleaseNotes } from './releasenotes'
+import type { FoundProfile, ProofSettings } from './proof'
 
 export const IPC = {
   /** The native menus (shared/appmenu.ts). */
@@ -148,7 +151,10 @@ export const IPC = {
     hdr: 'library:hdr',
     /** main → renderer: a photo's search words from its names (every copy shares them). */
     names: 'library:names',
-    /** main → renderer: the folder's items changed (new file, new copy) */
+    /**
+     * main → renderer: the folder's items changed (new file, new copy), or
+     * with `items`, only those items' facts (their EXIF or sidecar read in).
+     */
     changed: 'library:changed',
     /** The items of any source: a folder, a collection, a keyword, the duplicates. */
     openSource: 'library:open-source',
@@ -173,8 +179,36 @@ export const IPC = {
     duplicates: 'library:duplicates',
     /** Measure and set each photo's own auto white balance. */
     autoWb: 'library:auto-wb',
-    /** Put white balances back (the undo of autoWb). */
-    setWb: 'library:set-wb',
+    /** A Library batch taken back through each photo's history (main/batchcommit.ts). */
+    undoBatch: 'library:undo-batch',
+    /** A Library batch brought back through each photo's history. */
+    redoBatch: 'library:redo-batch',
+    /** A photo's settings as seen, for the clipboard (⌘C in the Library). */
+    copyRecipe: 'library:copy-recipe',
+    /** Photos' items by key, listed or not (the Library's undo checks what each has now). */
+    itemsOf: 'library:items-of',
+    /** A photo's screen preview for the Loupe, Compare and Survey (`LibraryPreview`). */
+    preview: 'library:preview',
+    /** The photos either side of the one shown: their screen previews made ahead. */
+    warmPreviews: 'library:warm-previews',
+    /** A photo's 1:1 (`FocusPicture`). */
+    focus: 'library:focus',
+    /** A part of a photo at 1:1 (`FocusTile`), rendered once, never in a Develop session. */
+    focusRegion: 'library:focus-region',
+    /** The previews folder's size and cap; setting the cap; emptying it. */
+    previewCache: 'library:preview-cache',
+    setPreviewCap: 'library:set-preview-cap',
+    clearPreviews: 'library:clear-previews',
+    /** The shots taken with a photo, for Survey (`ShotGroup`, or null). */
+    shotGroup: 'library:shot-group',
+    /** Quick develop: a burst of nudges on a selection (main/quickdevelop.ts). */
+    nudge: 'library:nudge',
+    /** Quick develop: a look at an Amount on a selection, or that batch rewritten. */
+    applyLook: 'library:apply-look',
+    /** Quick develop: Auto tone measured on each photo of a selection. */
+    autoTone: 'library:auto-tone',
+    /** Each photo's settings stamped, so the clipboard sees its photo change since a copy. */
+    stamps: 'library:stamps',
     /** main → renderer: collections, keywords or metadata changed */
     sourcesChanged: 'library:sources-changed'
   },
@@ -182,8 +216,14 @@ export const IPC = {
     open: 'develop:open',
     /** A RAW's camera colour chosen (returns the one in force); the session is closed for the caller to reopen. */
     setRawColour: 'develop:set-raw-colour',
+    /** The DNG camera profiles to offer for a RAW's body (`CameraProfileChoices`). */
+    cameraProfiles: 'develop:camera-profiles',
+    /** A `.dcp` imported (a path, or null to ask for one): `CameraProfileAdded`, or null when none was chosen. */
+    addCameraProfile: 'develop:add-camera-profile',
     /** Make these photos' proxies ahead (the open one's neighbours in the filmstrip). */
     warm: 'develop:warm',
+    /** An unedited RAW's embedded preview while it opens (`FirstLookPicture`, or null). */
+    firstLook: 'develop:first-look',
     close: 'develop:close',
     update: 'develop:update',
     view: 'develop:view',
@@ -192,9 +232,28 @@ export const IPC = {
     region: 'develop:region',
     sample: 'develop:sample',
     autoTone: 'develop:auto-tone',
+    /** The settled picture's waveform, parade and vectorscope, measured by the engine (E76). */
+    scopes: 'develop:scopes',
+    /** The graded picture's gamut coverage (Metrics), measured before its egress (E76). */
+    gamutCoverage: 'develop:gamut-coverage',
+    /**
+     * The ICC profiles on this computer, scanned again (the proof setup
+     * opening), with those at the paths named (Recent's): `FoundProfile[]`.
+     */
+    proofProfiles: 'develop:proof-profiles',
+    /** A profile chosen from a file (Browse…, Locate…): `ProofBrowsed`, or null when none was chosen. */
+    proofBrowse: 'develop:proof-browse',
+    /** A proof's settings tried on the engine before they are used: `ProofCheck`. */
+    proofCheck: 'develop:proof-check',
     autoWb: 'develop:auto-wb',
     /** A painted plane (grey PNG, base64) into the plane store; its reference back. */
     putPlane: 'develop:put-plane',
+    /** The masks moved onto the recipe's own lens (a lens edit settling: shared/lensframe.ts). */
+    rebaseMasks: 'develop:rebase-masks',
+    /** The loupe's grid between the masks' lens frame and the one rendered. */
+    maskGrid: 'develop:mask-grid',
+    /** A plane (by reference) re-warped from one lens frame onto another; its PNG back. */
+    planeOnFrame: 'develop:plane-on-frame',
     getPlane: 'develop:get-plane',
     historyList: 'develop:history-list',
     historyAppend: 'develop:history-append',
@@ -301,6 +360,11 @@ export const IPC = {
     preview: 'export:preview',
     cancelPreview: 'export:cancel-preview',
     check: 'export:check',
+    facts: 'export:facts',
+    /** The queue: every export queued, running, or lately finished; retry one's failures; show its files. */
+    jobs: 'export:jobs',
+    retry: 'export:retry',
+    show: 'export:show',
     /** main → renderer */
     progress: 'export:progress'
   },
@@ -326,6 +390,12 @@ export const IPC = {
     /** The PIXL demosaic's switch (a development kit; shared/pixldemosaic.ts). */
     setPixlDemosaic: 'ai:set-pixl-demosaic',
     setPixlCpu: 'ai:set-pixl-cpu',
+    /** main → renderer: PIXL's models would run on the processor; null when answered (shared/pixlcpu.ts). */
+    pixlCpuAsk: 'ai:pixl-cpu-ask',
+    /** The question still open, for a window that reloads. */
+    pixlCpuPending: 'ai:pixl-cpu-pending',
+    /** The window's answer: yes, no, or not now. */
+    answerPixlCpu: 'ai:answer-pixl-cpu',
     /** What today's pipeline has (shared/rebuild.ts `Pipeline`): the PIXL demosaic, PIXL Enhance. */
     pipeline: 'ai:pipeline',
     /** A heavy model's sustained-load benchmark; resolves with its result. */
@@ -385,6 +455,68 @@ export interface AppError {
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: AppError }
 
+/** The DNG camera profiles a RAW's colour can be (engine 0.21, E21). */
+export interface CameraProfileChoices {
+  /** Imported (or carried in by a photo) for this body. */
+  kept: { colour: RawColour; name: string }[]
+  /** Adobe's for this body, found where its DNG Converter or Camera Raw installs them, not imported yet. */
+  adobe: { path: string; name: string }[]
+}
+
+/** A camera profile imported: its colour, and whether it is for this photo's body. */
+export interface CameraProfileAdded {
+  colour: RawColour
+  name: string
+  fits: boolean
+  /** The camera the profile is for (its UniqueCameraModel). */
+  camera: string | null
+}
+
+/** An unedited RAW's embedded preview at about the stage's size, shown while it opens. */
+export interface FirstLookPicture {
+  url: string
+  width: number
+  height: number
+}
+
+/** A photo's picture for the Library's Loupe, Compare and Survey (shared/previews.ts). */
+export interface LibraryPreview {
+  url: string
+  width: number
+  height: number
+  /** An HDR photo shown in SDR here (Develop shows it in HDR). */
+  sdr: boolean
+}
+
+/**
+ * A photo's 1:1 (shared/previews.ts): a picture of it whole, or the size of
+ * the picture its regions are rendered from, part by part as they are seen.
+ */
+export type FocusPicture =
+  | ({ kind: 'whole' } & LibraryPreview)
+  | { kind: 'region'; width: number; height: number; sdr: boolean }
+
+/** A part of a photo at 1:1, and where it lies in the picture (fractions). */
+export interface FocusTile {
+  url: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** The Library's previews on disk, and the most they may take (bytes). */
+export interface PreviewCacheState {
+  bytes: number
+  cap: number
+}
+
+/** The shots taken with a photo (shared/shots.ts): its burst, or the pictures nearly the same. */
+export interface ShotGroup {
+  kind: 'burst' | 'near'
+  keys: string[]
+}
+
 export interface EngineStatus {
   /**
    * `resting`: let go while Playroom is behind (the safe-shutdown rest,
@@ -399,6 +531,8 @@ export interface EngineStatus {
   prompt?: boolean
   /** 0.19.2: the addon has the GPU grade path (`hasGpu`, Phase A §4.3). */
   gpu?: boolean
+  /** 0.21.0 (E69): which build the engine is (its commit, release or development). */
+  build?: BuildInfo
   reason?: string
   /** Why the engine is unavailable, when the load named it (e.g. `VersionMismatch`). */
   code?: string
@@ -573,11 +707,43 @@ export interface Collection {
   count?: number
 }
 
-export interface AutoWbResult {
+/** Auto white balance on a chunk of a selection: a Library batch's chunk. */
+export type AutoWbResult = BatchResult
+
+/**
+ * A Library batch (main/batchcommit.ts): its id, which tags each photo's
+ * step, the step's label, and the Version kept of each photo before it
+ * (paste, sync and looks keep one; nudges and Auto none).
+ */
+export interface BatchTag {
+  id: string
+  label: string
+  version?: { name: string; reason: 'paste' | 'look' } | null
+}
+
+/**
+ * What a chunk of a batch wrote: the items after, each photo's step, and the
+ * photos that could not be written (an original offline, a project that
+ * could not be made), each with why; the rest of the chunk is written.
+ */
+export interface BatchResult {
   items: (LibraryItem | undefined)[]
-  /** Each key's white balance before, for undo. */
-  previous: Record<string, Recipe['wb']>
+  steps: { key: string; seq: number }[]
   failed: { key: string; message: string }[]
+  /** A nudge held at a slider's end on these photos (Quick develop). */
+  limited?: string[]
+  /**
+   * A growing batch's photos whose step was not rewritten (edited since, or
+   * the rewrite failed): they keep the step they had, still the batch's.
+   */
+  kept?: { key: string; seq: number }[]
+}
+
+/** A batch taken back (or brought back): where it was, and where a later edit kept it. */
+export interface BatchUndoResult {
+  items: (LibraryItem | undefined)[]
+  done: string[]
+  skipped: string[]
 }
 
 export interface FolderListing {
@@ -667,8 +833,22 @@ export interface DevelopSession {
   isHdr: boolean
   /** The white the develop balanced for: PIXL's under PIXL's camera colour (`info` carries the same). */
   asShot: WhitePoint | null
-  /** A RAW's camera colour in force ('container' or 'pixl:1'); null for anything else. */
+  /** A RAW's camera colour in force ('container', 'pixl:1' or a camera profile's 'dcp:<id>'); null for anything else. */
   rawColour: RawColour | null
+  /**
+   * The camera profile `rawColour` names (engine 0.21, E21): its name, what of
+   * it ran (`tables`: the develop's own words, null when none did), whether it
+   * has a tone curve (never applied) and the stops its BaselineExposureOffset
+   * adds to the exposure.
+   */
+  cameraProfile?: {
+    name: string
+    tables: string | null
+    toneCurve: boolean
+    exposureOffset: number
+    /** A linear DNG: the profile's matrices only (its tables need a mosaic). */
+    matricesOnly: boolean
+  } | null
   /** A RAW's camera and whether PIXL's database holds it (the choice's menu); null for anything else. */
   cameraColour: {
     make: string
@@ -692,6 +872,8 @@ export interface DevelopSession {
   developMark?: string | null
   /** Why it is on the earlier pipeline (shared/rebuild.ts); empty when it is on today's. */
   rebuild?: RebuildReason[]
+  /** A proof copy's proof (shared/proof.ts): it opens proofed, with these settings. */
+  proof?: ProofSettings | null
 }
 
 export interface ViewState {
@@ -725,7 +907,46 @@ export interface ViewState {
    * 8-bit files. Absent or false: as before.
    */
   float?: boolean
+  /**
+   * The gamut warning (E22, soft proofing): also render, beside a settled
+   * SDR picture, where its colours fall outside the export's colour space
+   * (the proof's profile while proofing).
+   */
+  gamut?: boolean
+  /**
+   * Soft proofing: the settled picture, the before and the 1:1 tiles as
+   * this proof makes them (shared/proof.ts). Drafts stay unproofed; `display`
+   * is null while proofing (paper has no light above white).
+   */
+  proof?: ProofSettings | null
+  /** Screen | Proof: also render the settled picture unproofed, for the split's other side. */
+  proofScreen?: boolean
 }
+
+/** What a proofed picture was proofed with (`proofKey`), and the profile's name. */
+export interface ProofShown {
+  key: string
+  name: string
+  /** A CMYK or grey profile: engine 0.21 measures the gamut warning against it, but makes no preview. */
+  warnOnly?: boolean
+}
+
+/** Why a picture asked to be proofed was not: its profile is nowhere, or the engine refused it. */
+export interface ProofIssue {
+  kind: 'missing' | 'unusable'
+  key: string
+  name: string
+  /** The engine's or the header's reason (unusable). */
+  why?: string
+}
+
+/** A proof's settings tried on the engine: usable (with the paper's white, 0…255 Display P3), or why not. */
+export type ProofCheck =
+  | { ok: true; warnOnly: boolean; paper: [number, number, number] | null }
+  | { ok: false; issue: ProofIssue }
+
+/** A profile file chosen with Browse… or Locate…: the profile, or why it cannot be used. */
+export type ProofBrowsed = { profile: FoundProfile } | { error: string }
 
 export interface RenderReport {
   totalMs: number
@@ -733,6 +954,11 @@ export interface RenderReport {
   colorMs: number
   encodeMs: number
   gradeLines: string[]
+  /**
+   * Samples the grade clamped. Since engine 0.21 (E37) a masked layer's are
+   * counted only over the box it ran over (its mask's support): the ones its
+   * mask discards are not.
+   */
   clampedSamples: number
   loss: LossReport
   notes: string[]
@@ -746,7 +972,8 @@ export interface RenderEvent {
   seq: number
   /** The renderer's number for the recipe this was rendered from (see `develop.update`). */
   rev?: number
-  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom'
+  /** `screen`: the settled picture unproofed, beside a proof (Screen | Proof). */
+  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom' | 'gamut' | 'screen'
   url: string
   /**
    * Full HDR's settled picture: its SDR companion as a file, for what reads
@@ -772,6 +999,14 @@ export interface RenderEvent {
   hdrStats?: ImageStats
   /** A headroom plane: how many stops above white its full scale stands for. */
   stops?: number
+  /** A gamut warning's plane: the space it proofs against (the export's). */
+  gamutTo?: ExportSettings['colorSpace']
+  /** A gamut warning's plane made against the proof's profile instead: its name. */
+  gamutProof?: string
+  /** A settled picture or a before made as a soft proof. */
+  proof?: ProofShown
+  /** A settled picture asked to be proofed and shown unproofed, and why. */
+  proofIssue?: ProofIssue
   /**
    * A Full HDR render: the display's ceiling over SDR white (the master's
    * `display.headroom`), where its light stops: what the clipping overlay
@@ -779,6 +1014,18 @@ export interface RenderEvent {
    */
   ceiling?: number
   report?: RenderReport
+}
+
+/**
+ * The settled picture's scopes from the engine (E76): which picture (its
+ * `url`, as the window shows it), read through which mask plane (a mask
+ * event's `url`, the scopes "in mask"), for which scopes.
+ */
+export interface ScopesRequest {
+  key: string
+  url: string
+  mask: string | null
+  want: ScopeKind[]
 }
 
 /**
@@ -793,8 +1040,14 @@ export interface EnhancePreview {
 /** The open RAW's full-size develop (its master) under way: how long it should take, or over. */
 export interface MasterEvent {
   key: string
-  /** Milliseconds the develop is expected to take; null once it is over. */
-  expectedMs: number | null
+  /** Started, counted further (`progress`), or over. */
+  phase: 'start' | 'progress' | 'end'
+  /**
+   * What the engine has counted (engine 0.21.0, E68): the model's windows
+   * and the develop's bands done of all it has laid out so far. Its total
+   * can grow between stages (a RAW denoise, then the demosaic).
+   */
+  progress?: { done: number; total: number }
 }
 
 /**
@@ -829,6 +1082,8 @@ export interface RegionResult {
   width: number
   height: number
   ms: number
+  /** The proof it was made for (`proofKey`), or absent when none was asked. */
+  proof?: string
 }
 
 export interface SampleResult {
@@ -869,8 +1124,15 @@ export interface LookThumbRequest {
   key: string
   /** Counts the browser's asks: an older one arriving late changes nothing. */
   token: number
-  /** The recipe the looks go on (the photo's own, or what it was before a look on trial). */
-  base: Recipe
+  /**
+   * The recipe the looks go on (the photo's own, or what it was before a look
+   * on trial). Absent with no Develop session (Quick develop): the photo as it
+   * stands, or as it stood before its step `under` of a Library batch.
+   */
+  base?: Recipe
+  under?: number
+  /** The looks at this Amount (0…100), not whole (Quick develop's preview). */
+  amount?: number
   /** Catalog ids, saved presets' ids, or `current` for the photo as it is. */
   ids: string[]
   /** The cards' long edge, in pixels. */
@@ -961,8 +1223,26 @@ export interface ExportPreview {
   notes: string[]
 }
 
+/**
+ * What the export sheet knows of the photos it would export, read once for
+ * a selection (main/exporter.ts `facts`): how many, which are offline, and a
+ * sample's size and HDR as probed, for the size estimate and the HDR guards.
+ */
+export interface ExportFacts {
+  photos: number
+  offline: number
+  /** The first photos (up to a hundred), as probed: their size upright, before any crop. */
+  sample: { key: string; width: number; height: number; isHdr: boolean; hasGainMap: boolean }[]
+}
+
+/**
+ * One export in the queue (main/exportqueue.ts), as the top bar's pill and
+ * its receipt show it: queued, running, or finished (the last few are kept).
+ */
 export interface ExportProgress {
   jobId: string
+  /** The preset it was made with ("Web 2048"), or null for settings of the person's own. */
+  label: string | null
   done: number
   total: number
   current: string | null
@@ -970,6 +1250,22 @@ export interface ExportProgress {
   errors: { name: string; message: string; warning?: boolean }[]
   finished: boolean
   outputs: string[]
+  /** Waiting its turn behind another export. */
+  queued: boolean
+  /** When it began writing (ms since the epoch); null while queued. */
+  startedAt: number | null
+  /** When it ended; null until then. */
+  finishedAt: number | null
+  /** Photos passed over because their original is offline, by name. */
+  skipped: string[]
+  /** Its engine is waiting for the editing to settle ("Paused while you edit"). */
+  paused: boolean
+  /** Stopped before it was done. */
+  stopped: boolean
+  /** The disk filled: the export stopped at the first file that would not fit. */
+  diskFull: boolean
+  /** Photos Retry would export again: those that failed, and those a full disk left. */
+  retryable: number
 }
 
 export type { BasicSetting, ConvertReport }

@@ -30,6 +30,129 @@ from the old TODO and a full performance and bug sweep.
 
 ---
 
+## Next: Phase P, engine 0.21.0 (passes 118–124)
+
+**Prepared 2026-10-14, before the engine's guide exists.** The engine's
+0.21.0 is to carry many of Playroom's requests; what Playroom asks for, in
+order and with the shapes it expects, is
+`~/fedora-data/pixl-engine-requests/playroom-0.21.0-asks.md`. When the
+engine publishes `docs/playroom/0.21.0.md` and `docs/migration-0.21.0.md`,
+they win over this plan: re-check each item against them, drop what 0.21.0
+does not carry back to "Waiting on the engine", and take the rest in this
+order. Try a pre-release engine with a development kit (`pnpm engine:dev`,
+`PLAYROOM_DEV_KIT`) before the packages are published.
+
+Where Playroom stands (0.5.0-beta and after): one set of colour tools
+(f9cc086), every built-in look on them (4512e88), so the Resolve requests
+are the main grading path now.
+
+**Status (2026-10-15)**: 0.21.0 is adopted on `feat/engine-0.21` (colour,
+film effects, develops, scopes, mask geometry and the security audit all
+merged) and What's new for 0.6.0-beta is written. Still open below: the
+owner's checks (E53/E63 on the owner's RAWs, halation and bloom tuned on a
+night or HDR photo), Release-As and the PR, and what waits on the engine:
+E67 and B6 from before, and the asks the adoption raised, E79–E85 (a float
+overlay for PIXL Enhance, GPU kernels for 0.21's grade ops, a log-stage
+contrast roll-off, a second measure per convert, the integration guide,
+the Windows release test, masks stated on the source frame), in
+`~/fedora-data/pixl-engine-requests/ENGINE-REQUESTS.md`.
+
+### Pass 118 — Run on 0.21.0 · 3 pts
+
+- [x] **M** · Both packages (and `pixl-models`) at 0.21.0; the migration
+      notes' required fields; `pnpm run notices` after a build; new models
+      onto the mirror (`publish-models.mjs --only … --bucket pixl-models`,
+      then `--check`). Types restated from the guide. (6ca9bfd, 895b7d3,
+      e92fd27. 2026-10-15: the demosaic refs' 1.0.1 files were missing from
+      the mirror (404) and are uploaded; `--check`: every file the app offers
+      is served.)
+- [x] **S** · `src/shared/engine-types.ts` diffed against the binding's
+      `index.d.ts`; the dev kit restored (`pnpm engine:dev --restore`) so
+      `node_modules` holds the published roster. (e92fd27; node_modules
+      holds the published 0.21.0.)
+
+### Pass 119 — The workarounds go (E70, E53, E63, E64) · 5 pts
+
+- [x] **M** · E70: PIXL Enhance on a RAW's float frame. `main/enhance.ts`
+      stops clipping (`modelInput`). (5879c28: Apply and the 100% preview
+      read the float master unclipped.)
+- [ ] **M** · Waits on E79 (a float overlay source): the headroom guard
+      (`guardPatch`) lays nothing back and a RAW step is kept as F32,
+      checked on a RAW with highlights above white. The step stays 16-bit
+      under the guard until then.
+- [x] **M** · E53 and E63: `compile.ts` drops `withFloors` / `P3_FLOOR`
+      and sets `TONE_SMOOTHING = true` if the engine says smoothing is sane.
+      (7ccd29b, c68d328: both stopgaps gone, the tests assert the fix.)
+- [ ] **S** · Owner: `tests/e53.test.ts`, `tests/e63.test.ts` re-run on the
+      owner's RAWs (`PIXL_E53_RAWS`).
+- [x] **S** · E64: the stated-noise path (`ai/rawdevelop.ts`,
+      `ai/noisebook.ts`) only for a frame no plane of which fits. (af568e0:
+      a camera's own noise only, fitted over ISO, never borrowed; d6080a0:
+      0.20's Bayer PIXL masters developed again, their steps offered to
+      Rebuild.)
+
+### Pass 120 — Develops: cancel, progress, regions (B5, E68, E66, E67) · 5 pts
+
+- [x] **M** · A RAW master develop cancelled when the photo is left; the
+      loupe's bar from tiles done of tiles instead of the clock. (9dd27bd:
+      it finishes in the background past about 70%; 6469182: Enhance and
+      AI Denoise bars too.)
+- [x] **L** · If E66 lands: the first 1:1 look develops only its region.
+      (5369a4b: about 1.7 s against 8 s; develop-on-open stays, the owner,
+      2026-10-14. Also c27d015, the camera's preview at once while a photo
+      opens.)
+- [ ] **M** · If E67 lands (not in 0.21.0): proxies and thumbnails from the
+      model's own preview, not cut from the master.
+
+### Pass 121 — The colour tools made exact (E71–E75, E77, E78) · 5 pts
+
+- [x] **M** · E71, E72: `resolve.ts` `VS_WAITING` emptied, `curvesVsOp`
+      emits Hue vs Lum and Sat vs Sat; the "Waiting for the engine" badge
+      and `VS_WAITING_NOTE` go; tests in `tests/resolve.test.ts`. (c48c1df)
+- [x] **L** · E73, E74: Log wheels as the engine's op in its log space
+      (`logWheelsOps`). The looks re-measured old against new (the ΔE harness:
+      render each look's v-current and v-next on a RAW proxy, mean ΔE per
+      look) and any above 3 retuned. (39eab32; e3e9e13 `look-delta --maths`:
+      mean ΔE 0.14, at most 1.2, nothing to retune. Primaries' Contrast and
+      Pivot stay display-referred until E81.)
+- [x] **S** · E75: Temp/Tint on the `Primary` (`primariesWhite` moves).
+      (07d9e18, as a gain balance beside the Primary.)
+- [x] **S** · E78: the wheel rings move luminance alone. (6caba0c, Lum Mix.)
+      Also 23adde5, the region sliders on the parametric curve (E19).
+- [ ] **S** · E77 (answered in 0.21.0, not yet taken): qualifiers no longer
+      forced first in their own layer; the key view from the engine's
+      inspect (`QualifierKey`).
+
+### Pass 122 — Speed (E59, E7, E62, E37, B6) · 4 pts
+
+- [ ] **M** · `shared/gpudrag.ts`: the GPU allow-list grows with what the
+      engine takes; a RAW at its defaults drags on the GPU (measured on the
+      M2 Pro: fps and ms a frame, before and after). Waits on E80/E59: 0.21's
+      new grade ops are CPU-only, so a drag with them leaves the GPU
+      (20dbf8b holds that; Lum Mix 0 keeps it).
+- [x] **M** · 1:1 pans of refined masks re-measured. (2be2906, held refines:
+      1.2–3.7 s a pan to 0.3–0.4 s; 24faebe, CoreML compiles kept.)
+- [ ] **S** · Many-mask drags re-measured; `ModelSession` for develops if
+      offered (B6).
+
+### Pass 123 — Scopes and looks from the engine (E76, E41–E44) · 4 pts
+
+- [x] **M** · E76: the settled picture's scopes (waveform, parade, vector)
+      from `analyze`, the GPU bins kept for drags; "In mask" through the
+      engine's mask weight. (58a6861, 7de3062: one BT.709 luma; the CIE chart
+      stays the worker's. Also fa251e8, the gamut warning, E22.)
+- [x] **M** · E41–E44: `halationApprox` and `bloomApprox` replaced by the
+      real ops; the looks marked `approximates` re-made and the marks gone.
+      (ba5a08d, 96ab370: Halation, Bloom, colour grain, HSL Density.)
+- [ ] **S** · Owner: halation and bloom (and the looks using them) tuned on
+      a night or HDR photo.
+
+### Pass 124 — Release · 2 pts
+
+- [x] **S** · What's new for the release (`shared/releasenotes.ts`, the
+      house style), translations.
+- [ ] **S** · Release-As 0.6.0-beta, the PR.
+
 ## Top priority — Phase N: engine 0.18.0 (passes 85–103)
 
 **Status (2026-10-08)**: passes 85–103 are done and tested on the branch; what

@@ -57,6 +57,30 @@ export function PresetsActions(): React.JSX.Element {
   )
 }
 
+/** A saved preset deleted, its toast's Undo saving it back as it was (the same id, UX-14). */
+async function deletePreset(p: Preset): Promise<void> {
+  const lib = useLibrary.getState()
+  try {
+    await api.presets.remove(p.id)
+    presetsChanged()
+    const { builtin, ...saved } = p
+    void builtin
+    lib.say(t('Deleted preset {{name}}', { name: p.name }), 'info', {
+      label: t('Undo'),
+      run: () =>
+        void api.presets
+          .save(saved)
+          .then(() => {
+            presetsChanged()
+            lib.say(t('Preset {{name}} is back', { name: p.name }))
+          })
+          .catch((err) => lib.say(errorText(err), 'error'))
+    })
+  } catch (err) {
+    lib.say(errorText(err), 'error')
+  }
+}
+
 /** The Looks browser, searching for `query` when one is given. */
 function openLooks(query = ''): void {
   useLooks.setState({ browseQuery: query })
@@ -64,7 +88,8 @@ function openLooks(query = ''): void {
 }
 
 export function PresetsPane(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
+  // Whether a photo is open: a slider's tick leaves the list be.
+  const hasRecipe = useDevelop((s) => s.recipe !== null)
   const mine = useLooks((s) => s.mine)
   const user = useLooks((s) => s.user)
   const applied = useApplied()
@@ -75,7 +100,7 @@ export function PresetsPane(): React.JSX.Element | null {
   useLookHoverCleanup()
   const myLooks = (mine ?? []).flatMap((id) => LOOK_BY_ID.get(id) ?? [])
   const reorder = useReorder((from, to) => useLooks.getState().move(myLooks[from].id, to))
-  if (!recipe) return <p className="rail-empty">{t('Open a photo to use presets.')}</p>
+  if (!hasRecipe) return <p className="rail-empty">{t('Open a photo to use presets.')}</p>
   // Alt (Option) puts a look on top of the applied one instead of in its place.
   const apply = (p: Preset, stack: boolean): void => {
     leaveLook(true)
@@ -166,6 +191,7 @@ export function PresetsPane(): React.JSX.Element | null {
               <button
                 className="icon sm"
                 title={t('Remove from My Looks')}
+                aria-label={t('Remove from My Looks')}
                 onClick={(e) => {
                   e.stopPropagation()
                   useLooks.getState().remove(p.id)
@@ -189,9 +215,10 @@ export function PresetsPane(): React.JSX.Element | null {
                 <button
                   className="icon sm"
                   title={t('Delete preset')}
+                  aria-label={t('Delete preset')}
                   onClick={(e) => {
                     e.stopPropagation()
-                    void api.presets.remove(p.id).then(presetsChanged)
+                    void deletePreset(p)
                   }}
                 >
                   <Icon name="trash" />
@@ -208,6 +235,7 @@ export function PresetsPane(): React.JSX.Element | null {
               <button
                 className="icon sm"
                 title={t('Add to My Looks')}
+                aria-label={t('Add to My Looks')}
                 onClick={(e) => {
                   e.stopPropagation()
                   useLooks.getState().add(p.id)
@@ -241,12 +269,18 @@ function AppliedLookBar(): React.JSX.Element | null {
     <div className="applied-look">
       <div className="applied-look-head">
         <strong title={t('Applied: {{look}}', { look: applied.label })}>{applied.name}</strong>
-        <button className="icon sm" title={t('Take the look off')} onClick={removeLook}>
+        <button
+          className="icon sm"
+          title={t('Take the look off')}
+          aria-label={t('Take the look off')}
+          onClick={removeLook}
+        >
           <Icon name="reset" />
         </button>
         <button
           className="icon sm"
           title={t('Keep it as it is: the next look goes on top')}
+          aria-label={t('Keep it as it is: the next look goes on top')}
           onClick={() => useLooks.setState({ applied: null })}
         >
           <Icon name="check" />
@@ -292,7 +326,7 @@ function LookRunProgress({ runId }: { runId: string }): React.JSX.Element | null
             : run.label}
         </span>
         {run.phase === 'running' && <span className="t">{formatEta(left)}</span>}
-        <button className="sm ghost" onClick={cancelLookRun} title={t("Stop the look's AI work")}>
+        <button className="sm ghost" onClick={cancelLookRun} title={t('Stop the look’s AI work')}>
           {t('Cancel')}
         </button>
       </div>
@@ -389,6 +423,7 @@ function MaskPresetsGroup(): React.JSX.Element | null {
             <button
               className="icon sm"
               title={t('Delete mask preset')}
+              aria-label={t('Delete mask preset')}
               onClick={(e) => {
                 e.stopPropagation()
                 void remove(p.name)
@@ -410,7 +445,7 @@ function MaskPresetsGroup(): React.JSX.Element | null {
           >
             <span className="rail-label">
               <Icon name="plus" />
-              {t("Save this mask's settings…")}
+              {t('Save this mask’s settings…')}
             </span>
           </div>
         ) : (
@@ -539,8 +574,18 @@ export function InfoPane(): React.JSX.Element {
           <>
             <dt>{t('Camera colour')}</dt>
             <dd title={rawColourReason(info) ?? undefined}>
-              {rawColourLabel(info, session.rawColour)}
+              {session.cameraProfile?.name ?? rawColourLabel(info, session.rawColour)}
               {session.rawColour === 'container' && rawColourReason(info) ? ' *' : ''}
+            </dd>
+          </>
+        )}
+        {session.cameraProfile && (
+          <>
+            <dt>{t('Profile')}</dt>
+            <dd title={session.cameraProfile.tables ?? undefined}>
+              {session.cameraProfile.tables
+                ? t('{{name}} · its tables ran', { name: session.cameraProfile.name })
+                : t('{{name}} · matrices', { name: session.cameraProfile.name })}
             </dd>
           </>
         )}

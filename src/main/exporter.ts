@@ -1,12 +1,14 @@
 /**
  * Export: each photo's original, developed once more at full resolution with
  * its recipe and written where the settings say. The same compiler as the
- * previews, at scale 1. One file at a time, in the background engine, with
- * progress; cancelling stops the file being written at the engine's next
- * stage (a cancelled conversion writes nothing) and the rest are not begun.
+ * previews, at scale 1. One file at a time, in the background engine, one
+ * export after another (main/exportqueue.ts), each from the recipes and the
+ * folder there were when Export was pressed; stopping one stops the file
+ * being written at the engine's next stage (a cancelled conversion writes
+ * nothing) and the rest are not begun.
  */
 import { activeSteps } from '../shared/pixels'
-import { BrowserWindow, shell } from 'electron'
+import { BrowserWindow, Notification, shell } from 'electron'
 import log from 'electron-log/main'
 import { constants as fsConstants } from 'fs'
 import { access, mkdir, rm, statfs } from 'fs/promises'
@@ -35,13 +37,23 @@ import {
   type ExportSettings
 } from '../shared/export'
 import { FORMAT_NAME, receiptNotes, type Guard } from '../shared/exportGuards'
-import { IPC, type ExportPreview, type ExportProgress, type LibraryItem } from '../shared/ipc'
+import { estimateEach, formatBytes } from '../shared/exportSummary'
+import {
+  IPC,
+  type ExportFacts,
+  type ExportPreview,
+  type ExportProgress,
+  type LibraryItem
+} from '../shared/ipc'
+import { ExportQueue, mapLimit, type PhotoSnapshot, type QueuedExport } from './exportqueue'
 import { READ_LIMITS } from '../shared/limits'
 import { paths, scriptedHome } from './paths'
 import { exportDirFor } from './project/locate'
 import { LOCATION_SETTING, locationOf, type SaveLocation } from '../shared/locations'
 import { cacheUrl } from './protocol'
 import { brushPlanes } from './brushes'
+import { lutsFor } from './lutfile'
+import { maskFramesFor } from './maskframe'
 import { embedMetadata } from './exiftool'
 import { exists, sameFile } from './exists'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
@@ -71,14 +83,30 @@ import {
   seedOf,
   versionStamp
 } from './source'
-
-interface Job {
-  id: string
-  abort: AbortController
-}
+import { exposureOffsetOf } from '../shared/rawcolour'
 
 /** Photos probed for their size in a preflight: a probe is cached, but a thousand are still a wait. */
 const PROBE_LIMIT = 100
+
+/** How long what a selection's photos are stays known to the sheet's checks. */
+const FACTS_FRESH_MS = 60_000
+/** Photos read at once for the sheet's checks. */
+const FACTS_AT_ONCE = 8
+
+/** One photo as the sheet's checks know it. */
+interface Fact {
+  key: string
+  item: LibraryItem | undefined
+  /** Null when offline, or gone. */
+  row: PhotoRow | null
+  offline: boolean
+}
+
+interface Gathered {
+  photos: Fact[]
+  /** The first PROBE_LIMIT photos there are, as probed. */
+  sample: (ExportFacts['sample'][number] & { name: string; tooLarge: boolean })[]
+}
 
 /** The peak an HDR source that states none is read at, in cd/m². */
 const UNSTATED_HDR_PEAK = 1000
@@ -106,14 +134,15 @@ async function freeBytes(dir: string): Promise<number | null> {
   }
 }
 
-function formatBytes(n: number): string {
-  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
-  if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`
-  return `${Math.max(1, Math.round(n / 1024))} KB`
-}
+/** How often a running export looks whether its engine waits for the editing. */
+const PAUSE_POLL_MS = 500
+/** How long "Paused while you edit" stays after the last wait, so it does not flicker. */
+const PAUSE_LINGER_MS = 2000
+
+type Job = QueuedExport<Recipe | null, SaveLocation>
 
 export class Exporter {
-  private jobs = new Map<string, Job>()
+  private readonly queue: ExportQueue<Recipe | null, SaveLocation>
   /**
    * What the exports running have written: a name taken by one of their own
    * files is never written over or skipped, whatever is asked of files that
@@ -121,6 +150,8 @@ export class Exporter {
    * into one).
    */
   private readonly written = new Set<string>()
+  private pauseTimer: ReturnType<typeof setInterval> | null = null
+  private heldAt = 0
 
   /** Where exports go (`export.location`: Settings and the Export dialog change the one setting). */
   private async destination(): Promise<SaveLocation> {
@@ -132,67 +163,137 @@ export class Exporter {
   constructor(
     private readonly library: Library,
     private readonly sessions: DevelopSessions,
-    private readonly engine: EngineClient
-  ) {}
+    private readonly engine: EngineClient,
+    /** Whether someone is at Playroom (a window of it has the focus): no Finder over their edit. */
+    private readonly attended: () => boolean = () => BrowserWindow.getFocusedWindow() !== null
+  ) {
+    this.queue = new ExportQueue<Recipe | null, SaveLocation>({
+      snapshot: (key) => this.snapshot(key),
+      destination: () => this.destination(),
+      render: (job, key, seq, warn) => this.one(job, key, seq, warn),
+      version: (key, recipe) => {
+        // The state an export was made from, a Version to come back to; one
+        // the same as the photo's newest is not made again (shared/versions.ts).
+        if (recipe)
+          void this.library.addVersion(key, {
+            name: tk('Exported'),
+            kind: 'auto',
+            reason: 'export',
+            recipe
+          })
+      },
+      send: (p) => this.send(p),
+      isCancelled,
+      failed: (key, err) => log.warn('export failed', key, err),
+      finished: (p, s) => this.finished(p, s),
+      idle: () => {
+        this.written.clear()
+        this.watchPause(false)
+      }
+    })
+  }
 
-  /** Whether an export is running. */
+  /** Whether an export is running or queued. */
   get busy(): boolean {
-    return this.jobs.size > 0
+    return this.queue.busy
   }
 
   private send(p: ExportProgress): void {
+    if (!p.finished && !p.queued) this.watchPause(true)
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.export.progress, p)
   }
 
+  /**
+   * While an export runs, whether the background engine is holding its work
+   * for the editing (`holdFor`): the pill says "Paused while you edit"
+   * rather than standing still without a word.
+   */
+  private watchPause(on: boolean): void {
+    if (!on) {
+      if (this.pauseTimer) clearInterval(this.pauseTimer)
+      this.pauseTimer = null
+      return
+    }
+    if (this.pauseTimer) return
+    this.pauseTimer = setInterval(() => {
+      const now = Date.now()
+      if (this.engine.heldBack) this.heldAt = now
+      this.queue.setPaused(now - this.heldAt < PAUSE_LINGER_MS)
+    }, PAUSE_POLL_MS)
+    this.pauseTimer.unref?.()
+  }
+
+  /** Every export queued, running, or lately finished (a window opened again finds them). */
+  jobs(): ExportProgress[] {
+    return this.queue.list()
+  }
+
+  /** Queue an export: each photo's recipe and the folder are taken now. */
+  enqueue(keys: string[], settings: ExportSettings, label: string | null): Promise<string> {
+    return this.queue.enqueue(keys, settings, label)
+  }
+
   cancel(id: string): void {
-    this.jobs.get(id)?.abort.abort()
+    this.queue.stop(id)
   }
 
-  start(keys: string[], settings: ExportSettings): string {
-    const job: Job = { id: Math.random().toString(36).slice(2), abort: new AbortController() }
-    this.jobs.set(job.id, job)
-    void this.run(job, keys, settings).finally(() => {
-      this.jobs.delete(job.id)
-      if (this.jobs.size === 0) this.written.clear()
+  /** Stop every export (quitting). */
+  stopAll(): void {
+    this.queue.stopAll()
+  }
+
+  retry(id: string): Promise<string | null> {
+    return this.queue.retry(id)
+  }
+
+  /** An export's files in the system's file browser: the first of them, selected. */
+  show(id: string): void {
+    const out = this.queue.list().find((p) => p.jobId === id)?.outputs[0]
+    if (out) shell.showItemInFolder(out)
+  }
+
+  /** The photo as Export finds it: pending edits saved, then its recipe as it is now. */
+  private async snapshot(key: string): Promise<PhotoSnapshot<Recipe | null>> {
+    await this.sessions.flush(key).catch(() => undefined)
+    const item = await this.library.item(key).catch(() => undefined)
+    if (item?.offline) return { recipe: null, name: item.name, offline: true }
+    // A RAW's camera colour is recorded by its first probe, and its saved
+    // white balance moves with it, before the recipe is read.
+    if (item?.isRaw)
+      await this.library
+        .photoRow(key)
+        .then((row) => this.library.probe(row))
+        .catch(() => undefined)
+    const recipe =
+      this.sessions.liveRecipe(key) ?? (await this.library.recipe(key).catch(() => null))
+    return { recipe, name: item?.name ?? key, offline: false }
+  }
+
+  /**
+   * An export done: when nobody is at Playroom, its folder comes up (if the
+   * settings ask) and the system says so; otherwise the receipt in the top
+   * bar's pill has its Show action, and nothing jumps in front of the edit.
+   */
+  private finished(p: ExportProgress, s: ExportSettings): void {
+    if (p.stopped || this.attended()) return
+    const failed = p.errors.filter((e) => !e.warning).length
+    if (s.reveal && p.outputs.length > 0) shell.showItemInFolder(p.outputs[0])
+    if (!Notification.isSupported()) return
+    const n = new Notification({
+      title: p.label ? t('Export done · {{label}}', { label: p.label }) : t('Export done'),
+      body:
+        failed > 0
+          ? t('{{count}} written, {{failed}} failed.', { count: p.outputs.length, failed })
+          : t('{{count}} written.', { count: p.outputs.length })
     })
-    return job.id
-  }
-
-  private async run(job: Job, keys: string[], s: ExportSettings): Promise<void> {
-    const progress: ExportProgress = {
-      jobId: job.id,
-      done: 0,
-      total: keys.length,
-      current: null,
-      errors: [],
-      finished: false,
-      outputs: []
-    }
-    const { signal } = job.abort
-    for (const [i, key] of keys.entries()) {
-      if (signal.aborted) break
-      const item = await this.library.item(key)
-      progress.current = item?.name ?? key
-      this.send(progress)
-      const name = item?.name ?? key
-      try {
-        const out = await this.one(key, s, i + 1, signal, (message) =>
-          progress.errors.push({ name, message, warning: true })
-        )
-        if (out) progress.outputs.push(out)
-      } catch (err) {
-        // Stopped by Cancel: the file was never written, and nothing failed.
-        if (isCancelled(err)) break
-        log.warn('export failed', key, err)
-        progress.errors.push({ name, message: (err as Error).message })
-      }
-      progress.done = i + 1
-      this.send(progress)
-    }
-    progress.finished = true
-    progress.current = null
-    this.send(progress)
-    if (s.reveal && progress.outputs.length > 0) shell.showItemInFolder(progress.outputs[0])
+    n.on('click', () => {
+      const w = BrowserWindow.getAllWindows()[0]
+      if (!w) return
+      if (w.isMinimized()) w.restore()
+      w.show()
+      w.focus()
+    })
+    n.show()
   }
 
   /**
@@ -218,17 +319,22 @@ export class Exporter {
   }
 
   /**
-   * Export one item. Returns the written path, or null when skipped. What
-   * goes wrong after the file is written (its metadata) is a `warn`.
+   * One photo of a queued export, from its snapshot. Returns the written
+   * path, or null when skipped. What goes wrong after the file is written
+   * (its metadata) is a `warn`.
    */
   private async one(
+    job: Job,
     key: string,
-    s: ExportSettings,
     seq: number,
-    signal: AbortSignal,
     warn: (message: string) => void
   ): Promise<string | null> {
-    return (await this.render(key, s, seq, signal, warn))?.out ?? null
+    const recipe = job.photos.get(key)?.recipe ?? null
+    const done = await this.render(key, job.settings, seq, job.abort.signal, warn, undefined, {
+      recipe,
+      dest: job.dest
+    })
+    return done?.out ?? null
   }
 
   /**
@@ -243,24 +349,18 @@ export class Exporter {
     seq: number,
     signal: AbortSignal,
     warn: (message: string) => void,
-    preview?: { out: string }
+    preview?: { out: string },
+    /** A queued export's: the recipe and the folder as they were when Export was pressed. */
+    snap?: { recipe: Recipe | null; dest: SaveLocation }
   ): Promise<{ out: string; report: ConvertReport } | null> {
     const s = preview ? previewSettings(s0) : s0
-    await this.sessions.flush(key)
+    if (!snap) await this.sessions.flush(key)
     const row = await this.library.photoRow(key)
     // First: a RAW's camera colour is recorded by its first probe, and its
     // saved white balance moves with it, before the recipe is read.
     const file = await this.library.probe(row)
     const item = await this.library.item(key)
-    const recipe = this.sessions.liveRecipe(key) ?? (await this.library.recipe(key))
-    // The state an export was made from, a Version to come back to (not for a preview).
-    if (!preview)
-      void this.library.addVersion(key, {
-        name: tk('Exported'),
-        kind: 'auto',
-        reason: 'export',
-        recipe
-      })
+    const recipe = snap?.recipe ?? this.sessions.liveRecipe(key) ?? (await this.library.recipe(key))
     // The engine's own HDR path (`ColorPolicy::Master`) where the settings
     // and the photo allow it: it reads a gain map itself and grades with
     // headroom, so the rendition below is not made for it.
@@ -303,15 +403,32 @@ export class Exporter {
     // SDR picture and writes the map between them. An SDR source has nothing
     // above white to map, and is written as plain SDR.
     const gainMapOut = !pixl && info.is_hdr && s.hdr.mode === 'gainmap' && supportsGainMap(s.format)
+    // Masks drawn under another lens than the one rendered are carried to it.
+    const maskFrames = await maskFramesFor(
+      pixelDeps(this.engine, this.library.index, row),
+      recipe,
+      row.is_raw === 1,
+      frameW,
+      frameH
+    ).catch((err) => {
+      log.warn('export: masks on another lens not mapped', err)
+      return null
+    })
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(row)),
       sourceOrientation: srcOrientation,
       frameWidth: frameW,
       frameHeight: frameH,
       scale: 1,
       seed: seedOf(row),
-      brushPaths: await brushPlanes(row.id, recipe, user),
+      brushPaths: await brushPlanes(row.id, recipe, user, {
+        isRaw: row.is_raw === 1,
+        frames: maskFrames
+      }),
+      maskFrames,
+      luts: await lutsFor(recipe, paths.luts()),
       applyCrop: true,
       // HDR only where the pipeline keeps room above white: PQ/HLG out, or
       // the gain map's HDR master. Tone mapped to SDR, the grade runs after
@@ -330,7 +447,8 @@ export class Exporter {
     else {
       // Where exports go: beside the photo (where it is listed: its copy may
       // be the project's own), the preset folder, or the user's.
-      const { target, stem } = this.nameOf(row, item, s, seq, await this.destination())
+      const dest = snap?.dest ?? (await this.destination())
+      const { target, stem } = this.nameOf(row, item, s, seq, dest)
       await mkdir(target, { recursive: true })
       const ext = FORMAT_EXT[s.format]
       out = join(target, `${stem}.${ext}`)
@@ -474,7 +592,12 @@ export class Exporter {
         .catch((err: unknown) => {
           // HR-0.18-9: the export says which adjustment broke the picture.
           if (err instanceof EngineError)
-            err.nameInvariant(compiled.grade, r.sdr?.grade ?? null, compiled.layerIndex)
+            err.nameInvariant(
+              compiled.grade,
+              r.sdr?.grade ?? null,
+              compiled.layerIndex,
+              compiled.qualifierIndex
+            )
           throw err
         })
     // A RAW exported from the file at full size: its best demosaic, and PMRID
@@ -598,47 +721,117 @@ export class Exporter {
     this.previewAbort?.abort()
   }
 
+  private gathered: { keys: string; at: number; facts: Promise<Gathered> } | null = null
+
+  /**
+   * What an export of `keys` needs to know of them that no setting changes:
+   * each one's row (offline or not) and a sample's probe. Read once for a
+   * selection (a minute at most), so the checks that follow the settings in
+   * the sheet only look at the disk.
+   */
+  private gather(keys: string[]): Promise<Gathered> {
+    const id = keys.join('\n')
+    const now = Date.now()
+    if (this.gathered?.keys === id && now - this.gathered.at < FACTS_FRESH_MS)
+      return this.gathered.facts
+    const facts = (async (): Promise<Gathered> => {
+      const photos = await mapLimit(keys, FACTS_AT_ONCE, async (key): Promise<Fact> => {
+        const item = await this.library.item(key).catch(() => undefined)
+        if (item?.offline) return { key, item, row: null, offline: true }
+        const row = await this.library.photoRow(key).catch(() => null)
+        return { key, item, row, offline: false }
+      })
+      const probed = photos.filter((p) => p.row).slice(0, PROBE_LIMIT)
+      const infos = await mapLimit(probed, FACTS_AT_ONCE, (p) =>
+        this.library.probe(p.row!).catch(() => null)
+      )
+      const sample: Gathered['sample'] = []
+      for (const [i, p] of probed.entries()) {
+        const info = infos[i]
+        if (!info) continue
+        const turned = ['Transpose', 'Rotate90', 'Transverse', 'Rotate270'].includes(
+          sourceOrientation(info, null)
+        )
+        sample.push({
+          key: p.key,
+          name: p.row!.name,
+          width: turned ? info.height : info.width,
+          height: turned ? info.width : info.height,
+          isHdr: info.is_hdr,
+          hasGainMap: !!info.gain_map,
+          tooLarge:
+            info.width * info.height > READ_LIMITS.max_pixels ||
+            Math.max(info.width, info.height) > READ_LIMITS.max_side
+        })
+      }
+      return { photos, sample }
+    })()
+    this.gathered = { keys: id, at: now, facts }
+    facts.catch(() => {
+      if (this.gathered?.facts === facts) this.gathered = null
+    })
+    return facts
+  }
+
+  /** The photos an export of `keys` would take, for the sheet's summary and estimate. */
+  async facts(keys: string[]): Promise<ExportFacts> {
+    const { photos, sample } = await this.gather(keys)
+    return {
+      photos: photos.length,
+      offline: photos.filter((p) => p.offline).length,
+      sample: sample.map(({ key, width, height, isHdr, hasGainMap }) => ({
+        key,
+        width,
+        height,
+        isHdr,
+        hasGainMap
+      }))
+    }
+  }
+
   /**
    * The checks an export's settings cannot make on their own: a folder that
    * cannot be written, too little room, files that would be replaced or
-   * skipped, a photo past what the engine opens. The same `Guard`s as
-   * `exportGuards`, raised before anything is written.
+   * skipped, a photo past what the engine opens, photos offline. The same
+   * `Guard`s as `exportGuards`, raised before anything is written; what
+   * the photos are is read once (`gather`), what the settings make of them
+   * each time.
    */
   async preflight(keys: string[], s: ExportSettings): Promise<Guard[]> {
     const out: Guard[] = []
     const folders = new Set<string>()
     let existing = 0
     let replaced = false
-    let need = 0
-    const big: string[] = []
+    const { photos, sample } = await this.gather(keys)
     const dest = await this.destination()
-    for (const [i, key] of keys.entries()) {
-      const row = await this.library.photoRow(key).catch(() => null)
-      if (!row) continue
-      const item = await this.library.item(key)
-      const { target, stem } = this.nameOf(row, item, s, i + 1, dest)
-      folders.add(target)
+    const offline = photos.filter((p) => p.offline).length
+    const big = sample.filter((p) => p.tooLarge).map((p) => p.name)
+    const checked = await mapLimit([...photos.entries()], FACTS_AT_ONCE, async ([i, p]) => {
+      if (!p.row) return null
+      const { target, stem } = this.nameOf(p.row, p.item, s, i + 1, dest)
       const file = join(target, `${stem}.${FORMAT_EXT[s.format]}`)
-      if (await exists(file)) {
-        if (await sameFile(file, row.path)) replaced = true
-        else existing++
-      }
-      need += row.size * 2
-      if (i < PROBE_LIMIT) {
-        const info = await this.library.probe(row).catch(() => null)
-        if (
-          info &&
-          (info.width * info.height > READ_LIMITS.max_pixels ||
-            Math.max(info.width, info.height) > READ_LIMITS.max_side)
-        )
-          big.push(row.name)
-      }
+      const there = await exists(file)
+      return { target, there: there && (await sameFile(file, p.row.path)) ? 'original' : there }
+    })
+    for (const c of checked) {
+      if (!c) continue
+      folders.add(c.target)
+      if (c.there === 'original') replaced = true
+      else if (c.there) existing++
     }
+    // The room it needs: the sample's estimate for every photo, with a margin.
+    const written = photos.filter((p) => p.row).length
+    // (The sheet's own estimate, so the two never disagree.)
+    const each = estimateEach(s, sample)
+    const need = Math.max(
+      Math.round(each * written * 1.25),
+      photos.reduce((n, p) => n + (p.row?.size ?? 0), 0)
+    )
     if (replaced)
       out.push({
         id: 'overwrite-original',
         severity: 'block',
-        step: 'review',
+        card: 'location',
         message: t(
           'A file would be written over its original: change the name, the folder or the format.'
         )
@@ -653,7 +846,7 @@ export class Exporter {
         out.push({
           id: 'folder-unwritable',
           severity: 'block',
-          step: 'review',
+          card: 'location',
           message: t('Playroom cannot write to {{folder}}: choose another folder.', {
             folder: there
           })
@@ -665,7 +858,7 @@ export class Exporter {
         out.push({
           id: 'disk-full',
           severity: 'block',
-          step: 'review',
+          card: 'location',
           message: t('Only {{free}} is free where {{folder}} is.', {
             free: formatBytes(free),
             folder: there
@@ -675,7 +868,7 @@ export class Exporter {
         out.push({
           id: 'disk-low',
           severity: 'warn',
-          step: 'review',
+          card: 'location',
           message: t('{{free}} is free where {{folder}} is; this export may need about {{need}}.', {
             free: formatBytes(free),
             folder: there,
@@ -689,7 +882,7 @@ export class Exporter {
           ? {
               id: 'collide',
               severity: 'warn',
-              step: 'review',
+              card: 'location',
               message: tp(
                 '{{count}} file already exists and will be replaced.',
                 '{{count}} files already exist and will be replaced.',
@@ -700,7 +893,7 @@ export class Exporter {
             ? {
                 id: 'collide',
                 severity: 'warn',
-                step: 'review',
+                card: 'location',
                 message: tp(
                   '{{count}} file already exists and will be skipped.',
                   '{{count}} files already exist and will be skipped.',
@@ -710,7 +903,7 @@ export class Exporter {
             : {
                 id: 'collide',
                 severity: 'minor',
-                step: 'review',
+                card: 'location',
                 message: tp(
                   '{{count}} file already exists: the new ones get a number.',
                   '{{count}} files already exist: the new ones get a number.',
@@ -719,11 +912,22 @@ export class Exporter {
               }
       )
     }
+    if (offline > 0)
+      out.push({
+        id: 'offline',
+        severity: 'warn',
+        card: null,
+        message: tp(
+          '{{count}} photo is offline and will be skipped.',
+          '{{count}} photos are offline and will be skipped.',
+          offline
+        )
+      })
     if (big.length > 0)
       out.push({
         id: 'too-large',
         severity: 'warn',
-        step: 'format',
+        card: 'size',
         message:
           big.length > 1
             ? tp(

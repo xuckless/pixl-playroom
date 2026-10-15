@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Collection } from '../../../../shared/ipc'
+import { GlassSelect } from '../../components/GlassSelect'
 import { matchSmart, referencedCollections, type SmartGroup } from '../../../../shared/smart'
 import { Modal } from '../../components/ui'
 import { api, errorText } from '../../lib/api'
@@ -146,17 +147,14 @@ export function CollectionDialog({ initial }: { initial: CollectionDraft }): Rea
       </label>
       <label className="field">
         <span>{t('In set')}</span>
-        <select
+        <GlassSelect
           value={draft.parent ?? ''}
-          onChange={(e) => setDraft({ ...draft, parent: e.target.value || null })}
-        >
-          <option value="">{t('None (top level)')}</option>
-          {sets.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setDraft({ ...draft, parent: v || null })}
+          options={[
+            { value: '', label: t('None (top level)') },
+            ...sets.map((s) => ({ value: s.id, label: s.name }))
+          ]}
+        />
       </label>
       {smart && draft.rules && (
         <fieldset className="rules-fieldset">

@@ -35,7 +35,7 @@ import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useAiJobs } from '../state/jobs'
 import { useLibrary, useTargets } from '../state/library'
-import { useScope } from '../state/scope'
+import { useScopeMask } from '../state/scope'
 import { useUi } from '../state/ui'
 import { t, tk, tp } from '../lib/i18n'
 
@@ -83,7 +83,7 @@ export function EnhancePanel(): React.JSX.Element | null {
     const mark = d.session.developMark ?? developMark(d.session.rawColour ?? 'container')
     return d.recipe.pixels.filter((p) => p.kind === 'enhance' && staleRawStep(p, true, mark)).length
   })
-  const { layer } = useScope()
+  const layer = useScopeMask()
   const saved = useUi((u) => u.enhance)
   const set = useUi((u) => u.setEnhance)
   const targets = useTargets()

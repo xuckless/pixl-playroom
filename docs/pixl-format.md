@@ -84,6 +84,11 @@ One row (`id = 1`): the photo the project was made from, as it was then.
 | `is_raw`        | 1 for a camera RAW                                                 |
 | `sha1`          | its SHA-1, when known                                              |
 
+A project travels and is opened by double-clicking it, so a reader checks the origin before
+any of it names a file: `name` is a file name with no folder in it, `ext` is an image
+extension Playroom lists (lower case, letters and digits), and `path` is absolute and never a
+device path. A file whose origin fails is not a project. Playroom never writes one.
+
 ### `items`
 
 The photo and its virtual copies, one row each.
@@ -99,6 +104,11 @@ The photo and its virtual copies, one row each.
 | `recipe`     | the develop settings as JSON (see _Recipes_), or NULL for none |
 | `snapshots`  | JSON array of `{ id, name, at, recipe }`                       |
 | `updated_at` | ISO 8601 time                                                  |
+
+A copy's id names its files in Playroom's cache, so a reader keeps a copy only when its id is
+1–64 letters, digits, `_` or `-` (what Playroom makes). A layer or component id in a recipe
+that breaks the rule is read as a stable one made from it, and a plane's `ref` must be a
+64-hex hash.
 
 ### `history`
 
@@ -142,6 +152,17 @@ Painted mask planes are blobs (below) of `kind` `plane`, `codec` `png`: an
 - Recipes name a plane by it: a brush component with `"png": ""` and
   `"ref": "<sha256>"` uses that plane. A component with a non-empty `png`
   (base64) carries its plane inline.
+- A brush component may also carry `strokes` (the engine's vector strokes,
+  since its 0.21), painted over its plane in order; one with strokes and
+  neither `png` nor `ref` has no plane. Each stroke is
+  `{ "id", "dabs": [x, y, radius, pressure, …], "softness", "flow", "erase"? }`:
+  four numbers a dab, `x` and `y` fractions of the base frame (the photo
+  upright, before the user's turns), `radius` a fraction of its shorter
+  side, `pressure`, `softness` and `flow` 0…1; an `erase` stroke takes
+  itself out of what was painted before it. Strokes are on their plane's
+  lens frame (the component's `lensFrame` when it has one, else the
+  recipe's `masks.lensFrame`); strokes with no plane are points, rewritten
+  onto the photo's lens when a lens edit settles, as a lasso's are.
 - A plane no item, snapshot or history row names may be removed.
 - **Version 1** kept planes as base64 text in a `planes(ref, png)` table, named
   by a 32-bit hash and the text's length. Opening a version-1 file upgrades
@@ -171,7 +192,8 @@ Large binaries, stored once by content.
 
 - in order of `idx` from 0;
 - each chunk at most 4 MiB (`data` is a BLOB);
-- a reader concatenates the chunks.
+- a reader concatenates the chunks, and checks that they hash to the blob's name before it
+  uses them (Playroom writes a blob out only then).
 
 A blob nothing names may be removed. Names are `original.blob`, and any
 `"blob"`, `"alpha"` or `"ref"` field holding a 64-hex hash in a recipe,

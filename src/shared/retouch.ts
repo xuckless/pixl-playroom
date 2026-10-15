@@ -20,6 +20,7 @@ import type {
   RetouchStep,
   SpotShape
 } from './engine-types'
+import type { LensFrame } from './lensframe'
 import { refineFor } from './refine'
 import { transformPoint } from './orientation'
 import { tk } from './i18n'
@@ -65,6 +66,11 @@ export interface RetouchSpot {
    * three choices (2026-10-11).
    */
   refine?: SpotRefine
+  /**
+   * The lens frame it is on, when not the masks' (`Recipe.masks`): a spot
+   * pasted from another photo. Absent: the masks' frame.
+   */
+  lensFrame?: LensFrame
 }
 
 /** A heal's edge: the heal brush's setting, kept for every new spot until changed. */
@@ -83,9 +89,9 @@ function smallestShort(w: number, h: number): number {
 /**
  * The engine's refine for a heal or clone spot on a `w × h` frame, or null
  * for plain. Matting runs at its defaults. Edge snap's distance is kept
- * inside the spot: engine 0.19.2 refuses a heal whose snap reaches as far as
- * its radius less its feather ("the heal covers the whole frame": nothing
- * is left around it to fit the colour to), on any photo, and counts in whole
+ * inside the spot: a snap reaching as far as the spot's radius less its
+ * feather can never select anything (engine 0.21.0, E60: the step then
+ * changes nothing; 0.19.2 refused it), and the engine counts in whole
  * pixels of each render. So the distance is at most half the radius, and at
  * most what the draft (the smallest render, where a pixel is the largest
  * share) has room for; a spot with no room for even a pixel is healed plain.
@@ -110,18 +116,6 @@ export function spotRefine(
 
 /** The least distance the engine's Edge snap takes (a shorter-side fraction). */
 const SNAP_LEAST = 0.0005
-
-/**
- * Whether the engine refused a retouch step itself (not one of its fields):
- * 0.19.2 does when a heal's refined edge takes in everything around the
- * spot ("the heal covers the whole frame"), which a flat area can do to
- * either method whatever its settings. The spot is then healed plain.
- */
-export function refineRefused(err: unknown): boolean {
-  const e = err as { field?: string; message?: string } | null
-  const field = e?.field ?? /field `([^`]+)`/.exec(e?.message ?? '')?.[1] ?? ''
-  return /^retouch\.steps\[\d+\]$/.test(field)
-}
 
 export const SPOT_LABEL: Record<SpotKind, string> = {
   heal: tk('Heal'),

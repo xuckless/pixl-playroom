@@ -4,7 +4,8 @@
  * first, then cinema, film, movies and the rest; a look added here joins My
  * Looks in the rail.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { modName } from '../../lib/commands'
 import type { Preset } from '../../../../shared/ipc'
 import { LOOKS } from '../../../../shared/looks/catalog'
 import {
@@ -15,7 +16,7 @@ import {
 } from '../../../../shared/looks/collections'
 import { searchLooks } from '../../../../shared/looks/search'
 import { formatEta } from '../../../../shared/looks/run'
-import { planSmart, smartBlockers } from '../../../../shared/looks/smart'
+import { planSmart, smartBlockers, type SmartReadiness } from '../../../../shared/looks/smart'
 import { Icon } from '../../components/icons'
 import { Modal } from '../../components/ui'
 import { applyToPhoto, removeLook, smartReady, useApplied } from '../../lib/applyLook'
@@ -41,6 +42,14 @@ const CARD_EDGE = 260
 /** A look's name in the language shown (a preset the user saved keeps theirs). */
 const nameOf = (p: Preset): string => (p.builtin ? t(p.name) : p.name)
 
+/** A look PIXL ships into My Looks, or out of it. */
+function toggleMine(p: Preset): void {
+  if (!p.builtin) return
+  const looks = useLooks.getState()
+  if ((looks.mine ?? []).includes(p.id)) looks.remove(p.id)
+  else looks.add(p.id)
+}
+
 const familyOf = (p: Preset): LookFamily | null =>
   p.meta ? (COLLECTION_BY_ID.get(p.meta.collection)?.family ?? null) : null
 
@@ -55,7 +64,6 @@ export function LooksBrowser(): React.JSX.Element | null {
   // What this build can do for smart looks (a model downloaded changes it).
   const caps = useAiJobs((s) => s.capabilities)
   const ready = useMemo(() => caps?.smart ?? smartReady(), [caps])
-  const blockers = (p: Preset): string[] => (p.smart ? smartBlockers(p.smart, ready) : [])
   const [query, setQuery] = useState(() => useLooks.getState().browseQuery)
   const [shelf, setShelf] = useState<Shelf>({ kind: 'all' })
   const [focus, setFocus] = useState<string | null>(null)
@@ -116,17 +124,26 @@ export function LooksBrowser(): React.JSX.Element | null {
 
   const edge = Math.round(CARD_EDGE * (window.devicePixelRatio || 1))
   const observe = useLookThumbs(grid, order, edge)
-  const thumbs = useThumbs((s) => s.byId)
+  // The photo as it is: each look's card reads its own thumbnail.
+  const current = useThumbs((s) => s.byId[CURRENT])
+  // The cards' actions, one object for the browser's life (the cards are memoised).
+  const cardActs = useMemo<CardActs>(
+    () => ({
+      focus: setFocus,
+      apply: (p, stack) => {
+        void applyToPhoto(p, { stack })
+        setDialog(null)
+      },
+      keep: toggleMine
+    }),
+    [setDialog]
+  )
 
   if (!session) return null
   const aspect = picture ? picture.width / Math.max(1, picture.height) : 1.5
   const focused = focus ? (byId.get(focus) ?? null) : null
   const kept = (id: string): boolean => mineIds.includes(id)
-  const toggleKeep = (p: Preset): void => {
-    if (!p.builtin) return
-    if (kept(p.id)) useLooks.getState().remove(p.id)
-    else useLooks.getState().add(p.id)
-  }
+  const toggleKeep = toggleMine
   // Applying keeps the browser open to try another (which takes its place);
   // a double-click applies and closes. Alt puts it on top instead.
   const apply = (p: Preset, opts: { stack?: boolean; done?: boolean } = {}): void => {
@@ -156,70 +173,19 @@ export function LooksBrowser(): React.JSX.Element | null {
     e.preventDefault()
   }
 
-  const card = (p: Preset): React.JSX.Element => {
-    const thumb = thumbs[p.id]
-    const on = focus === p.id
-    const isApplied = applied?.lookId === p.id
-    return (
-      <div
-        key={p.id}
-        ref={observe(p.id)}
-        className={`look-card${on ? ' on' : ''}${isApplied ? ' applied' : ''}`}
-        role="button"
-        tabIndex={-1}
-        onClick={() => setFocus(p.id)}
-        onDoubleClick={(e) => apply(p, { stack: e.altKey, done: true })}
-        title={
-          p.meta?.inspiredBy ? t('Inspired by {{name}}', { name: p.meta.inspiredBy }) : nameOf(p)
-        }
-      >
-        <div className="look-thumb" style={{ aspectRatio: String(aspect) }}>
-          {thumb ? (
-            <img src={thumb.url} alt="" draggable={false} />
-          ) : (
-            <span className="look-skeleton" />
-          )}
-        </div>
-        <div className="look-meta">
-          <span className="look-name">{nameOf(p)}</span>
-          {p.smart && (
-            <span
-              className={`look-badge smart${blockers(p).length ? ' blocked' : ''}`}
-              title={
-                blockers(p).length
-                  ? t('Smart look. {{reasons}}', { reasons: blockers(p).join('; ') })
-                  : t('Smart look: makes masks or runs AI as it is applied')
-              }
-            >
-              {t('Smart')}
-            </span>
-          )}
-          {isApplied && (
-            <span className="look-badge applied" title={t('Applied to the photo')}>
-              <Icon name="check" />
-            </span>
-          )}
-          {p.meta?.approximates && (
-            <span className="look-badge" title={t('Approximated with the sliders we have')}>
-              ≈
-            </span>
-          )}
-        </div>
-        {p.builtin && (
-          <button
-            className={`icon sm look-keep${kept(p.id) ? ' kept' : ''}`}
-            title={kept(p.id) ? t('In My Looks: remove') : t('Add to My Looks')}
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleKeep(p)
-            }}
-          >
-            <Icon name={kept(p.id) ? 'check' : 'plus'} />
-          </button>
-        )}
-      </div>
-    )
-  }
+  const card = (p: Preset): React.JSX.Element => (
+    <LookCard
+      key={p.id}
+      look={p}
+      observe={observe(p.id)}
+      aspect={aspect}
+      on={focus === p.id}
+      applied={applied?.lookId === p.id}
+      kept={kept(p.id)}
+      ready={ready}
+      act={cardActs}
+    />
+  )
 
   const shelfButton = (s: Shelf, label: string, count?: number): React.JSX.Element => {
     const on = JSON.stringify(s) === JSON.stringify(shelf)
@@ -238,7 +204,6 @@ export function LooksBrowser(): React.JSX.Element | null {
     )
   }
 
-  const current = thumbs[CURRENT]
   const appliedName = !applied
     ? ''
     : LOOKS.some((l) => l.id === applied.lookId)
@@ -308,7 +273,10 @@ export function LooksBrowser(): React.JSX.Element | null {
               onClick={(e) => apply(focused, { stack: e.altKey })}
               title={
                 applied
-                  ? t('Takes the place of {{name}} (Alt: on top of it)', { name: appliedName })
+                  ? t('Takes the place of {{name}} ({{alt}}: on top of it)', {
+                      name: appliedName,
+                      alt: modName('alt')
+                    })
                   : undefined
               }
             >
@@ -336,7 +304,7 @@ export function LooksBrowser(): React.JSX.Element | null {
         ) : (
           <p className="looks-disclaimer">
             {t(
-              "PIXL's own looks, made with Playroom's sliders. Cameras, film stocks and films are named only as what inspired a look; PIXL is not affiliated with or endorsed by their owners."
+              'PIXL’s own looks, made with Playroom’s sliders. Cameras, film stocks and films are named only as what inspired a look; PIXL is not affiliated with or endorsed by their owners.'
             )}
           </p>
         )
@@ -460,3 +428,97 @@ function SmartDetail({ plan }: { plan: ReturnType<typeof planSmart> }): React.JS
     </>
   )
 }
+
+interface CardActs {
+  focus(id: string): void
+  /** Applied and the browser closed (a double-click; Alt puts it on top). */
+  apply(p: Preset, stack: boolean): void
+  keep(p: Preset): void
+}
+
+/**
+ * One look's card: memoised, and reading its own thumbnail, so a thumbnail
+ * arriving draws its card again and not the browser's three hundred.
+ */
+const LookCard = memo(function LookCard({
+  look: p,
+  observe,
+  aspect,
+  on,
+  applied: isApplied,
+  kept,
+  ready,
+  act
+}: {
+  look: Preset
+  observe: (el: HTMLElement | null) => void
+  aspect: number
+  on: boolean
+  applied: boolean
+  kept: boolean
+  ready: SmartReadiness
+  act: CardActs
+}): React.JSX.Element {
+  const thumb = useThumbs((s) => s.byId[p.id])
+  const blocked = useMemo(() => (p.smart ? smartBlockers(p.smart, ready) : []), [p, ready])
+  return (
+    <div
+      ref={observe}
+      className={`look-card${on ? ' on' : ''}${isApplied ? ' applied' : ''}`}
+      role="button"
+      tabIndex={-1}
+      onClick={() => act.focus(p.id)}
+      onDoubleClick={(e) => act.apply(p, e.altKey)}
+      title={
+        p.meta?.inspiredBy ? t('Inspired by {{name}}', { name: p.meta.inspiredBy }) : nameOf(p)
+      }
+    >
+      <div className="look-thumb" style={{ aspectRatio: String(aspect) }}>
+        {thumb ? (
+          <img src={thumb.url} alt="" draggable={false} />
+        ) : (
+          <span className="look-skeleton" />
+        )}
+      </div>
+      <div className="look-meta">
+        <span className="look-name">{nameOf(p)}</span>
+        {p.smart && (
+          <span
+            className={`look-badge smart${blocked.length ? ' blocked' : ''}`}
+            title={
+              blocked.length
+                ? t('Smart look. {{reasons}}', { reasons: blocked.join('; ') })
+                : t('Smart look: makes masks or runs AI as it is applied')
+            }
+          >
+            {t('Smart')}
+          </span>
+        )}
+        {isApplied && (
+          <span className="look-badge applied" title={t('Applied to the photo')}>
+            <Icon name="check" />
+          </span>
+        )}
+        {p.meta?.approximates && (
+          <span className="look-badge" title={t('Approximated with the sliders we have')}>
+            ≈
+          </span>
+        )}
+      </div>
+      {p.builtin && (
+        <button
+          className={`icon sm look-keep${kept ? ' kept' : ''}`}
+          title={kept ? t('In My Looks: remove') : t('Add to My Looks')}
+          aria-label={t('In My Looks')}
+          aria-pressed={kept}
+          onClick={(e) => {
+            e.stopPropagation()
+            act.keep(p)
+          }}
+        >
+          <Icon name={kept ? 'check' : 'plus'} />
+        </button>
+      )}
+    </div>
+  )
+})

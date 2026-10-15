@@ -27,7 +27,11 @@
     linear-gradient(0deg, var(--acc) 0 2px, transparent 2px),
     repeating-linear-gradient(90deg, transparent 0 7px, rgb(var(--shade-rgb) / 0.55) 7px 8px),
     repeating-linear-gradient(0deg, transparent 0 7px, rgb(var(--shade-rgb) / 0.55) 7px 8px),
-    linear-gradient(0deg, var(--acc-a35, color-mix(in srgb, var(--acc) 35%, transparent)), transparent 90%);
+    linear-gradient(
+      0deg,
+      var(--acc-a35, color-mix(in srgb, var(--acc) 35%, transparent)),
+      transparent 90%
+    );
   box-shadow: 0 2px 18px 0 var(--glow);
   mix-blend-mode: screen;
   animation: aiScan 2.8s steps(48) infinite alternate;
@@ -122,7 +126,7 @@
 .ai-stages {
   display: flex;
   gap: 12px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--muted);
 }
 .ai-stage {
@@ -171,7 +175,7 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   color: var(--text2);
 }
 .ai-word {
@@ -279,7 +283,7 @@ button.bg-job-link {
   gap: 5px;
   padding: 6px 0;
   border-bottom: 1px solid var(--hair);
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   color: var(--text2);
 }
 .activity-list li:last-child {
@@ -323,9 +327,64 @@ button.bg-job-link {
   text-overflow: ellipsis;
 }
 
+/* An export just done, in the pill: how it went, then a dot until the queue is opened. */
+.bg-receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+}
+.bg-receipt.partial {
+  color: var(--warn);
+}
+.bg-receipt.failed {
+  color: var(--danger);
+}
+.receipt-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.receipt-dot.partial {
+  background: var(--warn);
+}
+.receipt-dot.failed {
+  background: var(--danger);
+}
+.activity-list li.receipt .activity-what > :first-child {
+  color: var(--text);
+}
+.activity-list li.receipt.partial .activity-what > :first-child {
+  color: var(--warn);
+}
+.activity-list li.receipt.failed .activity-what > :first-child {
+  color: var(--danger);
+}
+.activity-list li.receipt button.sm:not(.icon) {
+  height: 22px;
+  padding: 0 8px;
+  font-size: var(--fs-small);
+}
+.receipt-notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+.receipt-notes li {
+  padding: 1px 0;
+  border: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Settings → AI models: the killswitch and the heavy models (views/HeavyModels.tsx). */
 .model-kill .check {
-  font-size: 13px;
+  font-size: var(--fs-title);
 }
 .model-row.heavy .model-act {
   flex-direction: column;
@@ -337,7 +396,7 @@ button.bg-job-link {
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--hair);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .heavy-result.ok {
   border-color: color-mix(in srgb, var(--ok, #4ade80) 50%, transparent);

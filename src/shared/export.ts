@@ -496,6 +496,89 @@ export function previewResize(
   }
 }
 
+/** A JPEG photograph's bits per pixel at each quality: typical camera pictures, 4:2:0. */
+const JPEG_BPP: [number, number][] = [
+  [0, 0.4],
+  [50, 1],
+  [75, 1.6],
+  [85, 2.4],
+  [90, 3],
+  [95, 4.4],
+  [100, 8]
+]
+
+function jpegBpp(quality: number): number {
+  const q = Math.min(100, Math.max(0, quality))
+  for (let i = 1; i < JPEG_BPP.length; i++) {
+    const [q1, b1] = JPEG_BPP[i]
+    if (q <= q1) {
+      const [q0, b0] = JPEG_BPP[i - 1]
+      return b0 + ((b1 - b0) * (q - q0)) / (q1 - q0)
+    }
+  }
+  return JPEG_BPP[JPEG_BPP.length - 1][1]
+}
+
+/**
+ * About how many bytes a photo of `w × h` (before any crop) is written as:
+ * the output size these settings make of it, times what each format
+ * typically spends on a pixel of a photograph. A guess for the lossy
+ * formats (detail and noise move it either way); an uncompressed TIFF is
+ * exact. `hdrOut`: the file holds HDR (at least 10 bits), or a gain map
+ * beside its SDR picture.
+ */
+export function estimateBytes(s: ExportSettings, w: number, h: number, hdrOut = false): number {
+  const r = buildResize(s, w, h)
+  const [ow, oh] = r === 'None' ? [w, h] : 'Exact' in r ? [r.Exact.width, r.Exact.height] : [w, h]
+  const pixels = ow * oh
+  const deep = s.bitDepth > 8 || (hdrOut && s.hdr.mode !== 'gainmap')
+  const lossyBpp = (k: number): number => {
+    const chroma =
+      s.format === 'jpeg'
+        ? s.jpegSubsampling === 'None'
+          ? 1.3
+          : s.jpegSubsampling === 'Half'
+            ? 1.12
+            : 1
+        : s.chroma === 'Full'
+          ? 1.3
+          : s.chroma === 'Wide'
+            ? 1.12
+            : 1
+    return jpegBpp(s.quality) * k * chroma
+  }
+  let bpp: number
+  switch (s.format) {
+    case 'jpeg':
+      bpp = lossyBpp(1)
+      break
+    case 'webp':
+      bpp = s.webpLossless ? 11 : lossyBpp(0.7)
+      break
+    case 'avif':
+      bpp = s.lossless ? (deep ? 22 : 13) : lossyBpp(0.5) * (deep ? 1.25 : 1)
+      break
+    case 'jxl':
+      bpp = s.jxlLossless
+        ? deep
+          ? 22
+          : 12
+        : (2.2 / Math.max(0.1, s.jxlDistance) ** 0.8) * (deep ? 1.2 : 1)
+      break
+    case 'png':
+      bpp = deep ? 32 : 14
+      break
+    case 'tiff': {
+      const raw = deep ? 48 : 24
+      bpp = s.tiffCompression === 'None' ? raw : raw * (deep ? 0.85 : 0.6)
+      break
+    }
+  }
+  // The gain map: one channel at half size, at its own quality.
+  const map = hdrOut && s.hdr.mode === 'gainmap' ? 0.12 : 0
+  return Math.round((pixels * bpp * (1 + map)) / 8)
+}
+
 /** The output size for a framed picture of `w × h`, or `None`. */
 export function buildResize(s: ExportSettings, w: number, h: number): Resize {
   const { mode, value, valueH, enlarge } = s.resize

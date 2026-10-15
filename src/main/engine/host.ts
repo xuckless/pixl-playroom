@@ -22,6 +22,9 @@ import type {
   ModelSession,
   NativeRefs,
   PixlEngineModule,
+  PlaneOp,
+  PlaneResult,
+  PreparedRaster,
   PreviewFrame,
   PromptEmbedding,
   SamOp,
@@ -30,6 +33,8 @@ import type {
 import { pickBySize } from '../../shared/concepts'
 import { toRgba } from '../../shared/gpudrag'
 import { sdrCompanion } from '../../shared/sdrcompanion'
+import { progressOf } from './progress'
+import { withRequiredFields } from './required'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
 /** What Playroom cannot run without. The rest (lens, upright, AI…) are looked up per call. */
@@ -119,6 +124,15 @@ function hasGpu(e: PixlEngineModule): boolean {
   }
 }
 
+/** Which build the addon is (0.21.0, E69); absent from an older one. */
+function buildInfo(e: PixlEngineModule): EngineHelloMessage['build'] {
+  try {
+    return typeof e.buildInfo === 'function' ? e.buildInfo() : undefined
+  } catch {
+    return undefined
+  }
+}
+
 const loaded = loadNative()
 const engine = 'engine' in loaded ? loaded.engine : undefined
 
@@ -130,7 +144,8 @@ if (engine) {
     enhance: engine.hasEnhance(),
     runtime: bundledRuntime(engine),
     prompt: typeof engine.segmentPrompt === 'function',
-    gpu: hasGpu(engine)
+    gpu: hasGpu(engine),
+    build: buildInfo(engine)
   })
 } else {
   send({
@@ -139,18 +154,6 @@ if (engine) {
     reason: 'reason' in loaded ? loaded.reason : '',
     code: 'code' in loaded ? loaded.code : undefined
   })
-}
-
-/**
- * Every convert names where its grade runs (0.19.2, Phase A §1.1: one
- * without is refused). The request builders send it; a request made before
- * them is the CPU's, as 0.19 was.
- */
-function withGradeDevice(method: EngineMethod, args: unknown[]): unknown[] {
-  if (method !== 'convert') return args
-  const [request, ...rest] = args
-  if (!request || typeof request !== 'object' || 'grade_device' in request) return args
-  return [{ ...request, grade_device: 'Cpu' }, ...rest]
 }
 
 /**
@@ -217,8 +220,16 @@ async function sam(e: PixlEngineModule, call: SamOp, signal?: AbortSignal): Prom
       if (had && had.ref === ref && !had.obj.closed) return { op: 'load', loadMs: 0 }
       had?.obj.close()
       samSessions.delete(call.session)
-      const obj = await e.loadModelSession(call.ref)
+      // 0.21.0 (OBS-5): a load still queued, or between its steps, stops
+      // with the job; a CoreML compile under way runs to its end first.
+      const obj = await e.loadModelSession(call.ref, signal ? { signal } : undefined)
       samSessions.set(call.session, { ref, obj })
+      // OBS-4: whether the compile was made before (the cache) or just now.
+      if (obj.coremlCache)
+        console.log(
+          `CoreML ${obj.coremlCache.existed ? 'cache used' : 'compiled and cached'} for ${call.session}`,
+          `(hashed in ${obj.coremlCache.hash_ms} ms)`
+        )
       return { op: 'load', loadMs: obj.loadMs }
     }
     case 'embed': {
@@ -399,12 +410,48 @@ async function gpuCall(e: PixlEngineModule, call: GpuOp, signal?: AbortSignal): 
   }
 }
 
+// ── Prepared mask planes (0.21.0, E37): native, kept here, named by main ────
+
+/** Raster masks' planes at one frame size each, by main's id, with the request each was made from. */
+const planes = new Map<string, { request: string; plane: PreparedRaster }>()
+
+function closePlane(id: string): void {
+  const p = planes.get(id)
+  if (p && !p.plane.closed) p.plane.close()
+  planes.delete(id)
+}
+
+async function planesCall(e: PixlEngineModule, call: PlaneOp): Promise<PlaneResult> {
+  switch (call.op) {
+    case 'prepare': {
+      if (typeof e.prepareRaster !== 'function')
+        throw Object.assign(new Error('this engine prepares no mask planes'), {
+          code: 'EngineUnavailable'
+        })
+      const request = JSON.stringify(call.request)
+      const had = planes.get(call.id)
+      let plane = had && had.request === request && !had.plane.closed ? had.plane : null
+      if (!plane) {
+        plane = await e.prepareRaster(call.request)
+        // Only once the new one is made: a failed prepare leaves the old.
+        closePlane(call.id)
+        planes.set(call.id, { request, plane })
+      }
+      return { op: 'prepare', width: plane.width, height: plane.height, bytes: plane.bytes }
+    }
+    case 'release':
+      for (const id of call.ids) closePlane(id)
+      return { op: 'release' }
+  }
+}
+
 /**
  * A call's native options from main's names for them: the GPU session and
  * the photo's frame for a GPU drag, the held measurements for a drag or
- * `regionReach`. One that is not here (closed, or this host is newer than
- * the name) is `Stale`, which main reads as "upload again" or "measure
- * again", never as the user's error.
+ * `regionReach`, the prepared mask planes a render reads. One that is not
+ * here (closed, or this host is newer than the name) is `Stale`, which main
+ * reads as "upload again", "measure again" or "render without", never as
+ * the user's error.
  */
 function nativeOptions(native: NativeRefs | undefined): Record<string, unknown> {
   if (!native) return {}
@@ -419,6 +466,13 @@ function nativeOptions(native: NativeRefs | undefined): Record<string, unknown> 
     const held = helds.get(native.held)
     if (!held || held.closed) throw stale(`held measurements ${native.held}`)
     out['held'] = held
+  }
+  if (native.planes?.length) {
+    out['maskPlanes'] = native.planes.map((id) => {
+      const p = planes.get(id)
+      if (!p || p.plane.closed) throw stale(`mask plane ${id}`)
+      return p.plane
+    })
   }
   return out
 }
@@ -439,9 +493,9 @@ function deliver(frame: string, result: unknown, companionEdge?: number): void {
     companion?: { width: number; height: number; data: Uint8Array } | null
   } | null
   if (!r?.output) return
-  // A GPU drag of an opaque photo is RGB (it names no channels): RGBA, as
-  // the window and main's relay both take a frame.
-  r.output = toRgba(r.output, r.width, r.height)
+  // The picture is RGBA from the engine (E61: the GPU frame is uploaded
+  // with alpha). A Full HDR drag's SDR companion follows the master's
+  // render, not the frame: RGBA here, as the window and main's relay take it.
   if (r.companion)
     r.companion.data = toRgba(r.companion.data, r.companion.width, r.companion.height)
   // Four bytes a pixel is RGBA U8; eight is RGBA half floats (Full HDR, or an SDR picture in float).
@@ -507,6 +561,23 @@ process.parentPort.on('message', (e) => {
       .finally(() => aborts.delete(id))
     return
   }
+  if (msg?.kind === 'planes') {
+    const { id } = msg
+    if (!engine) {
+      send({
+        kind: 'response',
+        id,
+        ok: false,
+        error: { message: 'engine unavailable', code: 'EngineUnavailable' }
+      })
+      return
+    }
+    planesCall(engine, msg.call).then(
+      (result) => send({ kind: 'response', id, ok: true, result }),
+      (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })
+    )
+    return
+  }
   if (msg?.kind === 'gpu') {
     const { id } = msg
     if (!engine) {
@@ -555,7 +626,7 @@ process.parentPort.on('message', (e) => {
   }
   // A signal goes after the request (the engine checks it between stages),
   // in one options object with any native objects main named (`NativeRefs`).
-  const callArgs = withGradeDevice(method, args)
+  const callArgs = withRequiredFields(method, args)
   const { native } = msg
   let options: Record<string, unknown> = {}
   if (msg.cancellable) {
@@ -563,6 +634,9 @@ process.parentPort.on('message', (e) => {
     aborts.set(id, abort)
     options = { signal: abort.signal }
   }
+  // With both, aborting the signal cancels the token too.
+  const counting = msg.progress ? progressOf(engine, id, send) : null
+  if (counting) options = { ...options, token: counting.token }
   const frame = msg.frame
   Promise.resolve()
     .then(() => {
@@ -581,5 +655,8 @@ process.parentPort.on('message', (e) => {
       },
       (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })
     )
-    .finally(() => aborts.delete(id))
+    .finally(() => {
+      counting?.stop()
+      aborts.delete(id)
+    })
 })

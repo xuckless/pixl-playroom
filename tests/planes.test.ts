@@ -2,7 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'crypto'
 import { defaultRecipe, newLocalLayer, slimRecipe, type BrushComponent } from '../src/shared/recipe'
-import { isPlaneHash, planeRef, renameRefs } from '../src/main/planeref'
+import { planeRef, renameRefs } from '../src/main/planeref'
+import { isPlaneHash } from '../src/shared/ids'
 import { pruneDue } from '../src/main/planes'
 
 const brush = (png: string): BrushComponent => ({

@@ -360,7 +360,16 @@ export interface SmartPhoto {
 }
 
 /** Mask settings a smart look may set: colour and tone, the mask's white, never its noise or lens. */
-const ADJUST_ROOTS = ['basic', 'presence', 'toneCurve', 'hsl', 'colorGrade']
+const ADJUST_ROOTS = [
+  'basic',
+  'presence',
+  'toneCurve',
+  'hsl',
+  'density',
+  'colorGrade',
+  'primaries',
+  'logWheels'
+]
 const ADJUST_EXTRA: Record<string, [number, number]> = {
   'basic.exposure': [-5, 5],
   'wb.temperature': [-100, 100],
@@ -984,7 +993,7 @@ export function toInstructions(layers: LocalLayer[], pixels: PixelStep[]): Conve
       kept.push(p.scope ? t('AI deblur in {{mask}}', { mask: p.scope }) : t('AI deblur'))
     } else if (p.kind === 'enhance') {
       warnings.push(
-        t("{{name}}: only a deblur can be kept (an upscale or a JPEG restore is the file's)", {
+        t('{{name}}: only a deblur can be kept (an upscale or a JPEG restore is the file’s)', {
           name: p.label
         })
       )

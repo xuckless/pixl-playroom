@@ -6,7 +6,7 @@
 import type { i18n } from 'i18next'
 import { create } from 'zustand'
 import { pickLanguage, type Language, type LanguageSetting } from '../../../shared/i18n'
-import { startI18n } from '../../../shared/i18n/setup'
+import { loadCatalog, startI18n, withLanguage } from '../../../shared/i18n/setup'
 import { api } from './api'
 
 export { midSentence, t, tk, tp } from '../../../shared/i18n'
@@ -27,10 +27,15 @@ export const useLanguage = create<LanguageState>(() => ({
 }))
 
 let inst: i18n | null = null
+/** The latest language asked for: a slower catalog arriving after it changes nothing. */
+let wanted = 0
 
-function apply(s: LanguageState): void {
-  if (!inst) inst = startI18n(s.language, s.pseudo)
-  else if (inst.language !== s.language) void inst.changeLanguage(s.language)
+/** In `s`'s language, its catalog loaded first (the screens are drawn again once it is in). */
+async function apply(s: LanguageState): Promise<void> {
+  const mine = ++wanted
+  if (!inst) inst = startI18n(s.language, s.pseudo, await loadCatalog(s.language))
+  else await withLanguage(inst, s.language, () => mine === wanted)
+  if (mine !== wanted) return
   document.documentElement.lang = s.language
   useLanguage.setState(s)
 }
@@ -41,11 +46,11 @@ export async function startLanguage(): Promise<void> {
     const system = pickLanguage(navigator.languages)
     return { setting: 'system', language: system, system }
   })
-  apply(s)
-  api.app.onLanguageChanged(apply)
+  await apply(s)
+  api.app.onLanguageChanged((next) => void apply(next))
 }
 
 /** Settings → Language. */
 export async function chooseLanguage(setting: LanguageSetting): Promise<void> {
-  apply(await api.app.setLanguage(setting))
+  await apply(await api.app.setLanguage(setting))
 }

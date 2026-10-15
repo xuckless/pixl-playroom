@@ -142,6 +142,19 @@ export function planSteps(s: EnhanceSettings, isJpeg: boolean): PlannedStep[] {
   return steps
 }
 
+/**
+ * Whether a chain reads a float frame as it is (engine 0.21.0, E70): every
+ * step PIXL Enhance's, a model in PixlRGB that takes light above white
+ * (up to 8× white; past it the engine clamps and counts `input_clipped`).
+ * A chain with an upscale, a deblur or a JPEG step (sRGB models) reads the
+ * frame clipped to 0..1 (`modelInput`). The step is kept in 16 bits either
+ * way, and laid on under the headroom guard: an overlay cannot carry light
+ * above white yet (engine ask E79).
+ */
+export function readsFloat(steps: readonly PlannedStep[]): boolean {
+  return steps.length > 0 && steps.every((p) => p.level !== undefined && p.scale === undefined)
+}
+
 /** The models the settings need on a source, in chain order. */
 export function neededModels(s: EnhanceSettings, isJpeg: boolean): string[] {
   return planSteps(s, isJpeg).flatMap((p) => (p.model ? [p.model] : []))

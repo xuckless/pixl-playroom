@@ -6,7 +6,7 @@ import { Icon } from '../components/icons'
 import { useEntering } from '../lib/hooks'
 import { useThumbFirst } from '../lib/thumbs'
 import { useDevelop } from '../state/develop'
-import { selectionSet, useLibrary, useVisible } from '../state/library'
+import { selectionSet, useHiddenByFilter, useLibrary, useVisible } from '../state/library'
 import { useUi } from '../state/ui'
 import { AiChip } from '../fx/AiScan'
 import { photoContextMenu } from '../lib/menus'
@@ -20,16 +20,26 @@ const FILM_STEP = 104 + 8
  * filters. A click opens a photo; Ctrl/Cmd-click and Shift-click change the
  * selection without opening. It is folded away until asked for. Only the
  * tiles in view are in the page (a folder of thousands scrolls the same).
+ * Under the Library's Loupe, Compare and Survey it is always out, and a
+ * click only picks (`onPick`, lib/librarymodes.ts): Develop never opens.
  */
-export const Filmstrip = memo(function Filmstrip(): React.JSX.Element {
+export const Filmstrip = memo(function Filmstrip({
+  always,
+  onPick
+}: {
+  always?: boolean
+  onPick?: (key: string, e: React.MouseEvent) => void
+}): React.JSX.Element {
   const items = useVisible()
   const focus = useLibrary((s) => s.focus)
+  const candidate = useLibrary((s) => s.candidate)
   const selection = useLibrary((s) => s.selection)
   const select = useLibrary((s) => s.select)
   const chosen = selectionSet(selection)
   const open = useDevelop((s) => s.open)
   const pick = useCallback(
     (key: string, e: React.MouseEvent): void => {
+      if (onPick) return onPick(key, e)
       if (e.ctrlKey || e.metaKey || e.shiftKey) {
         select(key, e.shiftKey ? 'range' : 'toggle')
         return
@@ -37,9 +47,9 @@ export const Filmstrip = memo(function Filmstrip(): React.JSX.Element {
       select(key, 'only')
       void open(key)
     },
-    [select, open]
+    [select, open, onPick]
   )
-  const shown = useUi((s) => s.filmstrip)
+  const shown = useUi((s) => s.filmstrip) || !!always
   // Once opened, its pictures stay loaded.
   const [loaded, setLoaded] = useState(shown)
   if (shown && !loaded) setLoaded(true)
@@ -84,6 +94,8 @@ export const Filmstrip = memo(function Filmstrip(): React.JSX.Element {
                   item={it}
                   index={v.index}
                   focus={it.key === focus}
+                  // Compare's Candidate is marked too, in the neutral tone.
+                  candidate={!!onPick && it.key === candidate}
                   selected={chosen.has(it.key)}
                   // Folded away, it loads no pictures.
                   load={loaded}
@@ -102,6 +114,7 @@ const FilmTile = memo(function FilmTile({
   item,
   index,
   focus,
+  candidate,
   selected,
   load,
   onPick
@@ -109,20 +122,23 @@ const FilmTile = memo(function FilmTile({
   item: LibraryItem
   index: number
   focus: boolean
+  candidate: boolean
   selected: boolean
   load: boolean
   onPick: (key: string, e: React.MouseEvent) => void
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   useThumbFirst(ref, item.key, load && !item.thumbUrl && !item.unreadable)
+  // The filter now hides it: it stays, dimmed, until the next photo opens.
+  const hidden = useHiddenByFilter(item)
   return (
     <div
       ref={ref}
-      className={`film${focus ? ' focus' : ''}${selected ? ' selected' : ''}`}
+      className={`film${focus ? ' focus' : ''}${candidate ? ' candidate' : ''}${selected ? ' selected' : ''}${hidden ? ' filtered-out' : ''}`}
       style={{ animationDelay: `${Math.min(index, 14) * 25}ms` }}
       onClick={(e) => onPick(item.key, e)}
       onContextMenu={(e) => photoContextMenu(e, item.key)}
-      title={item.name}
+      title={hidden ? `${item.name} · ${t('Hidden by filter')}` : item.name}
     >
       {load && item.thumbUrl ? (
         <img src={item.thumbUrl} loading="lazy" decoding="async" draggable={false} alt="" />

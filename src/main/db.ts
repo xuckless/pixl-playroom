@@ -366,7 +366,18 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   // 18. A RAW's camera colour the person chose (not a default worked out
   // again): a default "container" moves to PIXL's colour once the database
   // holds the body (shared/rawcolour.ts `upgradesToPixl`); a chosen one never.
-  (db) => addColumns(db, 'photos', { raw_colour_chosen: 'INTEGER NOT NULL DEFAULT 0' })
+  (db) => addColumns(db, 'photos', { raw_colour_chosen: 'INTEGER NOT NULL DEFAULT 0' }),
+  // 19. DNG camera profiles a photo's camera colour names (`dcp:<id>`, engine
+  // 0.21, E21): the profile itself, as the engine states it (its guide: keep
+  // the profile, not the path), so sidecars and projects can carry it.
+  (db) =>
+    db.exec('CREATE TABLE IF NOT EXISTS camera_profiles (id TEXT PRIMARY KEY, json TEXT NOT NULL)'),
+  // 20. A thumbnail the engine refused for its request, not its file, was
+  // marked unreadable too (a development run on an older engine refusing
+  // 0.21's fields): every photo is tried again once.
+  (db) => {
+    db.exec('UPDATE photos SET failed_key = NULL, failed_reason = NULL')
+  }
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -925,6 +936,25 @@ export class Store {
         chosen ? 1 : 0,
         photoId
       )
+  }
+
+  /** A camera profile (its JSON), by the id its colour names. */
+  setCameraProfile(id: string, json: string): void {
+    this.prepare('INSERT OR REPLACE INTO camera_profiles(id, json) VALUES (?, ?)').run(id, json)
+  }
+
+  /** Every camera profile kept, for the index's own develop marks. */
+  cameraProfiles(): { id: string; json: string }[] {
+    return this.prepare('SELECT id, json FROM camera_profiles').all() as {
+      id: string
+      json: string
+    }[]
+  }
+
+  cameraProfile(id: string): string | null {
+    const row = this.prepare('SELECT json FROM camera_profiles WHERE id = ?').get(id) as
+      { json: string } | undefined
+    return row?.json ?? null
   }
 
   setHdr(photoId: number, kind: string, key: string): void {

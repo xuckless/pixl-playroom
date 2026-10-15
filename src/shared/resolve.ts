@@ -8,11 +8,12 @@
  * to the engine's `Primary` (`v = lift + v·(gain − lift)`, then `v^(1/γ)`,
  * contrast about the pivot, saturation, hue) in the display-referred look
  * stage, after Colour grading: Offset adds to every value, so it folds into
- * lift and gain (`lift + o`, `gain + o`). Temp and Tint are a relative white
- * balance in linear light until the engine has them with the primaries (E75).
+ * lift and gain (`lift + o`, `gain + o`). Temp and Tint are a gain on the
+ * graded colour beside them (the engine's `GainBalance`, E75), as Resolve's.
  */
 import type { GradeOp, HslKey, Primary } from './engine-types'
 import { tk } from './i18n'
+import { apply, invert, opFromRelative, rgbToXyz, whiteXyz, type Xy } from './wb'
 
 /** A wheel's four numbers: Y moves all three channels, R/G/B each its own. */
 export interface Yrgb {
@@ -42,6 +43,13 @@ export interface PrimariesSetting {
   /** −100…100 each, 0 untouched: Resolve's Temp and Tint. */
   temp: number
   tint: number
+  /**
+   * 0…100, how much the wheels' Y rings move luminance alone (Resolve's Lum
+   * Mix): 0 moves each channel alike (YRGB, which desaturates a lifted
+   * black), 100 keeps hue and saturation. 0 by default, as every photo and
+   * look was made (Resolve's own default is 100).
+   */
+  lumMix: number
 }
 
 const zero = (): Yrgb => ({ y: 0, r: 0, g: 0, b: 0 })
@@ -61,7 +69,8 @@ export function defaultPrimaries(): PrimariesSetting {
     saturation: 50,
     hue: 50,
     temp: 0,
-    tint: 0
+    tint: 0,
+    lumMix: 0
   }
 }
 
@@ -95,7 +104,8 @@ export function normalisePrimaries(v: unknown): PrimariesSetting {
     saturation: clamp(num(o.saturation, 50), 0, 100),
     hue: clamp(num(o.hue, 50), 0, 100),
     temp: clamp(num(o.temp, 0), -100, 100),
-    tint: clamp(num(o.tint, 0), -100, 100)
+    tint: clamp(num(o.tint, 0), -100, 100),
+    lumMix: clamp(num(o.lumMix, 0), 0, 100)
   }
 }
 
@@ -143,50 +153,128 @@ const IDENTITY: Primary = {
   hue_shift: 0
 }
 
+const isIdentity = (p: Primary): boolean =>
+  CH.every((c) => p.lift[c] === 0 && p.gamma[c] === 1 && p.gain[c] === 1) &&
+  p.contrast === 1 &&
+  p.saturation === 1 &&
+  p.hue_shift === 0
+
+/** A gamma number (−1…1, 0 untouched) as `Primary`'s exponent. */
+const gammaOf = (v: number): number => r4(Math.pow(2, v * GAMMA_STOPS * 0.5))
+
 /**
- * The primaries as one engine `Primary` for the look stage, or null when
- * they change nothing (Temp and Tint are `primariesWhite`'s).
+ * The primaries as engine ops for the look stage, none when they change
+ * nothing (Temp and Tint are `primariesBalance`'s). With Lum Mix at 0 (as
+ * every photo and look was made) one `Primary`, the Y rings folded into
+ * each channel. Above 0 and with a Y ring moved, the Y rings are their own
+ * `LumaPrimary` (engine 0.21, E78) between the wheels' `Primary` and one
+ * holding Contrast, Saturation and Hue, so the order is the folded one's
+ * and Lum Mix just above 0 renders as at 0. Offset is not part of Lum Mix:
+ * it stays with the wheels.
  */
-export function primariesOp(p: PrimariesSetting): GradeOp | null {
+export function primariesOp(p: PrimariesSetting): GradeOp[] {
+  const split = p.lumMix > 0 && (p.lift.y !== 0 || p.gamma.y !== 0 || p.gain.y !== 1)
   const lift = { r: 0, g: 0, b: 0 }
   const gamma = { r: 1, g: 1, b: 1 }
   const gain = { r: 1, g: 1, b: 1 }
   for (const c of CH) {
     const o = p.offset.y + p.offset[c]
-    const l = p.lift.y + p.lift[c]
-    const g = p.gain.y * p.gain[c]
+    const l = (split ? 0 : p.lift.y) + p.lift[c]
+    const g = (split ? 1 : p.gain.y) * p.gain[c]
     // Offset after lift and gain: (l + v(g − l)) + o = (l + o) + v((g + o) − (l + o)).
     lift[c] = r4(l + o)
     gain[c] = r4(g + o)
-    gamma[c] = r4(Math.pow(2, (p.gamma.y + p.gamma[c]) * GAMMA_STOPS * 0.5))
+    gamma[c] = gammaOf((split ? 0 : p.gamma.y) + p.gamma[c])
   }
-  const op: Primary = {
-    ...IDENTITY,
-    lift,
-    gamma,
-    gain,
+  const look = {
     contrast: r4(p.contrast),
     contrast_pivot: r4(p.pivot),
     saturation: r4(p.saturation / 50),
     hue_shift: r4((p.hue - 50) * 3.6)
   }
-  const same =
-    CH.every((c) => lift[c] === 0 && gamma[c] === 1 && gain[c] === 1) &&
-    op.contrast === 1 &&
-    op.saturation === 1 &&
-    op.hue_shift === 0
-  return same ? null : { Primary: op }
+  if (!split) {
+    const op: Primary = { ...IDENTITY, lift, gamma, gain, ...look }
+    return isIdentity(op) ? [] : [{ Primary: op }]
+  }
+  const wheels: Primary = { ...IDENTITY, lift, gamma, gain }
+  const after: Primary = { ...IDENTITY, ...look }
+  return [
+    ...(isIdentity(wheels) ? [] : [{ Primary: wheels }]),
+    {
+      LumaPrimary: {
+        lift: r4(p.lift.y),
+        gamma: gammaOf(p.gamma.y),
+        gain: r4(p.gain.y),
+        mix: r4(p.lumMix / 100)
+      }
+    },
+    ...(isIdentity(after) ? [] : [{ Primary: after }])
+  ]
 }
 
-/** Temp and Tint as the relative white-balance sliders (−100…100), or null when untouched. */
-export function primariesWhite(p: PrimariesSetting): { temperature: number; tint: number } | null {
-  return p.temp === 0 && p.tint === 0 ? null : { temperature: p.temp, tint: p.tint }
+/** Display P3's primaries: the look stage's, where Temp and Tint run. */
+const P3_PRIMARIES: [Xy, Xy, Xy] = [
+  [0.68, 0.32],
+  [0.265, 0.69],
+  [0.15, 0.06]
+]
+const XYZ_TO_P3 = invert(rgbToXyz(P3_PRIMARIES))
+
+/**
+ * Whether a white lies inside Display P3, with a little room: the engine
+ * refuses one with a channel at or below 0 (no gain balances it), and a
+ * strong Tint at a mask's Amount of 200 reaches past it.
+ */
+function inP3(kelvin: number, tint: number): boolean {
+  return apply(XYZ_TO_P3, whiteXyz(kelvin, tint)).every((c) => c > 0.005)
+}
+
+/**
+ * Temp and Tint (−100…100 each, Resolve's) as the engine's gain balance on
+ * the look stage's graded values, a grey kept as bright as it was (as
+ * Resolve's, so warming never fights the Gain ring), or null when untouched.
+ * The white is the white balance's own (`opFromRelative`), pulled toward
+ * neutral as little as keeps it inside Display P3: Tint first, then Temp.
+ */
+export function primariesBalance(p: PrimariesSetting): GradeOp | null {
+  if (p.temp === 0 && p.tint === 0) return null
+  const w = opFromRelative(p.temp, p.tint)
+  let mired = 1e6 / w.kelvin
+  let tint = w.tint
+  const neutral = 1e6 / 6504
+  /** The largest share of `v`'s way from neutral that stays inside. */
+  const fit = (inside: (f: number) => boolean): number => {
+    if (inside(1)) return 1
+    let lo = 0
+    let hi = 1
+    for (let i = 0; i < 24; i++) {
+      const f = (lo + hi) / 2
+      if (inside(f)) lo = f
+      else hi = f
+    }
+    return lo
+  }
+  if (!inP3(1e6 / mired, 0)) {
+    const m0 = mired
+    mired = neutral + (m0 - neutral) * fit((f) => inP3(1e6 / (neutral + (m0 - neutral) * f), 0))
+  }
+  const t0 = tint
+  tint = t0 * fit((f) => inP3(1e6 / mired, t0 * f))
+  // Toward neutral in the last place too, so rounding never steps outside.
+  const toward = (v: number): number => Math.trunc(v * 1e4) / 1e4
+  return {
+    GainBalance: {
+      temperature_kelvin: r4(1e6 / mired),
+      tint: toward(tint),
+      hold_luminance: true
+    }
+  }
 }
 
 /**
  * A mask's Amount on its primaries: every change scaled by `k` (0…2) from
- * untouched, gain in stops so it never goes negative; the pivot, which says
- * where rather than how much, stays.
+ * untouched, gain in stops so it never goes negative; the pivot and Lum
+ * Mix, which say where and how rather than how much, stay.
  */
 export function scalePrimaries(p: PrimariesSetting, k: number): PrimariesSetting {
   const lin = (w: Yrgb): Yrgb => ({ y: w.y * k, r: w.r * k, g: w.g * k, b: w.b * k })
@@ -201,7 +289,8 @@ export function scalePrimaries(p: PrimariesSetting, k: number): PrimariesSetting
     saturation: 50 + (p.saturation - 50) * k,
     hue: 50 + (p.hue - 50) * k,
     temp: p.temp * k,
-    tint: p.tint * k
+    tint: p.tint * k,
+    lumMix: p.lumMix
   }
 }
 
@@ -213,9 +302,6 @@ export type VsCurve = (typeof VS_CURVES)[number]
 
 /** Each a list of points, `y` 0.5 untouched; an empty list is a flat curve. */
 export type CurvesVsSetting = Record<VsCurve, { x: number; y: number }[]>
-
-/** The vs curves the engine has no op for yet: kept, shown as waiting, not compiled (E71, E72). */
-export const VS_WAITING: Partial<Record<VsCurve, string>> = { hueLum: 'E71', satSat: 'E72' }
 
 /** Whether a vs curve's x is a hue (it wraps at red). */
 export const vsPeriodic = (c: VsCurve): boolean => c.startsWith('hue')
@@ -290,12 +376,18 @@ export function vsPoints(
   return [{ x: 0, y }, ...inner, { x: 1, y }]
 }
 
+/** How far Hue vs Lum reaches at the top and bottom of its graph: a stop either way. */
+export const HUE_LUM_STOPS = 1
+
 /**
- * The vs curves as one engine `Curves` op (Hue vs Hue in degrees, ±180;
- * the saturation curves as multipliers, 0 to 2), and the ones that wait.
+ * The vs curves as one engine `Curves` op, or null when every one is flat:
+ * Hue vs Hue in degrees (±180); Hue vs Sat, Lum vs Sat and Sat vs Sat as
+ * multipliers (0 to 2, as Resolve's); Hue vs Lum in stops (±1, a gain of ½
+ * to 2 on a full colour, greys untouched). The engine keys the four hue and
+ * saturation curves on the colour as it comes, so Hue vs Lum follows the hue
+ * a colour had before Hue vs Hue turned it.
  */
-export function curvesVsOp(c: CurvesVsSetting): { op: GradeOp | null; waiting: VsCurve[] } {
-  const waiting = VS_CURVES.filter((k) => VS_WAITING[k] && !vsFlat(c[k]))
+export function curvesVsOp(c: CurvesVsSetting): GradeOp | null {
   const curve = (
     k: VsCurve,
     y: (v: number) => number
@@ -305,22 +397,23 @@ export function curvesVsOp(c: CurvesVsSetting): { op: GradeOp | null; waiting: V
       : { points: vsPoints(c[k], vsPeriodic(k)).map((p) => ({ x: r4(p.x), y: r4(y(p.y)) })) }
   const hueHue = curve('hueHue', (v) => (v - 0.5) * 360)
   const hueSat = curve('hueSat', (v) => v * 2)
+  const hueLum = curve('hueLum', (v) => (v - 0.5) * 2 * HUE_LUM_STOPS)
   const lumSat = curve('lumSat', (v) => v * 2)
-  if (!hueHue && !hueSat && !lumSat) return { op: null, waiting }
+  const satSat = curve('satSat', (v) => v * 2)
+  if (!hueHue && !hueSat && !hueLum && !lumSat && !satSat) return null
   return {
-    op: {
-      Curves: {
-        master: null,
-        red: null,
-        green: null,
-        blue: null,
-        luma_vs_saturation: lumSat,
-        hue_vs_saturation: hueSat,
-        hue_vs_hue: hueHue,
-        refine_saturation: null
-      }
-    },
-    waiting
+    Curves: {
+      master: null,
+      red: null,
+      green: null,
+      blue: null,
+      luma_vs_saturation: lumSat,
+      hue_vs_saturation: hueSat,
+      hue_vs_hue: hueHue,
+      hue_vs_luma: hueLum,
+      saturation_vs_saturation: satSat,
+      refine_saturation: null
+    }
   }
 }
 
@@ -339,7 +432,7 @@ const turn = (x: number, deg: number): { x: number; y: number } => ({
   x: r4(x),
   y: r4(0.5 + deg / 360)
 })
-/** A Hue vs Lum point: `d` brighter (or darker) on the curve's own scale, 0.5 untouched. */
+/** A Hue vs Lum point: `d` brighter (or darker) on the curve's own scale (0.5 a stop), 0.5 untouched. */
 const lift = (x: number, d: number): { x: number; y: number } => ({ x: r4(x), y: r4(0.5 + d) })
 /** A saturation curve's point: `k` times as strong. */
 const times = (x: number, k: number): { x: number; y: number } => ({ x: r4(x), y: r4(k / 2) })
@@ -347,8 +440,7 @@ const times = (x: number, k: number): { x: number; y: number } => ({ x: r4(x), y
 /**
  * The built-in starting points of each vs curve, gentle as a colourist's
  * first moves, each a few points to drag from: Flat first (the curve put
- * back). Hue vs Lum and Sat vs Sat are kept and wait for the engine
- * (`VS_WAITING`) as drawn ones do.
+ * back).
  */
 export const VS_PRESETS: Record<VsCurve, VsPreset[]> = {
   hueHue: [
@@ -442,26 +534,50 @@ export function scaleCurvesVs(c: CurvesVsSetting, k: number): CurvesVsSetting {
 /**
  * Resolve's Log wheels: Shadow, Midtone and Highlight each move only their
  * part of the tonal range (below Low, between, above High), Offset all of
- * it; each adds to the values (an offset, not a gain), so a small push stays
- * small. Until the engine has a log grading space and its own op (E73, E74)
- * each part is a Qualifier keyed on luma with a soft edge: close to Resolve,
- * not the same, and the card says so.
+ * it; each adds to the values, and in log an added value is an even number
+ * of stops, so a small push stays small from the shadows to the highlights.
+ * They compile to the engine's `LogWheels` (engine 0.21, E74) in a stage of
+ * their own in PixlLog (E73): PixlRGB's primaries and the models' log curve,
+ * 18% grey at 0.405 and white at 0.669. The parts hand over by smoothsteps
+ * that always add up to one, so equal wheels are exactly an offset.
  */
 export interface LogWheelsSetting {
   shadow: Yrgb
   midtone: Yrgb
   highlight: Yrgb
   offset: Yrgb
-  /** 0…1, where the shadows end (Resolve's Low Range, 0.333). */
+  /** PixlLog code value where the shadows end (Resolve's Low Range). */
   low: number
-  /** 0…1, where the highlights begin (Resolve's High Range, 0.550). */
+  /** PixlLog code value where the highlights begin (Resolve's High Range). */
   high: number
 }
 
-export const LOG_LOW = 0.333
-export const LOG_HIGH = 0.55
-/** How far past its range a part's push fades out. */
-const LOG_SOFT = 0.12
+/** Linear light as a PixlLog code value: the models' log, gain 64, peak 8 (8× white is 1). */
+export const toPixlLog = (x: number): number =>
+  (Math.sign(x) * Math.log1p(64 * Math.abs(x))) / Math.log1p(64 * 8)
+
+/** An ACEScct code value as linear light (above its toe, where Resolve's ranges sit). */
+const fromAcesCct = (v: number): number => 2 ** (v * 17.52 - 9.72)
+
+const r3 = (v: number): number => Math.round(v * 1e3) / 1e3
+
+/**
+ * Resolve's default ranges, 0.333 and 0.550 in ACEScct, at the same stops
+ * from grey in PixlLog: Low about a stop and a half under grey (0.268),
+ * High about two and a half over it, just under white (0.660).
+ */
+export const LOG_LOW = r3(toPixlLog(fromAcesCct(0.333)))
+export const LOG_HIGH = r3(toPixlLog(fromAcesCct(0.55)))
+/** How soft each handover is, either side of Low and High (fixed: Resolve shows none). */
+export const LOG_TRANSITION = 0.05
+/**
+ * The least Low and High are apart: both handovers whole, and a hair more,
+ * as the engine refuses a High whose handover starts before Low's ends.
+ */
+export const LOG_MIN_GAP = 0.11
+/** How far the ranges reach: about a 500th of white up to 7× it. */
+export const LOG_FLOOR = 0.02
+export const LOG_TOP = 0.98
 
 export function defaultLogWheels(): LogWheelsSetting {
   return {
@@ -474,67 +590,72 @@ export function defaultLogWheels(): LogWheelsSetting {
   }
 }
 
+/** Low and High in range, High at least `LOG_MIN_GAP` above Low. */
+export function logRange(low: number, high: number): { low: number; high: number } {
+  const l = clamp(low, LOG_FLOOR, LOG_TOP - LOG_MIN_GAP)
+  return { low: l, high: clamp(high, l + LOG_MIN_GAP, LOG_TOP) }
+}
+
 export function normaliseLogWheels(v: unknown): LogWheelsSetting {
   const o = (v && typeof v === 'object' ? v : {}) as Partial<
     Record<keyof LogWheelsSetting, unknown>
   >
-  const low = clamp(num(o.low, LOG_LOW), 0.02, 0.9)
   return {
     shadow: yrgbOf(o.shadow, zero(), -1, 1),
     midtone: yrgbOf(o.midtone, zero(), -1, 1),
     highlight: yrgbOf(o.highlight, zero(), -1, 1),
     offset: yrgbOf(o.offset, zero(), -1, 1),
-    low,
-    high: clamp(num(o.high, LOG_HIGH), low + 0.05, 0.98)
+    ...logRange(num(o.low, LOG_LOW), num(o.high, LOG_HIGH))
   }
+}
+
+/**
+ * A recipe's Low and High from before engine 0.21 (the qualifier form's, on
+ * display-encoded luma) as PixlLog code values at the same tones; left at
+ * Resolve's defaults there (0.333, 0.550), the defaults here. Null when the
+ * recipe held none.
+ */
+export function logRangeBefore021(saved: unknown): { low: number; high: number } | null {
+  const o = (saved && typeof saved === 'object' ? saved : {}) as { low?: unknown; high?: unknown }
+  if (typeof o.low !== 'number' || typeof o.high !== 'number') return null
+  if (Math.abs(o.low - 0.333) < 1e-6 && Math.abs(o.high - 0.55) < 1e-6)
+    return { low: LOG_LOW, high: LOG_HIGH }
+  const decode = (v: number): number => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+  return logRange(r3(toPixlLog(decode(o.low))), r3(toPixlLog(decode(o.high))))
 }
 
 const isZero = (w: Yrgb): boolean => w.y === 0 && w.r === 0 && w.g === 0 && w.b === 0
 
-/** A wheel's push as a Primary that adds it: `v + o` is `lift o, gain 1 + o`. */
-function offsetPrimary(w: Yrgb): Primary {
-  const lift = { r: 0, g: 0, b: 0 }
-  const gain = { r: 1, g: 1, b: 1 }
-  for (const c of CH) {
-    const o = w.y + w[c]
-    lift[c] = r4(o)
-    gain[c] = r4(1 + o)
-  }
-  return { ...IDENTITY, lift, gain }
-}
+/** A wheel's push per channel: Y moves all three. */
+const rgbOf = (w: Yrgb): { r: number; g: number; b: number } => ({
+  r: r4(w.y + w.r),
+  g: r4(w.y + w.g),
+  b: r4(w.y + w.b)
+})
 
-/** The luma band a part keys: centre, width and the soft edge past it. */
-export function logBand(
-  part: 'shadow' | 'midtone' | 'highlight',
-  low: number,
-  high: number
-): { centre: number; width: number; softness: number } {
-  if (part === 'shadow') return { centre: 0, width: r4(2 * low), softness: LOG_SOFT }
-  if (part === 'highlight') return { centre: 1, width: r4(2 * (1 - high)), softness: LOG_SOFT }
-  return { centre: r4((low + high) / 2), width: r4(high - low), softness: LOG_SOFT }
-}
-
-/** The log wheels as engine ops for the look stage (empty when untouched). */
+/**
+ * The log wheels as the engine's `LogWheels`, for the log stage (none when
+ * untouched, so no log stage is made: one that changes nothing is not
+ * bit-identical).
+ */
 export function logWheelsOps(l: LogWheelsSetting): GradeOp[] {
-  const out: GradeOp[] = []
-  for (const part of ['shadow', 'midtone', 'highlight'] as const) {
-    if (isZero(l[part])) continue
-    out.push({
-      Qualifier: {
-        key: {
-          hue: null,
-          saturation: null,
-          luma: logBand(part, l.low, l.high),
-          blur_radius: 0,
-          invert: false
-        },
-        correction: offsetPrimary(l[part]),
+  if ([l.shadow, l.midtone, l.highlight, l.offset].every(isZero)) return []
+  // A mask's settings are filled, not normalised: held here too.
+  const { low, high } = logRange(l.low, l.high)
+  return [
+    {
+      LogWheels: {
+        shadow: rgbOf(l.shadow),
+        midtone: rgbOf(l.midtone),
+        highlight: rgbOf(l.highlight),
+        offset: rgbOf(l.offset),
+        low_range: r4(low),
+        high_range: r4(high),
+        transition: LOG_TRANSITION,
         smoothing: null
       }
-    })
-  }
-  if (!isZero(l.offset)) out.push({ Primary: offsetPrimary(l.offset) })
-  return out
+    }
+  ]
 }
 
 export function scaleLogWheels(l: LogWheelsSetting, k: number): LogWheelsSetting {
@@ -561,9 +682,11 @@ export interface KeyBandSetting {
 /**
  * Resolve's qualifier as a tool: a key on hue, saturation and luminance
  * (an HSL key, as the eyedropper samples it), blurred and perhaps inverted,
- * and the correction it lets through: a Gain wheel, Sat and Hue. Each runs
- * as its own engine layer after the photo's own grade and before the
- * masks, its key a Range mask, so the key view is the engine's own key.
+ * and the correction it lets through: a Gain wheel, Sat and Hue. Each is the
+ * engine's own Qualifier op where it sits in the grade (0.21.0, E77): the
+ * photo's after its primaries and curves and before its effects, a mask's
+ * in the mask's own layer, so it keys only inside the mask. The key view is
+ * the engine's key there (`Inspect::QualifierKey`).
  */
 export interface QualifierSetting {
   id: string
@@ -573,7 +696,7 @@ export interface QualifierSetting {
   /** Saturation and luminance 0…1. */
   keySat: KeyBandSetting
   keyLum: KeyBandSetting
-  /** 0…100: the key's edge softened (a range mask's smoothness). */
+  /** 0…100: the key's edge softened, up to 1% of the shorter side (as a range mask's smoothness). */
   blur: number
   invert: boolean
   gain: Yrgb
@@ -581,9 +704,24 @@ export interface QualifierSetting {
   sat: number
   /** 0…100, 50 untouched. */
   hue: number
+  /**
+   * The colour the eyedropper keyed on (hue in degrees, saturation and luma
+   * 0…1): the bands rest there, so a reset puts a band back where the pick
+   * put it. Absent from qualifiers keyed before it was kept.
+   */
+  picked?: QualifierSample
+}
+
+export interface QualifierSample {
+  hue: number
+  saturation: number
+  luminance: number
 }
 
 export const MAX_QUALIFIERS = 8
+
+/** A new band's colour when there is no pick to go back to. */
+const NO_PICK: QualifierSample = { hue: 0, saturation: 0.5, luminance: 0.5 }
 
 const band = (on: boolean, centre: number, width: number, soft: number): KeyBandSetting => ({
   on,
@@ -593,10 +731,7 @@ const band = (on: boolean, centre: number, width: number, soft: number): KeyBand
 })
 
 /** A qualifier keyed around a sampled colour (hue in degrees, saturation and luma 0…1). */
-export function qualifierFromSample(
-  id: string,
-  s: { hue: number; saturation: number; luminance: number }
-): QualifierSetting {
+export function qualifierFromSample(id: string, s: QualifierSample): QualifierSetting {
   return {
     id,
     enabled: true,
@@ -608,7 +743,29 @@ export function qualifierFromSample(
     invert: false,
     gain: one(),
     sat: 50,
-    hue: 50
+    hue: 50,
+    picked: { hue: r4(s.hue), saturation: r4(s.saturation), luminance: r4(s.luminance) }
+  }
+}
+
+/** Where a qualifier's bands rest (their reset): as its pick keyed them, else a new band's. */
+export function qualifierRest(
+  q: QualifierSetting
+): Pick<QualifierSetting, 'keyHue' | 'keySat' | 'keyLum'> {
+  const { keyHue, keySat, keyLum } = qualifierFromSample(q.id, q.picked ?? NO_PICK)
+  return { keyHue, keySat, keyLum }
+}
+
+function sampleOf(v: unknown): QualifierSample | undefined {
+  const o = (v && typeof v === 'object' ? v : null) as Partial<
+    Record<keyof QualifierSample, unknown>
+  > | null
+  if (!o || ![o.hue, o.saturation, o.luminance].every((n) => typeof n === 'number' && isFinite(n)))
+    return undefined
+  return {
+    hue: clamp(o.hue as number, 0, 360),
+    saturation: clamp(o.saturation as number, 0, 1),
+    luminance: clamp(o.luminance as number, 0, 1)
   }
 }
 
@@ -632,7 +789,8 @@ export function normaliseQualifiers(v: unknown): QualifierSetting[] {
     const id = typeof o.id === 'string' && o.id && !seen.has(o.id) ? o.id : null
     if (!id) continue
     seen.add(id)
-    const d = qualifierFromSample(id, { hue: 0, saturation: 0.5, luminance: 0.5 })
+    const d = qualifierFromSample(id, NO_PICK)
+    const picked = sampleOf(o.picked)
     out.push({
       id,
       enabled: o.enabled !== false,
@@ -643,7 +801,8 @@ export function normaliseQualifiers(v: unknown): QualifierSetting[] {
       invert: o.invert === true,
       gain: yrgbOf(o.gain, one(), 0, 4),
       sat: clamp(num(o.sat, 50), 0, 100),
-      hue: clamp(num(o.hue, 50), 0, 100)
+      hue: clamp(num(o.hue, 50), 0, 100),
+      ...(picked ? { picked } : {})
     })
     if (out.length >= MAX_QUALIFIERS) break
   }
@@ -675,7 +834,7 @@ export function qualifierCorrection(q: QualifierSetting): Primary | null {
   return same ? null : p
 }
 
-/** The engine layer a qualifier compiles to, by name in `Compiled.layerIndex` (its key view's). */
+/** A qualifier's key view, by name: what `Compiled.qualifierIndex` finds its op by. */
 export const qualifierLayerId = (id: string): string => `q:${id}`
 
 /** A mask's Amount on a qualifier's correction: the key stays, the change scales by `k`. */

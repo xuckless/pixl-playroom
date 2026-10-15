@@ -20,10 +20,12 @@ import { IPC } from '../../shared/ipc'
 import { licenceEnforced } from '../../shared/licence'
 import { endSession, OAuthError } from './oauth'
 import { Session, type SessionStore, type StoredSession } from './session'
+import { devEnv, HIDDEN } from '../build'
 
 const cfg: AuthConfig = {
   ...AUTH_CONFIG,
-  authUrl: (process.env['PLAYROOM_AUTH_URL'] || AUTH_CONFIG.authUrl).replace(/\/+$/, '')
+  // A development build's mock (scripts/mock-account.mjs); a release signs in where it ships to.
+  authUrl: (devEnv('PLAYROOM_AUTH_URL') || AUTH_CONFIG.authUrl).replace(/\/+$/, '')
 }
 /** As the licence section: shown in development, in a beta build, when asked for, or once enforced. */
 const visible =
@@ -177,7 +179,7 @@ export async function signOut(): Promise<AccountStatus> {
 
 /** At ready: check a kept session is still good (a revoked one signs out here). */
 export function startAccount(): void {
-  if (process.env['PLAYROOM_HIDDEN'] === '1') return
+  if (HIDDEN) return
   const s = theSession()
   if (!s.identity()) return
   void s.refresh().catch((err) => {

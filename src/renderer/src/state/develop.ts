@@ -7,14 +7,27 @@ import type { ImageStats, MaskMode, NoiseEstimate } from '../../../shared/engine
 import type {
   DevelopSession,
   HistoryLog,
+  ProofCheck,
+  ProofIssue,
   RenderEvent,
   RenderReport,
   Snapshot,
   ViewState
 } from '../../../shared/ipc'
+import { checkedProof, profileName, proofKey, type ProofSettings } from '../../../shared/proof'
 import { amendLog, appendToLog, canRedo, replay } from '../../../shared/history'
 import { normaliseRecipe, sameValue, type HslBand, type Recipe } from '../../../shared/recipe'
-import { FIT, type ZoomView } from '../../../shared/view'
+import { FIT, maskPlacementKey, type ZoomView } from '../../../shared/view'
+import { renderedLens } from '../../../shared/edits'
+import {
+  lensFrameKey,
+  lensFrameOf,
+  rebaseNeed,
+  retagMasks,
+  sameLensFrame,
+  type LensGrid
+} from '../../../shared/lensframe'
+import { nextGeometryRev, planeFits } from './maskplanes'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
 import { useLibrary } from './library'
@@ -22,6 +35,14 @@ import { useUi } from './ui'
 import { aboveWhite, renderDisplay, useDisplay } from './display'
 import type { GuideLine } from '../../../shared/upright'
 import type { InvariantPlace } from '../../../shared/invariant'
+import {
+  lookArrived,
+  lookFaded,
+  lookOnOpen,
+  lookOnPicture,
+  wantsPreview,
+  type FirstLook
+} from '../lib/firstlook'
 
 export type Tool =
   | 'none'
@@ -47,7 +68,8 @@ export type Tool =
   | 'tat'
   /** A smart look's run asks the user to point at an object (views/loupe/LookPick.tsx). */
   | 'look-pick'
-export type Compare = 'off' | 'before' | 'split'
+/** `proof`: Screen | Proof, the settled picture unproofed beside its proof (soft proofing). */
+export type Compare = 'off' | 'before' | 'split' | 'proof'
 
 /**
  * The tools that work on the whole frame rather than the framed picture:
@@ -96,10 +118,28 @@ interface DevelopState {
   snapshots: Snapshot[]
   /** The picture on screen: the latest render for the current view. */
   picture: RenderEvent | null
+  /**
+   * What shows while a photo opens, before its develop's first picture
+   * (lib/firstlook.ts): its thumbnail, or an unedited RAW's embedded preview.
+   */
+  firstLook: FirstLook | null
   /** The latest render for each view, so opening or closing the crop tool swaps at once. */
   pictures: Pictures
   before: RenderEvent | null
   mask: RenderEvent | null
+  /**
+   * The first recipe number drawn with the masks placed as they are now (the
+   * framing and the lens, `maskPlacementKey`): a mask plane or thumbnail
+   * from before it is of another picture and is not shown (`planeFits`).
+   */
+  geometryRev: number
+  /**
+   * The masks drawn under another lens than the one rendered (Optics
+   * switched off, a lens slider moving): the loupe's map between the two,
+   * so handles and new strokes stay on what they were drawn on. Null when
+   * they agree.
+   */
+  maskGrid: LensGrid | null
   /** The selected qualifier's key plane, while its key view is on (`keyView`). */
   keyMask: RenderEvent | null
   report: RenderReport | null
@@ -134,10 +174,28 @@ interface DevelopState {
   headroom: boolean
   /** The engine's headroom plane for the view on screen. */
   headroomPlane: RenderEvent | null
+  /** The gamut warning (soft proofing): colour what the export's colour space can't hold. */
+  gamut: boolean
+  /** The engine's gamut warning plane for the view on screen. */
+  gamutPlane: RenderEvent | null
+  /**
+   * Soft proofing (S): the settled picture, the before and the 1:1 tiles as
+   * the proof (`useUi.proof`) makes them. Off for each photo opened, but a
+   * proof copy, which opens proofed.
+   */
+  proof: boolean
+  /** The proof setup's popover is open (⌥S, the Proof button's chevron). */
+  proofSetup: boolean
+  /** Why proofing turned itself off (its profile not found, or refused). */
+  proofIssue: ProofIssue | null
+  /** The paper's white (0…255 Display P3) of the proof in force, for the surround while simulating. */
+  proofPaper: [number, number, number] | null
+  /** The settled picture unproofed: Screen | Proof's other side. */
+  screen: RenderEvent | null
   /** How the loupe looks at the picture: fitted, or zoomed about a point. */
   zoom: ZoomView
   hslFocus: HslBand | null
-  hslTab: 'hue' | 'saturation' | 'luminance' | 'all' | 'point'
+  hslTab: 'hue' | 'saturation' | 'luminance' | 'all' | 'density' | 'point'
   /** The selected swatch of the colour mixer's Point tab. */
   pointId: string | null
   /** The qualifier the Qualifier card has selected, and whether its key shows white on black. */
@@ -192,6 +250,20 @@ interface DevelopState {
   setOverlay(on: boolean): void
   setCompare(c: Compare): void
   setClipping(on: boolean): void
+  setGamut(on: boolean): void
+  /**
+   * Proofing on or off. Turned on, its settings are tried on the engine
+   * first: a profile not found or refused leaves it off, and says why.
+   */
+  setProof(on: boolean): Promise<void>
+  /**
+   * New proof settings (the setup), tried on the engine first: used (and
+   * proofing turned on) when it takes them; the issue back when it does not,
+   * the settings in force kept. `opening`: a proof copy's own, as it opens
+   * (shown unproofed when the engine will not take them).
+   */
+  applyProof(s: ProofSettings, opening?: boolean): Promise<ProofIssue | null>
+  setProofSetup(open: boolean): void
   setZoom(z: ZoomView): void
   setHslFocus(b: HslBand | null): void
   setHslTab(tab: DevelopState['hslTab']): void
@@ -204,6 +276,8 @@ interface DevelopState {
   setCurveChannel(c: CurveChannel): void
   setTatTarget(t: DevelopState['tatTarget']): void
   setTargetEdge(n: number): void
+  /** The first look faded out over the develop's picture (the loupe's timer). */
+  firstLookGone(key: string): void
   pushView(): void
   onRendered(e: RenderEvent): void
   onError(message: string, invariant?: InvariantPlace | null): void
@@ -337,9 +411,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   snapshots: [],
   comparing: null,
   picture: null,
+  firstLook: null,
   pictures: { framed: null, crop: null },
   before: null,
   mask: null,
+  geometryRev: 0,
+  maskGrid: null,
   report: null,
   stats: null,
   hdrStats: null,
@@ -358,6 +435,13 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   clipping: false,
   headroom: false,
   headroomPlane: null,
+  gamut: false,
+  gamutPlane: null,
+  proof: false,
+  proofSetup: false,
+  proofIssue: null,
+  proofPaper: null,
+  screen: null,
   zoom: FIT,
   hslFocus: null,
   hslTab: 'all',
@@ -379,6 +463,20 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     openingKey = key
     // A slider's last frame is the photo being left's: it goes to that photo first.
     flushQueued((m) => get().onError(m))
+    // The photo at once (engine 0.21, OBS-1d): its thumbnail, then an
+    // unedited RAW's embedded preview at the stage's size, until the develop's
+    // first picture lands.
+    const item = useLibrary.getState().items.find((i) => i.key === key)
+    if (wantsPreview(item))
+      void api.develop
+        .firstLook(key, get().targetEdge)
+        .then((look) => {
+          if (!look || token !== openToken) return
+          const { firstLook, picture } = get()
+          const opening = openingKey ?? get().session?.key ?? null
+          set({ firstLook: lookArrived(firstLook, key, look.url, opening, picture !== null) })
+        })
+        .catch(() => undefined)
     // The last photo's recipe stays in view until this one's arrives, but
     // nothing edits it: every edit needs the session.
     set({
@@ -388,6 +486,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       invariant: null,
       previewing: null,
       picture: null,
+      firstLook: lookOnOpen(key, item),
       pictures: { framed: null, crop: null },
       maskThumbs: {},
       hoverLayer: null,
@@ -400,6 +499,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       stats: null,
       hdrStats: null,
       headroomPlane: null,
+      gamutPlane: null,
+      // Each photo opens unproofed (a proof copy proofed, below).
+      proof: false,
+      proofIssue: null,
+      screen: null,
+      ...(get().compare === 'proof' ? { compare: 'off' as const } : {}),
       report: null,
       noise: null,
       layerId: null,
@@ -420,7 +525,13 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       if (!history.base) {
         const opened = await api.develop.historyAppend(key, tk('Opened'), session.recipe)
         history = appendToLog(history, opened)
-      } else if (!sameValue(head ?? replay(history.base.recipe, history.steps), session.recipe)) {
+      } else if (
+        !sameValue(
+          // As read today (a recipe from before the masks' lens record gets one, as the sidecar did).
+          normaliseRecipe(head ?? replay(history.base.recipe, history.steps), session.isRaw),
+          session.recipe
+        )
+      ) {
         // Changed where no history is written (a paste or sync in the
         // library, an older version's undo): record where it stands now.
         const saved = await api.develop.historyAppend(key, tk('Opened as saved'), session.recipe)
@@ -437,12 +548,14 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         comparing: null,
         loading: false
       })
-      get().pushView()
+      // A proof copy brings its proof: it opens proofed with it.
+      if (session.proof) void get().applyProof(session.proof, true)
+      else get().pushView()
       warmNeighbours(key)
     } catch (err) {
       if (stale()) return
       openingKey = null
-      set({ shown: null, loading: false, error: errorText(err) })
+      set({ shown: null, loading: false, error: errorText(err), firstLook: null })
     }
   },
 
@@ -460,11 +573,14 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       recipe: null,
       previewing: null,
       picture: null,
+      firstLook: null,
       pictures: { framed: null, crop: null },
       before: null,
       mask: null,
       keyMask: null,
-      keyView: false
+      keyView: false,
+      proof: false,
+      screen: null
     })
   },
 
@@ -487,8 +603,16 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   },
 
   commit(label) {
-    const { session, recipe } = get()
+    const { session } = get()
+    let { recipe } = get()
     if (!session || !recipe) return Promise.resolve(null)
+    // A lens edit settling: the masks move onto the new lens with it
+    // (shared/lensframe.ts). With no point to move, only the record does.
+    const need = rebaseNeed(recipe)
+    if (need === 'retag') {
+      recipe = retagMasks(recipe)
+      set({ recipe })
+    }
     // An edit sent settled just before (edit, then commit) is not sent again.
     if (settled?.key !== session.key || settled.recipe !== recipe || queued || frame) {
       set({ rendering: true })
@@ -496,11 +620,27 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     }
     const item = useLibrary.getState().items.find((i) => i.key === session.key)
     if (item && !item.edited) useLibrary.getState().patchItems([{ ...item, edited: true }])
+    // Points to carry take the correction's maps, in main. The picture meanwhile
+    // is the same (compile maps them); the step records them moved.
+    const sent = recipe
+    const recorded: Promise<Recipe> =
+      need !== 'remap'
+        ? Promise.resolve(sent)
+        : api.develop
+            .rebaseMasks(session.key, sent)
+            .then((moved) => {
+              const now = get()
+              if (now.session?.key !== session.key || now.recipe !== sent) return sent
+              set({ recipe: moved })
+              sendNow(session.key, moved, (m) => get().onError(m))
+              return moved
+            })
+            .catch(() => sent)
     // In line with Undo and Redo: one pressed straight after waits for this step.
     return new Promise<number | null>((resolve) => {
       queueHistoryOp(async () => {
         try {
-          const change = await api.develop.historyAppend(session.key, label, recipe)
+          const change = await api.develop.historyAppend(session.key, label, await recorded)
           if (get().session?.key === session.key)
             set({ history: appendToLog(get().history, change) })
           resolve(change.step?.seq ?? null)
@@ -581,8 +721,15 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     const { pictures, picture } = get()
     const whole = wholeFrameTool(tool)
     const shown = whole ? pictures.crop : pictures.framed
-    // The whole-frame tools work on the whole fitted frame.
-    set({ tool, picture: shown ?? picture, ...(whole ? { zoom: FIT } : {}) })
+    // The whole-frame tools work on the whole fitted frame. The mask planes
+    // on hand were drawn for the other view: the next ones are this one's.
+    set({
+      tool,
+      picture: shown ?? picture,
+      mask: null,
+      keyMask: null,
+      ...(whole ? { zoom: FIT } : {})
+    })
     get().pushView()
   },
 
@@ -616,7 +763,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   },
 
   setCompare(compare) {
+    const was = get().compare
     set({ compare })
+    // Screen | Proof asks main for the unproofed picture beside the proof.
+    if ((was === 'proof') !== (compare === 'proof')) get().pushView()
   },
 
   setClipping(clipping) {
@@ -626,6 +776,61 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   setHeadroom(headroom) {
     set({ headroom, headroomPlane: headroom ? get().headroomPlane : null })
     get().pushView()
+  },
+
+  setGamut(gamut) {
+    set({ gamut, gamutPlane: gamut ? get().gamutPlane : null })
+    get().pushView()
+  },
+
+  async setProof(on) {
+    if (!on) {
+      set({ proof: false, ...(get().compare === 'proof' ? { compare: 'off' as const } : {}) })
+      return get().pushView()
+    }
+    const issue = await get().applyProof(useUi.getState().proof)
+    if (issue) set({ proofIssue: issue })
+  },
+
+  async applyProof(settings, opening = false) {
+    const session = get().session
+    if (!session) return null
+    const check = await api.develop
+      .proofCheck(session.key, settings)
+      .catch((err: unknown): ProofCheck => ({
+        ok: false,
+        issue: {
+          kind: 'unusable',
+          key: proofKey(settings),
+          name: profileName(settings.profile),
+          why: errorText(err)
+        }
+      }))
+    // Another photo opened meanwhile: it starts unproofed.
+    if (get().session?.key !== session.key) return null
+    const checked = checkedProof(check, opening)
+    if (!checked.use) {
+      // A proof copy whose profile is gone or refused: shown unproofed, saying why.
+      if (checked.show) {
+        set({ proofIssue: checked.issue })
+        get().pushView()
+      }
+      return checked.issue
+    }
+    useUi.getState().setProofSettings(settings)
+    set({
+      proof: true,
+      proofIssue: null,
+      proofPaper: checked.paper,
+      // A CMYK or grey profile: engine 0.21 warns against it, with no preview.
+      ...(checked.gamut ? { gamut: true } : {})
+    })
+    get().pushView()
+    return null
+  },
+
+  setProofSetup(proofSetup) {
+    set({ proofSetup })
   },
 
   async reopen() {
@@ -682,6 +887,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     set({ tatTarget })
   },
 
+  firstLookGone(key) {
+    set({ firstLook: lookFaded(get().firstLook, key) })
+  },
+
   setTargetEdge(targetEdge) {
     if (Math.abs(targetEdge - get().targetEdge) < 64) return
     set({ targetEdge })
@@ -693,6 +902,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     if (!session) return
     // The key view asks for the selected qualifier's layer instead of a mask's.
     const keyLayer = keyView && qualifierId ? qualifierLayerId(qualifierId) : null
+    // Proofing shows an SDR picture: paper has no light above white.
+    const proof = get().proof ? useUi.getState().proof : null
     const view: ViewState = {
       cropMode: wholeFrameTool(tool),
       guides: tool === 'upright-guide',
@@ -708,16 +919,22 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       // engine knows exactly what the key selects in the graded picture.
       maskLive: rangeSelected(get()) || keyLayer !== null,
       // Every photo whose editing space has light above white: a RAW or an HDR one.
-      headroom: get().headroom && aboveWhite(session),
+      headroom: get().headroom && aboveWhite(session) && !proof,
       // Full HDR for those too; an SDR photo (a gain-map one edited in SDR
       // among them) shows its SDR picture, which has nothing above white.
-      display: aboveWhite(session)
-        ? renderDisplay(useUi.getState().fullHdr, useDisplay.getState().display)
-        : null,
+      display:
+        aboveWhite(session) && !proof
+          ? renderDisplay(useUi.getState().fullHdr, useDisplay.getState().display)
+          : null,
       targetEdge,
       // Settled SDR pictures in float once the window is known to draw F16
       // frames (asked once; the view goes again when the answer comes).
-      float: floatCanvasKnown() === true
+      float: floatCanvasKnown() === true,
+      // The engine measures the gamut warning on an SDR picture only: main
+      // renders none while Full HDR shows the photo.
+      gamut: get().gamut,
+      proof,
+      proofScreen: proof !== null && get().compare === 'proof'
     }
     if (floatCanvasKnown() === null) void floatCanvasReady().then((ok) => ok && get().pushView())
     set({ rendering: true })
@@ -727,11 +944,30 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   onRendered(e) {
     const { session } = get()
     if (!session || e.key !== session.key) return
+    // Proofing asked for and refused (its profile gone, the engine refusing
+    // it): off, saying why, never another profile in its place.
+    const issue = e.proofIssue
+    if (issue && get().proof && issue.key === proofKey(useUi.getState().proof)) {
+      set({
+        proof: false,
+        proofIssue: issue,
+        ...(get().compare === 'proof' ? { compare: 'off' as const } : {})
+      })
+      get().pushView()
+    }
     if (e.kind === 'before') set({ before: e })
-    else if (e.kind === 'headroom') {
+    else if (e.kind === 'screen') {
+      if (Boolean(e.cropMode) === wholeFrameTool(get().tool)) set({ screen: e })
+    } else if (e.kind === 'headroom') {
       if (get().headroom && Boolean(e.cropMode) === wholeFrameTool(get().tool))
         set({ headroomPlane: e })
+    } else if (e.kind === 'gamut') {
+      if (get().gamut && Boolean(e.cropMode) === wholeFrameTool(get().tool)) set({ gamutPlane: e })
     } else if (e.kind === 'mask') {
+      // A plane drawn for the other view, or before the framing or lens
+      // changed, would sit off its subject over the picture on screen.
+      if (!planeFits(e, { whole: wholeFrameTool(get().tool), geometryRev: get().geometryRev }))
+        return
       const { keyView, qualifierId } = get()
       if (keyView && qualifierId) {
         // The key view's plane: kept apart from the masks'.
@@ -774,6 +1010,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       set({
         pictures: next,
         picture: same ? get().picture : e,
+        // The develop's picture is here: the first look fades out over it.
+        firstLook: lookOnPicture(get().firstLook, e.key),
         stats: e.stats ?? null,
         // Drafts carry no HDR measurement; keep the last settled one meanwhile.
         hdrStats: e.kind === 'full' ? (e.hdrStats ?? null) : get().hdrStats,
@@ -786,7 +1024,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   },
 
   onError(message, invariant = null) {
-    set({ error: message, invariant, rendering: false })
+    // A develop that failed is not "Developing…": the first look goes.
+    set({ error: message, invariant, rendering: false, firstLook: null })
   },
 
   async addVersion(name) {
@@ -850,3 +1089,69 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     }
   }
 }))
+
+/** How long a lens change rests before the loupe's lens grid is asked for (a slider moving). */
+const GRID_SETTLE_MS = 200
+/** The photo and the pair of lens frames the loupe's grid was last asked for ('' for none). */
+let gridFor = ''
+let gridTimer: ReturnType<typeof setTimeout> | undefined
+
+// The masks on another lens than the one rendered: the loupe maps its
+// pointer and handles through a grid of the map between them (view.ts).
+useDevelop.subscribe((s, prev) => {
+  if (s.recipe === prev.recipe && s.session === prev.session) return
+  const session = s.session
+  const masks = s.recipe?.masks?.lensFrame ?? null
+  const rendered = s.recipe && session ? lensFrameOf(renderedLens(s.recipe, session.isRaw)) : null
+  const key =
+    session && s.recipe && !sameLensFrame(masks, rendered)
+      ? `${session.key}|${lensFrameKey(masks)}>${lensFrameKey(rendered)}`
+      : ''
+  if (key === gridFor) return
+  gridFor = key
+  clearTimeout(gridTimer)
+  if (!key || !session) {
+    if (s.maskGrid) useDevelop.setState({ maskGrid: null })
+    return
+  }
+  // Each frame of a lens slider is a new correction: asked once it rests;
+  // the last grid stands meanwhile.
+  gridTimer = setTimeout(() => {
+    void api.develop
+      .maskGrid(session.key, masks, rendered)
+      .then((maskGrid) => {
+        if (gridFor === key) useDevelop.setState({ maskGrid })
+      })
+      .catch(() => undefined)
+  }, GRID_SETTLE_MS)
+})
+
+/** The masks' placement (`maskPlacementKey`) and the recipe number it last changed at. */
+let placement: { key: string | null; rev: number } = { key: null, rev: 0 }
+/** The photo `placement` is of: another photo's first recipe is no change. */
+let placementOf: string | null = null
+
+// A framing or lens change drops the mask planes on hand at once: the
+// loupe's own mask (drawn through the new geometry) shows until the
+// engine's plane for the edit arrives.
+useDevelop.subscribe((s, prev) => {
+  if (s.recipe === prev.recipe && s.session === prev.session) return
+  if (!s.session || !s.recipe) {
+    placement = { key: null, rev: 0 }
+    placementOf = null
+    return
+  }
+  const { isRaw, frameWidth, frameHeight } = s.session
+  const key = maskPlacementKey(s.recipe, isRaw, frameWidth, frameHeight)
+  if (placementOf !== s.session.key) {
+    // A photo just opened: its renders count from its own first edit.
+    placementOf = s.session.key
+    placement = { key, rev: 0 }
+    if (s.geometryRev !== 0) useDevelop.setState({ geometryRev: 0 })
+    return
+  }
+  const next = nextGeometryRev(placement, key, lastSentRev())
+  if (next === placement) return
+  placement = next
+  useDevelop.setState({ geometryRev: next.rev, mask: null, keyMask: null })
+})

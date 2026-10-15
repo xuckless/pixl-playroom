@@ -111,6 +111,21 @@ test('what it refuses, by the field the engine would name', async () => {
     ]
   })
   assert.equal(gpuRefusal(grade(icc)), 'grade.layers[0].stages[0].space')
+  // A log stage (engine 0.21), such as the Log wheels': every log space, by the stage's space.
+  for (const space of ['PixlLog', 'AcesCct', 'DavinciIntermediate'] as const) {
+    const log = layer([PRIMARY], {
+      stages: [
+        { space: 'LinearWorking', ops: [PRIMARY] },
+        {
+          space: {
+            Encoded: { space, intent: 'RelativeColorimetric', black_point_compensation: false }
+          },
+          ops: [PRIMARY]
+        }
+      ]
+    })
+    assert.equal(gpuRefusal(grade(log)), 'grade.layers[0].stages[1].space')
+  }
   // A disabled layer is left to the engine (it isn't graded).
   assert.equal(gpuRefusal(grade(layer([PRIMARY]), layer([wb], { enabled: false }))), null)
 })
@@ -154,11 +169,14 @@ test('the grade input is the guide’s exact request', async () => {
     limits: null
   })
   assert.equal(r.grade_device, 'Cpu')
+  // Engine 0.21 (E62): required, and no refine planes held for an upload.
+  assert.equal(r.hold_refines, false)
   assert.equal(r.sink, 'Bytes')
   assert.equal(r.grade, null)
   assert.equal(r.inspect, 'GradeInput')
   assert.deepEqual(r.encode, { Pixels: { sample: 'F16' } })
-  assert.deepEqual(r.pixel, { depth: 'F32', channels: null })
+  // RGBA from the engine (0.21.0, E61): the upload has alpha, every drag frame too.
+  assert.deepEqual(r.pixel, { depth: 'F32', channels: 4 })
   assert.equal(r.dither, 'None')
   assert.equal(r.upscaler, null)
   assert.deepEqual(r.metadata, { exif: false, icc: true, xmp: false, iptc: false })
@@ -220,6 +238,8 @@ test('a drag frame nulls what is before the grade and names a display space', as
   assert.deepEqual(r.source, { GpuFrame: null })
   assert.equal(r.input, 'GpuFrame')
   assert.equal(r.grade_device, 'Gpu')
+  // The GPU refuses `hold_refines: true` (E62).
+  assert.equal(r.hold_refines, false)
   for (const k of [
     'raw',
     'lens',
@@ -241,6 +261,24 @@ test('a drag frame nulls what is before the grade and names a display space', as
   const h = gpuDragRequest({ grade: g, color, hdr: true, region: null, measure: null, threads: 6 })
   assert.deepEqual(h.encode, { Pixels: { sample: 'F16' } })
   assert.deepEqual(h.pixel, { depth: 'F32', channels: null })
+})
+
+test('a convert made without the builders states the required fields', async () => {
+  const { withRequiredFields } = await import('../src/main/engine/required')
+  const [made] = withRequiredFields('convert', [{ input: 'Jpeg' }]) as Record<string, unknown>[]
+  assert.equal(made.grade_device, 'Cpu')
+  assert.equal(made.hold_refines, false)
+  // What a request states is kept; other calls pass as they are.
+  const stated = { grade_device: 'Gpu', hold_refines: false }
+  assert.equal(withRequiredFields('convert', [stated])[0], stated)
+  const [gpu] = withRequiredFields('convert', [{ grade_device: 'Gpu' }]) as Record<
+    string,
+    unknown
+  >[]
+  assert.equal(gpu.grade_device, 'Gpu')
+  assert.equal(gpu.hold_refines, false)
+  const probe = ['/p/a.jpg']
+  assert.equal(withRequiredFields('probe', probe), probe)
 })
 
 test('a drag’s RGB pixels are laid out RGBA for the window', async () => {
@@ -352,11 +390,12 @@ test(
       )
     }
     try {
-      // SDR: the upload, then a drag, whose RGB pixels the host lays out RGBA.
+      // SDR: the upload, then a drag, RGBA from the engine (E61): no pass lays in an alpha.
       const frame = await upload(p3)
       const drag = { grade: g, color: p3, hdr: false, region: null, measure: null, threads: 2 }
       const r = await e.convert(gpuDragRequest(drag), { gpu, frame })
-      assert.equal(toRgba(r.output, r.width, r.height).byteLength, w * h * 4)
+      assert.equal(r.output.byteLength, w * h * 4)
+      assert.equal(toRgba(r.output, r.width, r.height), r.output)
       // What 0.19.2 refuses, each by its field: channels on a frame, and no grade.
       await assert.rejects(
         e.convert(
@@ -381,7 +420,7 @@ test(
         threads: 2
       }
       const m = await e.convert(gpuDragRequest(hdr), { gpu, frame: hdrFrame })
-      assert.equal(toRgba(m.output, m.width, m.height).byteLength, w * h * 8)
+      assert.equal(m.output.byteLength, w * h * 8)
       assert.ok(m.companion)
       const c = m.companion!
       assert.equal(toRgba(c.data, c.width, c.height).byteLength, c.width * c.height * 4)
@@ -455,6 +494,24 @@ test('held measurements are kept per pixels and framing', async () => {
   assert.notEqual(heldKey('/d.jpg', null), heldKey('/d.jpg', { crop: { x: 0.1 } }))
 })
 
+test('the 1:1 view’s held refines are kept per source, grade, framing, lens and retouch', async () => {
+  // Engine 0.21.0 (E62): the engine refuses a held plane only when its mask
+  // changed, so a retouch or a lens correction under it must make it again.
+  const { refineKey } = await import('../src/shared/gpudrag')
+  const src = { path: '/m.tiff', width: 6000, height: 4000 }
+  const render = { grade: null, framing: null, lens: null, retouch: null }
+  const key = refineKey(src, render)
+  assert.equal(refineKey({ ...src }, { ...render }), key)
+  assert.notEqual(refineKey({ ...src, path: '/w.tiff' }, render), key)
+  assert.notEqual(refineKey({ ...src, width: 5998 }, render), key)
+  const retouch = { space: 'Normal', steps: [] } as never
+  assert.notEqual(refineKey(src, { ...render, retouch }), key)
+  const lens = { distortion: 0.1 } as never
+  assert.notEqual(refineKey(src, { ...render, lens }), key)
+  const framing = { orientation: 'Rotate90' } as never
+  assert.notEqual(refineKey(src, { ...render, framing }), key)
+})
+
 test('a GPU drag keeps the local-Laplacian base; the M1 drags without one', async () => {
   const { toneBaseFor, TEXTURE_BASE, DRAG_BASE } = await import('../src/shared/compile')
   const ctx = {
@@ -477,4 +534,59 @@ test('a GPU drag keeps the local-Laplacian base; the M1 drags without one', asyn
   )
   // The release: the local Laplacian, whatever dragged.
   assert.deepEqual(toneBaseFor({ ...ctx, gpuDrag: true, dragWithoutBase: true }), TEXTURE_BASE)
+})
+
+test('engine 0.21’s colour ops leave a drag to the CPU; the Primaries at Lum Mix 0 stay on the GPU', async () => {
+  const { compile } = await import('../src/shared/compile')
+  const { gpuRefusal } = await import('../src/shared/gpudrag')
+  const { defaultRecipe } = await import('../src/shared/recipe')
+  type Recipe = ReturnType<typeof defaultRecipe>
+  const ctx = {
+    isRaw: false,
+    asShot: null,
+    sourceOrientation: 'Normal' as const,
+    frameWidth: 400,
+    frameHeight: 300,
+    scale: 1,
+    seed: 1,
+    brushPaths: {},
+    applyCrop: true,
+    smoothing: false,
+    gpuDrag: true
+  }
+  const drag = (set: (r: Recipe) => void): string | null => {
+    const r = defaultRecipe(false)
+    set(r)
+    return gpuRefusal(compile(r, ctx).grade)
+  }
+  // The wheels with the Y ring folded in (Lum Mix 0), or Lum Mix with no Y ring moved: one Primary.
+  assert.equal(
+    drag((r) => (r.primaries.lift.y = 0.1)),
+    null
+  )
+  assert.equal(
+    drag((r) => {
+      r.primaries.lumMix = 50
+      r.primaries.gain.r = 1.1
+    }),
+    null
+  )
+  // No GPU kernel for these (migration-0.21.0.md): each is named, so the drag runs on the CPU.
+  const cpu: Record<string, (r: Recipe) => void> = {
+    LumaPrimary: (r) => {
+      r.primaries.lumMix = 50
+      r.primaries.lift.y = 0.1
+    },
+    GainBalance: (r) => (r.primaries.temp = 20),
+    ParametricCurve: (r) => (r.toneCurve.lights = 20),
+    'Hue vs Lum': (r) => (r.curvesVs.hueLum = [{ x: 0.3, y: 0.8 }]),
+    'Sat vs Sat': (r) => (r.curvesVs.satSat = [{ x: 0.3, y: 0.8 }])
+  }
+  for (const [name, set] of Object.entries(cpu))
+    assert.equal(drag(set), 'grade.layers[0].stages[0].ops[0]', name)
+  // The Log wheels' PixlLog stage is refused by its space, before its op.
+  assert.equal(
+    drag((r) => (r.logWheels.midtone.r = 0.02)),
+    'grade.layers[0].stages[0].space'
+  )
 })

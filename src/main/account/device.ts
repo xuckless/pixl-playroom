@@ -55,7 +55,7 @@ export async function machineId(platform: NodeJS.Platform = process.platform): P
       if (id) break
     }
   }
-  if (!id) throw new Error(t("Couldn't identify this device"))
+  if (!id) throw new Error(t('Couldn’t identify this device'))
   return id
 }
 

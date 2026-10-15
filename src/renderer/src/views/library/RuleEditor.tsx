@@ -1,4 +1,5 @@
 import type { Collection } from '../../../../shared/ipc'
+import { GlassSelect } from '../../components/GlassSelect'
 import {
   defaultRule,
   isGroup,
@@ -122,62 +123,56 @@ function ValueEditor({
       )
     case 'enum':
       return (
-        <select
+        <GlassSelect
           className="rule-value"
-          aria-label={t('Value')}
+          label={t('Value')}
           value={String(rule.value ?? '')}
-          onChange={(e) => set(e.target.value)}
-        >
-          {info.options?.map((o) => (
-            <option key={o.value} value={o.value}>
-              {t(o.label)}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => set(v)}
+          options={(info.options ?? []).map((o) => ({ value: o.value, label: t(o.label) }))}
+        />
       )
     case 'boolean':
       return (
-        <select
+        <GlassSelect
           className="rule-value"
-          aria-label={t('Value')}
+          label={t('Value')}
           value={rule.value ? 'yes' : 'no'}
-          onChange={(e) => set(e.target.value === 'yes')}
-        >
-          <option value="yes">{t('Yes')}</option>
-          <option value="no">{t('No')}</option>
-        </select>
+          onChange={(v) => set(v === 'yes')}
+          options={[
+            { value: 'yes', label: t('Yes') },
+            { value: 'no', label: t('No') }
+          ]}
+        />
       )
     case 'collection':
       return (
-        <select
+        <GlassSelect
           className="rule-value"
-          aria-label={t('Collection')}
+          label={t('Collection')}
           value={String(rule.value ?? '')}
-          onChange={(e) => set(e.target.value)}
-        >
-          <option value="">{t('Choose…')}</option>
-          {collections.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => set(v)}
+          options={[
+            { value: '', label: t('Choose…'), disabled: true },
+            ...collections.map((c) => ({ value: c.id, label: c.name }))
+          ]}
+        />
       )
     case 'date':
       if (rule.op === 'inLast')
         return (
           <span className="rule-value">
             <NumberInput label={t('How many')} value={rule.value} onChange={(n) => set(n)} />
-            <select
-              aria-label={t('Unit')}
+            <GlassSelect<NonNullable<SmartRule['unit']>>
+              label={t('Unit')}
               value={rule.unit ?? 'days'}
-              onChange={(e) => set(rule.value, { unit: e.target.value as SmartRule['unit'] })}
-            >
-              <option value="days">{t('days')}</option>
-              <option value="weeks">{t('weeks')}</option>
-              <option value="months">{t('months')}</option>
-              <option value="years">{t('years')}</option>
-            </select>
+              onChange={(unit) => set(rule.value, { unit })}
+              options={[
+                { value: 'days', label: t('days') },
+                { value: 'weeks', label: t('weeks') },
+                { value: 'months', label: t('months') },
+                { value: 'years', label: t('years') }
+              ]}
+            />
           </span>
         )
       if (rule.op === 'between')
@@ -227,30 +222,20 @@ function RuleRow({
   const info = SMART_FIELDS[rule.field]
   return (
     <div className="rule-row">
-      <select
+      <GlassSelect<SmartField>
         className="rule-field"
-        aria-label={t('Field|rule')}
+        label={t('Field|rule')}
         value={rule.field}
-        onChange={(e) => onChange(defaultRule(e.target.value as SmartField))}
-      >
-        {FIELDS.map(([f, i]) => (
-          <option key={f} value={f}>
-            {t(i.label)}
-          </option>
-        ))}
-      </select>
-      <select
+        onChange={(f) => onChange(defaultRule(f))}
+        options={FIELDS.map(([f, i]) => ({ value: f, label: t(i.label) }))}
+      />
+      <GlassSelect<SmartOp>
         className="rule-op"
-        aria-label={t('Operator|rule')}
+        label={t('Operator|rule')}
         value={rule.op}
-        onChange={(e) => onChange(withOp(rule, e.target.value as SmartOp))}
-      >
-        {info.ops.map((op) => (
-          <option key={op} value={op}>
-            {t(SMART_OPS[op])}
-          </option>
-        ))}
-      </select>
+        onChange={(op) => onChange(withOp(rule, op))}
+        options={info.ops.map((op) => ({ value: op, label: t(SMART_OPS[op]) }))}
+      />
       <ValueEditor rule={rule} onChange={onChange} collections={collections} />
       <span className="spacer" />
       <button
@@ -293,15 +278,16 @@ export function GroupEditor({
     <div className={`rule-group${depth > 0 ? ' nested' : ''}`}>
       <div className="rule-group-head">
         <span>{t('Match|rules')}</span>
-        <select
-          aria-label={t('Match|rules')}
+        <GlassSelect<SmartGroup['match']>
+          label={t('Match|rules')}
           value={group.match}
-          onChange={(e) => onChange({ ...group, match: e.target.value as SmartGroup['match'] })}
-        >
-          <option value="all">{t('all|rules')}</option>
-          <option value="any">{t('any|rules')}</option>
-          <option value="none">{t('none|rules')}</option>
-        </select>
+          onChange={(match) => onChange({ ...group, match })}
+          options={[
+            { value: 'all', label: t('all|rules') },
+            { value: 'any', label: t('any|rules') },
+            { value: 'none', label: t('none|rules') }
+          ]}
+        />
         <span>{depth > 0 ? t('of the following') : t('of the following rules')}</span>
         <span className="spacer" />
         <button

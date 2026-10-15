@@ -5,8 +5,7 @@ import {
   calibrationMatrix,
   compile,
   cropFits,
-  isP3Floor,
-  parametricCurve,
+  regionCurveOp,
   shoulderCube,
   vignettePlacement,
   type CompileContext
@@ -26,9 +25,7 @@ const ctx: CompileContext = {
   applyCrop: true
 }
 
-// The look stage's floor (isP3Floor) is left out: what each test is about follows it.
-const kinds = (ops: GradeOp[]): string[] =>
-  ops.filter((o) => !isP3Floor(o)).map((o) => Object.keys(o)[0])
+const kinds = (ops: GradeOp[]): string[] => ops.map((o) => Object.keys(o)[0])
 
 test('an untouched JPEG compiles to nothing at all', () => {
   const c = compile(defaultRecipe(false), ctx)
@@ -223,20 +220,41 @@ test('calibration keeps white white', () => {
   for (const row of m) assert.ok(Math.abs(row.r + row.g + row.b - 1) < 1e-3)
 })
 
-test('the parametric curve pins black and white', () => {
-  const pts = parametricCurve({
-    highlights: -50,
-    lights: 20,
-    darks: 0,
-    shadows: 40,
-    splits: [25, 50, 75],
-    master: [],
-    red: [],
-    green: [],
-    blue: []
-  })!
-  assert.equal(pts[0].y, 0)
-  assert.equal(pts[pts.length - 1].y, 1)
+test('the region sliders are the engine’s monotone parametric curve, a quarter of the range at ±100 (E19)', () => {
+  const tc = defaultRecipe(false).toneCurve
+  assert.equal(regionCurveOp(tc), null)
+  const op = regionCurveOp({ ...tc, highlights: -50, lights: 20, shadows: 40 })
+  assert.deepEqual(op, {
+    ParametricCurve: {
+      shadows: 0.4,
+      darks: 0,
+      lights: 0.2,
+      highlights: -0.5,
+      splits: { low: 0.25, mid: 0.5, high: 0.75 },
+      reach: { Range: 0.25 }
+    }
+  })
+  // Strong opposite moves are still sent (the engine keeps the curve
+  // monotone); a mask's Amount past ±100 is held to the engine's ±1.
+  const strong = regionCurveOp({ ...tc, lights: -100, highlights: 200 }) as {
+    ParametricCurve: { lights: number; highlights: number }
+  }
+  assert.deepEqual([strong.ParametricCurve.lights, strong.ParametricCurve.highlights], [-1, 1])
+  // Splits held strictly in order inside 0…1.
+  const s = (
+    regionCurveOp({ ...tc, shadows: 10, splits: [2, 3, 3] }) as {
+      ParametricCurve: { splits: { low: number; mid: number; high: number } }
+    }
+  ).ParametricCurve.splits
+  assert.ok(0 < s.low && s.low < s.mid && s.mid < s.high && s.high < 1, JSON.stringify(s))
+  // In the look stage, the same on an HDR pipeline (the identity above white).
+  const r = defaultRecipe(false)
+  r.toneCurve.darks = -30
+  for (const hdr of [false, true]) {
+    const look = compile(r, { ...ctx, hdr }).grade!.layers[0].stages.at(-1)!
+    assert.notEqual(look.space, 'LinearWorking')
+    assert.deepEqual(kinds(look.ops), ['ParametricCurve'])
+  }
 })
 
 const lookOps = (r: ReturnType<typeof defaultRecipe>, hdr = false): GradeOp[] =>
@@ -272,6 +290,30 @@ test('paint overlay is the paint style, and highlight priority on an HDR photo',
   assert.ok(c.notes.some((n) => /Paint overlay/.test(n)))
 })
 
+test('colour priority is its own style; an HDR photo lightening keeps highlight priority', () => {
+  const r = defaultRecipe(false)
+  r.effects.vignetteAmount = 40
+  r.effects.vignetteHighlights = 70
+  r.effects.vignetteStyle = 'colour'
+  const style = (c: ReturnType<typeof compile>): unknown => {
+    const v = c.grade!.layers[0].stages.flatMap((s) => s.ops).find((o) => 'Vignette' in o)
+    assert.ok(v && 'Vignette' in v)
+    return v.Vignette.style
+  }
+  const sdr = compile(r, ctx)
+  assert.equal(style(sdr), 'ColorPriority')
+  assert.ok(!sdr.notes.some((n) => /Colour priority/.test(n)))
+  // Lightening with headroom is refused by the engine: highlight priority at 0, said.
+  const hdr = compile(r, { ...ctx, hdr: true })
+  assert.deepEqual(style(hdr), { Exposure: { highlights: 0 } })
+  assert.ok(hdr.notes.some((n) => /Colour priority lightening/.test(n)))
+  // Darkening is allowed on an HDR photo.
+  r.effects.vignetteAmount = -40
+  const dark = compile(r, { ...ctx, hdr: true })
+  assert.equal(style(dark), 'ColorPriority')
+  assert.ok(!dark.notes.some((n) => /Colour priority/.test(n)))
+})
+
 test('added light ends the linear stage; the wash comes just before the grain', () => {
   const r = defaultRecipe(false)
   r.basic.exposure = 0.5
@@ -282,6 +324,11 @@ test('added light ends the linear stage; the wash comes just before the grain', 
   assert.equal(linear.space, 'LinearWorking')
   assert.equal(kinds(linear.ops).at(-1), 'AddColor')
   assert.deepEqual(kinds(look.ops).slice(-2), ['AddColor', 'Grain'])
+  // Engine 0.21 (E43): the response and colour grain it requires, as 0.20's grain was.
+  const grain = look.ops.at(-1)
+  assert.ok(grain && 'Grain' in grain)
+  assert.equal(grain.Grain.response, 'Midtones')
+  assert.deepEqual(grain.Grain.chroma, { amount: 0, size: 1 })
 })
 
 test('a mask adds its colour in linear light', () => {
@@ -424,6 +471,43 @@ test('a custom layer’s Denoise saved before 0.18 gets the reach; a stated one 
   assert.equal(inner.Denoise.reach, DENOISE_REACH)
 })
 
+test('a custom layer saved before engine 0.21 gets its clean breaks’ fields; stated ones are kept', async () => {
+  const { withLutDomains } = await import('../src/shared/compile')
+  const curve = {
+    shadows: 0.2,
+    darks: 0,
+    lights: -0.1,
+    highlights: 0,
+    splits: { low: 0.25, mid: 0.5, high: 0.75 }
+  }
+  const grain = { amount: 0.3, size: 0.002, roughness: 0.5, seed: 7 }
+  const layer = {
+    stages: [
+      {
+        ops: [
+          { ParametricCurve: curve },
+          { ParametricCurve: { ...curve, reach: { Range: 0.25 } } },
+          { Grain: grain },
+          { Grain: { ...grain, response: 'Midtones', chroma: { amount: 0.2, size: 2 } } },
+          { Masked: { mask: null, opacity: 1, ops: [{ Grain: grain }] } }
+        ]
+      }
+    ]
+  }
+  const ops = (withLutDomains(layer) as typeof layer).stages[0].ops as Record<
+    string,
+    Record<string, unknown>
+  >[]
+  // The same bytes as 0.20: HalfGap, Midtones and no colour grain.
+  assert.equal(ops[0].ParametricCurve.reach, 'HalfGap')
+  assert.deepEqual(ops[1].ParametricCurve.reach, { Range: 0.25 })
+  assert.equal(ops[2].Grain.response, 'Midtones')
+  assert.deepEqual(ops[2].Grain.chroma, { amount: 0, size: 1 })
+  assert.deepEqual(ops[3].Grain.chroma, { amount: 0.2, size: 2 })
+  const inner = (ops[4].Masked.ops as Record<string, Record<string, unknown>>[])[0]
+  assert.deepEqual(inner.Grain.chroma, { amount: 0, size: 1 })
+})
+
 test('a RAW the engine refuses by name is said plainly', async () => {
   const { unsupportedRaw } = await import('../src/shared/engine-types')
   assert.match(
@@ -432,7 +516,7 @@ test('a RAW the engine refuses by name is said plainly', async () => {
   )
   assert.match(
     unsupportedRaw({ Unsupported: { operation: 'raw decode', detail: 'Foveon' } })!,
-    /isn't supported \(Foveon\)/
+    /isn’t supported \(Foveon\)/
   )
   assert.equal(unsupportedRaw({ Unsupported: { operation: 'resize', detail: 'x' } }), null)
   assert.equal(unsupportedRaw(undefined), null)
@@ -471,8 +555,36 @@ test('engine 0.19.2: the look stage no longer floors Scene’s wide colours firs
   const r = defaultRecipe(true)
   r.presence.dehaze = 30
   const look = compile(r, { ...ctx, isRaw: true, scale: 1 }).grade!.layers[0].stages.at(-1)!
-  assert.ok(!look.ops.some(isP3Floor))
+  assert.ok(!look.ops.some((o) => 'Lut' in o))
   assert.ok('Dehaze' in look.ops[0])
   // Nothing in the look stage, no floor either.
   assert.equal(compile(defaultRecipe(false), ctx).grade, null)
+})
+
+test('colourForm v0 is engine 0.20’s colour maths, for scripts/look-delta.mjs --maths only', () => {
+  const r = defaultRecipe(false)
+  r.basic.shadows = -30
+  r.hsl.blue.luminance = -20
+  r.toneCurve.lights = 40
+  r.primaries.temp = 20
+  r.primaries.lumMix = 100
+  r.primaries.lift.y = 0.05
+  r.logWheels.shadow = { y: 0, r: 0.02, g: 0, b: 0 }
+  r.curvesVs.hueLum = [{ x: 0.6, y: 0.8 }]
+  const stages = compile(r, { ...ctx, colourForm: 'v0' }).grade!.layers[0].stages
+  assert.deepEqual(
+    stages.map((s) => (s.space === 'LinearWorking' ? s.space : 'look')),
+    ['LinearWorking', 'look']
+  )
+  assert.deepEqual(kinds(stages[0].ops), ['WhiteBalance'])
+  const look = stages[1].ops
+  const tone = look.find((o) => 'Tone' in o) as { Tone: { smoothing: unknown } }
+  assert.equal(tone.Tone.smoothing, null)
+  const hsl = look.find((o) => 'HslBands' in o) as { HslBands: { smoothing: unknown } }
+  assert.equal(hsl.HslBands.smoothing, null)
+  assert.ok(look.some((o) => 'Curves' in o && o.Curves.master?.points.length === 17))
+  for (const k of ['ParametricCurve', 'GainBalance', 'LumaPrimary', 'LogWheels'])
+    assert.ok(!kinds(look).includes(k), k)
+  assert.ok(look.some((o) => 'Qualifier' in o && o.Qualifier.key.luma?.centre === 0))
+  assert.ok(!look.some((o) => 'Curves' in o && o.Curves.hue_vs_luma))
 })

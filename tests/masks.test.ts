@@ -2,7 +2,6 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   compile,
-  isP3Floor,
   layerMask,
   scaleSettings,
   smoothnessFeather,
@@ -139,8 +138,7 @@ test('a version 1 mask becomes settings that give the engine the same operations
   r.layers.push(l)
   // At 1:1, where sharpening shows.
   const stages = compile(r, { ...ctx, scale: 1 }).grade!.layers[0].stages
-  const kinds = (i: number): string[] =>
-    stages[i].ops.filter((o: GradeOp) => !isP3Floor(o)).map((o: GradeOp) => Object.keys(o)[0])
+  const kinds = (i: number): string[] => stages[i].ops.map((o: GradeOp) => Object.keys(o)[0])
   assert.deepEqual(kinds(0), ['WhiteBalance', 'Primary', 'AddColor'])
   assert.deepEqual(
     [...kinds(1)].sort(),
@@ -461,11 +459,11 @@ test('a brush plane held by reference keeps its reference through normalising', 
     width: 4,
     height: 4,
     png: '',
-    ref: 'abc-12'
+    ref: 'abc12'.padEnd(64, '0')
   })
   r.layers.push(l)
   const c = normaliseRecipe(JSON.parse(JSON.stringify(r)), false).layers[0].components[0]
-  assert.equal(c.kind === 'brush' && c.ref, 'abc-12')
+  assert.equal(c.kind === 'brush' && c.ref, 'abc12'.padEnd(64, '0'))
 })
 
 test('a lasso moves with its shift, and in by its feather when that stays inside the line', () => {

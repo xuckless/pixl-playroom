@@ -78,8 +78,10 @@ function Row({
     >
       <span className="edit-text">
         <span className="edit-name">{label}</span>
-        {(change || times) && (
-          <span className="edit-summary">{[change, times].filter(Boolean).join(' · ')}</span>
+        {(change || times || row.batch) && (
+          <span className="edit-summary">
+            {[change, times, row.batch ? t('from the Library') : ''].filter(Boolean).join(' · ')}
+          </span>
         )}
       </span>
       <span className="timeline-time">{clock(row.at)}</span>

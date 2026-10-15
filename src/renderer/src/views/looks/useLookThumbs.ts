@@ -11,6 +11,7 @@ import type { LookThumbEvent } from '../../../../shared/ipc'
 import { api } from '../../lib/api'
 import { lookBase } from '../../lib/applyLook'
 import { useDevelop } from '../../state/develop'
+import { withThumbs } from './thumbmerge'
 
 interface ThumbsState {
   /** The photo the thumbnails are of. */
@@ -21,13 +22,25 @@ interface ThumbsState {
 export const useThumbs = create<ThumbsState>(() => ({ key: null, byId: {} }))
 
 let listening = false
+/** Thumbnails come in bursts (a screenful an ask): in the store once a frame, together. */
+let pending: LookThumbEvent[] = []
+let flushing = false
+
 function listen(): void {
   if (listening) return
   listening = true
   api.looks.onThumb((e) => {
-    const s = useThumbs.getState()
-    if (e.key !== s.key) return
-    useThumbs.setState({ byId: { ...s.byId, [e.id]: e } })
+    pending.push(e)
+    if (flushing) return
+    flushing = true
+    requestAnimationFrame(() => {
+      flushing = false
+      const events = pending
+      pending = []
+      const s = useThumbs.getState()
+      const byId = withThumbs(s.byId, s.key, events)
+      if (byId !== s.byId) useThumbs.setState({ byId })
+    })
   })
 }
 

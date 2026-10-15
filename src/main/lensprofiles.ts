@@ -44,10 +44,11 @@ import type { ShotLens } from '../shared/engine-types'
 import { MODELS_BASE } from './ai/models'
 import { exists } from './exists'
 import { paths } from './paths'
+import { devEnv } from './build'
 
 /** The catalogue's layout version: an app reads only the format it knows. */
 const FORMAT = 1
-const BASE = (process.env.PLAYROOM_LENS_PROFILES_URL ?? `${MODELS_BASE}/lens-profiles/v1`).replace(
+const BASE = (devEnv('PLAYROOM_LENS_PROFILES_URL') ?? `${MODELS_BASE}/lens-profiles/v1`).replace(
   /\/+$/,
   ''
 )

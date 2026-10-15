@@ -1,15 +1,12 @@
 import { setSectionOff } from '../../../shared/edits'
-import type { ComponentType } from 'react'
+import { memo, useMemo, type ComponentType } from 'react'
 import {
   BASIC_HEAD_FIELDS,
   BASIC_TITLE,
   cardBase,
   cardChanged,
   cardFields,
-  CARDS,
   cardSpec,
-  cardTitle,
-  keyedAs,
   panelCards,
   panelsFor,
   panelTitle,
@@ -20,15 +17,13 @@ import {
 import { sameValue, type Recipe } from '../../../shared/recipe'
 import { assignFields } from '../../../shared/recipe'
 import { Icon } from '../components/icons'
-import { Card } from '../components/ui'
-import { InfoTip } from '../components/InfoTip'
+import { Card, CardHeader } from '../components/ui'
 import { EnhancePanel } from '../panels/enhance'
 import {
   AdjustHead,
   AutoTone,
   CalibrationBody,
   CropDrawer,
-  CurveBody,
   DetailBody,
   EffectsBody,
   GeometryBody,
@@ -44,11 +39,11 @@ import { rich, t, tk } from '../lib/i18n'
 import { LensPanel } from '../panels/lens'
 import { TIPS } from '../panels/tips'
 import { useDevelop } from '../state/develop'
-import { scoped, scopedView, scopeLayer, useScope } from '../state/scope'
+import { scoped, scopedView, scopeLayer, useScopeMask } from '../state/scope'
 import { useUi, type Drawer, type Panel } from '../state/ui'
 import { GlassSelect } from '../components/GlassSelect'
 import { useKeyHint } from '../lib/commands'
-import { jumpToCard, openDrawer } from './tools'
+import { jumpToCard, openDrawer, useLegacyHeld } from './tools'
 
 const BODIES: Record<CardId, ComponentType> = {
   wb: WhiteBalanceBody,
@@ -56,10 +51,9 @@ const BODIES: Record<CardId, ComponentType> = {
   presence: PresenceBody,
   mixer: MixerBody,
   grading: GradingBody,
-  curve: CurveBody,
+  curve: ResolveCurvesBody,
   primaries: PrimariesBody,
   logwheels: LogWheelsBody,
-  rcurves: ResolveCurvesBody,
   qualifier: QualifierBody,
   detail: DetailBody,
   effects: EffectsBody,
@@ -67,9 +61,6 @@ const BODIES: Record<CardId, ComponentType> = {
   geometry: GeometryBody,
   calibration: CalibrationBody
 }
-
-/** The mixer with the Resolve tools: Lightroom's H, S, L and All, no point colour (the Qualifier is there). */
-const CompactHsl = (): React.JSX.Element | null => <MixerBody compact />
 
 /** What a card carries in its header beside the (i), eye and reset. */
 const HEADER: Partial<Record<CardId, ComponentType>> = { light: AutoTone }
@@ -79,14 +70,11 @@ const HEADER: Partial<Record<CardId, ComponentType>> = { light: AutoTone }
  * whole photo again): every card the column shows then edits the mask.
  */
 function ScopeChip(): React.JSX.Element | null {
-  const { layer } = useScope()
+  const layer = useScopeMask()
   const overlayHue = useUi((s) => s.maskOverlay.hue)
   if (!layer) return null
   return (
-    <div
-      className="scope-chip"
-      style={{ ['--scope-hue' as string]: layer.overlayHue ?? overlayHue }}
-    >
+    <div className="scope-chip" style={{ ['--scope-hue' as string]: layer.hue ?? overlayHue }}>
       <span className="scope-dot" />
       <span className="scope-text">{rich('Editing {{name}}', { name: <b>{layer.name}</b> })}</span>
       <button
@@ -96,39 +84,6 @@ function ScopeChip(): React.JSX.Element | null {
         onClick={() => useDevelop.getState().setLayer(null)}
       >
         <Icon name="close" />
-      </button>
-    </div>
-  )
-}
-
-/**
- * When the colour tools not shown hold edits (a photo graded with the other
- * set): they still act, and the chip says so and switches over.
- */
-function OtherToolsChip(): React.JSX.Element | null {
-  const tools = useUi((s) => s.colourTools)
-  const setTools = useUi((s) => s.setColourTools)
-  const masksOpen = useUi((s) => s.masksWin.open)
-  const other = tools === 'lightroom' ? 'resolve' : 'lightroom'
-  const held = useDevelop((s) => {
-    if (!s.recipe) return false
-    const layer = scopeLayer(s.recipe, s.layerId, masksOpen)
-    const view = scopedView(s.recipe, layer)
-    const base = cardBase(view, s.session?.isRaw ?? false, !!layer)
-    return CARDS.some(
-      (c) => c.set === other && (!layer || c.inMask) && cardChanged(c, view, base, !!layer)
-    )
-  })
-  if (!held) return null
-  return (
-    <div className="tools-chip">
-      <span>
-        {other === 'resolve'
-          ? t('Resolve colour edits are on this photo')
-          : t('Lightroom colour edits are on this photo')}
-      </span>
-      <button className="sm" onClick={() => setTools(other)}>
-        {t('Show')}
       </button>
     </div>
   )
@@ -167,16 +122,19 @@ function useCardState(spec: CardSpec): {
   return { changed, off, inMask, switchOff, reset }
 }
 
-/** One adjustment card, the section shown: its dot and reset from its fields. */
-function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
+/**
+ * One adjustment card, the section shown: its dot and reset from its fields.
+ * Memoised, as are the parts and Basic: a slider's tick draws its own row
+ * again (and a dot that turns), not the column.
+ */
+const AdjustCard = memo(function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
   const { changed, off, inMask, switchOff, reset } = useCardState(spec)
-  const tools = useUi((s) => s.colourTools)
-  const Body = spec.id === 'mixer' && tools === 'resolve' ? CompactHsl : BODIES[spec.id]
+  const Body = BODIES[spec.id]
   const Right = HEADER[spec.id]
   return (
     <Card
       id={spec.id}
-      title={t(cardTitle(spec, tools))}
+      title={t(spec.title)}
       tip={TIPS[spec.id]}
       changed={changed}
       off={off}
@@ -188,57 +146,32 @@ function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
       <Body />
     </Card>
   )
-}
+})
 
 /** One part of Basic corrections: a card's own header (dot, (i), eye, reset) over its sliders. */
-function CardPart({ spec }: { spec: CardSpec }): React.JSX.Element {
+const CardPart = memo(function CardPart({ spec }: { spec: CardSpec }): React.JSX.Element {
   const { changed, off, inMask, switchOff, reset } = useCardState(spec)
   const Body = BODIES[spec.id]
   const Right = HEADER[spec.id]
   const title = t(spec.title)
   return (
     <section className={`card-part${off ? ' off' : ''}`} data-part={spec.id}>
-      <header>
-        <span className="title">{title}</span>
-        {changed && <span className="card-dot" aria-label={t('Changed')} />}
-        <span className="line" />
-        <span className="card-acts">
-          {Right && <Right />}
-          <InfoTip tip={TIPS[spec.id]} label={title} />
-          {!inMask && (
-            <button
-              type="button"
-              className={`icon card-eye${off ? ' on' : ''}`}
-              aria-pressed={off}
-              aria-label={
-                off
-                  ? t('Turn {{name}} on', { name: title })
-                  : t('Turn {{name}} off', { name: title })
-              }
-              title={off ? t('Turn on') : t('Turn off')}
-              onClick={switchOff}
-            >
-              <Icon name={off ? 'eyeOff' : 'eye'} />
-            </button>
-          )}
-          <button
-            type="button"
-            className="icon card-reset"
-            aria-label={t('Reset {{name}}', { name: title })}
-            title={t('Reset')}
-            disabled={!changed}
-            onClick={reset}
-          >
-            <Icon name="reset" />
-          </button>
-        </span>
-      </header>
+      <CardHeader
+        title={title}
+        tip={TIPS[spec.id]}
+        changed={changed}
+        off={off}
+        onToggle={inMask ? undefined : switchOff}
+        onReset={reset}
+        right={Right && <Right />}
+        line
+      />
       <div className="card-part-body">
         <Body />
       </div>
     </section>
   )
-}
+})
 
 const valueAt = (o: unknown, path: string[]): unknown =>
   path.reduce<unknown>(
@@ -255,7 +188,7 @@ const headChanged = (view: Recipe, base: Recipe): boolean =>
  * Presence, each with its own header. Its own eye and reset act on all of
  * it; in a mask, on the three a mask carries.
  */
-function BasicPanel({ parts }: { parts: CardSpec[] }): React.JSX.Element {
+const BasicPanel = memo(function BasicPanel({ parts }: { parts: CardSpec[] }): React.JSX.Element {
   const masksOpen = useUi((s) => s.masksWin.open)
   const changed = useDevelop((s) => {
     if (!s.recipe) return false
@@ -305,7 +238,7 @@ function BasicPanel({ parts }: { parts: CardSpec[] }): React.JSX.Element {
       ))}
     </Card>
   )
-}
+})
 
 const DRAWERS: Record<Exclude<Drawer, 'adjust'>, { title: string; Body: ComponentType }> = {
   crop: { title: tk('Crop & straighten'), Body: CropDrawer },
@@ -334,11 +267,10 @@ function DrawerPanel({ drawer }: { drawer: Exclude<Drawer, 'adjust'> }): React.J
 
 /**
  * The one dropdown that picks the section the column shows (Basic
- * corrections, then each colour tools set's own, in order, then Enhance),
+ * corrections, then the other tools in order, then Super resolution),
  * with a dot on each that holds changes, as the cards' own dots showed them.
  */
 function SectionPicker({ panels, shown }: { panels: PanelId[]; shown: Panel }): React.JSX.Element {
-  const tools = useUi((s) => s.colourTools)
   const masksOpen = useUi((s) => s.masksWin.open)
   const key = useKeyHint()
   // One string, so a slider's tick re-renders this only when a dot turns.
@@ -359,8 +291,8 @@ function SectionPicker({ panels, shown }: { panels: PanelId[]; shown: Panel }): 
   const options = [
     ...panels.map((p, i) => ({
       value: p as Panel,
-      label: t(panelTitle(p, tools)),
-      hint: key(`card.${keyedAs(p)}`),
+      label: t(panelTitle(p)),
+      hint: key(`card.${p}`),
       dot: dots[i] === '1'
     })),
     { value: 'enhance' as Panel, label: t('Super resolution'), hint: key('develop.enhance') }
@@ -380,30 +312,36 @@ function SectionPicker({ panels, shown }: { panels: PanelId[]; shown: Panel }): 
 
 /**
  * The right column under the strip: one dropdown, then the one section it
- * picks (Basic corrections with Treatment and Profile, another adjustment in
- * Lightroom's or Resolve's set, or Enhance); or Crop's or Heal's panel in
+ * picks (Basic corrections with Treatment and Profile, another adjustment,
+ * or Super resolution); or Crop's or Heal's panel in
  * their place. With a mask selected, only the sections a mask carries are
  * offered, and they edit the mask.
  */
 export function AdjustStack(): React.JSX.Element {
   const drawer = useUi((s) => s.drawer)
-  const layer = useScope().layer
+  const layer = useScopeMask()
   const overlayHue = useUi((s) => s.maskOverlay.hue)
-  const tools = useUi((s) => s.colourTools)
   const focus = useUi((s) => s.focusCard)
-  const panels = panelsFor(tools, !!layer)
+  const panels = panelsFor(!!layer, useLegacyHeld())
+  const inMask = !!layer
+  const basicParts = useMemo(() => panelCards('basic').filter((c) => !inMask || c.inMask), [inMask])
   // A section this scope or set does not offer gives way to the first that is.
-  const shown: Panel = focus === 'enhance' || panels.includes(focus) ? focus : panels[0]
+  const shown: Panel =
+    focus === 'enhance' || panels.includes(focus)
+      ? focus
+      : // Lightroom's wheels reset away: their successors.
+        focus === 'grading' && panels.includes('primaries')
+        ? 'primaries'
+        : panels[0]
   return (
     <div
       className={`panels adjust${layer ? ' scoped' : ''}`}
-      style={layer ? { ['--scope-hue' as string]: layer.overlayHue ?? overlayHue } : undefined}
+      style={layer ? { ['--scope-hue' as string]: layer.hue ?? overlayHue } : undefined}
     >
       <ScopeChip />
       {drawer === 'adjust' ? (
         <>
           <SectionPicker panels={panels} shown={shown} />
-          <OtherToolsChip />
           {shown === 'enhance' ? (
             <Card
               id="enhance"
@@ -415,7 +353,7 @@ export function AdjustStack(): React.JSX.Element {
               <EnhancePanel />
             </Card>
           ) : shown === 'basic' ? (
-            <BasicPanel parts={panelCards('basic').filter((c) => !layer || c.inMask)} />
+            <BasicPanel parts={basicParts} />
           ) : (
             <AdjustCard key={shown} spec={cardSpec(shown)} />
           )}

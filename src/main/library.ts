@@ -14,13 +14,27 @@ import { t } from '../shared/i18n'
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { existsSync } from 'fs'
-import { mkdir, readFile, rm, writeFile } from 'fs/promises'
-import { join } from 'path'
-import { compile } from '../shared/compile'
+import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises'
+import { basename, join } from 'path'
+import { compile, type Compiled } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
-import { PRESERVE_ALL, type SourceInfo } from '../shared/engine-types'
+import {
+  noPreview,
+  PRESERVE_ALL,
+  reduceRefused,
+  unreadableFile,
+  type ConvertReport,
+  type ConvertRequest,
+  type InputFormat,
+  type SourceInfo,
+  type WhitePoint
+} from '../shared/engine-types'
+import { previewPlan, uprightSize, type PreviewPlan } from '../shared/thumbsize'
+import { focusPlan, regionPixels, type FocusPlan } from '../shared/previews'
 import {
   IPC,
+  type CameraProfileAdded,
+  type CameraProfileChoices,
   type HdrKind,
   type LibraryItem,
   type LibrarySource,
@@ -32,31 +46,53 @@ import { defaultRecipe, hash32, isEdited, newId, type Recipe } from '../shared/r
 import type { VersionReason } from '../shared/versions'
 import {
   asShotFor,
+  dcpIdOf,
+  dcpOf,
   defaultRawColour,
   effectiveInfo,
+  exposureOffsetOf,
   parseRawColour,
+  profileFits,
+  profileLabel,
   rawColourLabel,
+  readProfile,
+  registerDcp,
   resolveRawColour,
   upgradesToPixl,
   type RawColour
 } from '../shared/rawcolour'
+import { whiteXy } from '../shared/wb'
+import { NotAProfile, type CameraProfiles } from './cameraprofiles'
 import { EngineError, type EngineClient } from './engine/client'
+import { fillNoiseBook } from './ai/noisefill'
 import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
+import type { ThumbWork } from './indexer/service'
 import type { PlaneStore } from './planestore'
 import { brushPlanes } from './brushes'
+import { lutsFor } from './lutfile'
+import { cacheFile } from './contain'
+import { maskFramesFor } from './maskframe'
 import { keyOf } from './keys'
+import { coalesceByKey, mergeChanged, thumbsAgain } from './coalesce'
+import { rateLimited } from './lograte'
 import { paths } from './paths'
 import { pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
-import { ensureProxies, ensureThumbSource } from './proxy'
+import { DRAFT_EDGE, ensureProxies, ensureThumbSource } from './proxy'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import {
   BACKGROUND_THREADS,
   blankRequest,
+  cellFactor,
+  colourOf,
   displayPolicy,
+  interactiveThreads,
+  isLinearRaw,
+  profileWhiteRequest,
+  rawMaster,
   seedOf,
   sourceOrientation,
   versionStamp
@@ -67,8 +103,50 @@ export { keyOf, parseKey } from './keys'
 export const THUMB_EDGE = 400
 /** The picture Gemma names: the guide's "Playroom's 1024 px JPEG". */
 export const NAMING_EDGE = 1024
+/** A folder's changes gathered for this long before the window is told (at most CHANGED_MAX_MS). */
+const CHANGED_WAIT_MS = 300
+const CHANGED_MAX_MS = 1000
 /** The most photos whose proxies are made ahead at once (see `warm`). */
 const WARM_MAX = 3
+
+/**
+ * A failed thumbnail, logged: a folder of unreadable files logs the first
+ * few and then one count, not a line a photo.
+ */
+const warnThumb = rateLimited(
+  5,
+  10_000,
+  (...args) => log.warn(...args),
+  (n) => `${n} more thumbnails failed`
+)
+
+/** A 1:1 region's least margin, pixels (render.ts's floor under the grade's reach). */
+const REGION_MARGIN = 96
+/** How far short of a RAW frame stated by its proxies a region is kept (their sizes are ± 2 px). */
+const FRAME_SLACK = 4
+
+/** A picture made, its size in pixels. */
+export interface PictureSize {
+  width: number
+  height: number
+}
+
+/** What a photo's 1:1 regions are rendered from (`Library.regionSetup`). */
+export interface RegionSetup {
+  row: PhotoRow
+  info: SourceInfo
+  raw: boolean
+  compiled: Compiled
+  /**
+   * What a region is read from when it is not the file: a gain-map photo
+   * edited as HDR renders from its applied rendition (hdrsource.ts), as its
+   * screen preview does, tone mapped the same way.
+   */
+  hdr: { path: string; input: InputFormat; info: SourceInfo } | null
+  /** The framed picture at full size: what a region's fractions are of. */
+  framed: PictureSize
+  margin: number
+}
 
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
@@ -112,6 +190,10 @@ export class Library {
   private running = 0
   /** The duplicate search hashing pictures now, if any. */
   private dupes: AbortController | null = null
+  /** Per folder, the photos whose facts changed since the window was last told; null: the listing. */
+  private changedPhotos = new Map<string, Set<number> | null>()
+  /** The keys the window last listed (a folder or any source): a fill's thumbnails are queued there. */
+  private listed: ReadonlySet<string> = new Set()
 
   /** What edited photos looked like before engine 0.17: the first-open comparison. */
 
@@ -119,11 +201,23 @@ export class Library {
     readonly index: IndexClient,
     private readonly engine: EngineClient,
     /** Painted planes: the index hands recipes out and takes them in by reference. */
-    readonly planes: PlaneStore
+    readonly planes: PlaneStore,
+    /** DNG camera profiles kept and found (engine 0.21, E21): what a `dcp:<id>` colour names. */
+    readonly profiles: CameraProfiles | null = null
   ) {
+    // A folder's changes gathered (the scan, its sidecars and its EXIF land
+    // close together): the window told once, with the items whose facts
+    // changed where that is all that did, else to list the folder again.
+    const changed = coalesceByKey(
+      (folder) => void this.tellChanged(folder),
+      CHANGED_WAIT_MS,
+      CHANGED_MAX_MS
+    )
     index.on((e) => {
-      if (e.name === 'changed') this.broadcast(IPC.library.changed, { folder: e.folder })
-      else if (e.name === 'sources') this.broadcast(IPC.library.sourcesChanged, null)
+      if (e.name === 'changed') {
+        this.changedPhotos.set(e.folder, mergeChanged(this.changedPhotos.get(e.folder), e.photos))
+        changed(e.folder)
+      } else if (e.name === 'sources') this.broadcast(IPC.library.sourcesChanged, null)
     })
   }
 
@@ -166,6 +260,7 @@ export class Library {
    */
   private async withColour(photo: PhotoRow, info: SourceInfo): Promise<SourceInfo> {
     if (photo.is_raw !== 1) return info
+    await this.knowProfile(photo.raw_colour)
     if (!parseRawColour(photo.raw_colour)) {
       let p = this.adopting.get(photo.id)
       if (!p) {
@@ -183,7 +278,76 @@ export class Library {
       }
       photo.raw_colour = await p
     }
-    return effectiveInfo(info, resolveRawColour(photo.raw_colour, info))
+    const colour = resolveRawColour(photo.raw_colour, info)
+    if (!dcpIdOf(colour)) return effectiveInfo(info, colour)
+    const white = await this.asShot(photo, info, colour)
+    return white === info.as_shot_white ? info : { ...info, as_shot_white: white }
+  }
+
+  /**
+   * A camera profile a photo's colour names, made known for the develop: one
+   * its sidecar or project carried in (from another machine) is read from
+   * the index, and kept here too.
+   */
+  private async knowProfile(colour: string | null | undefined): Promise<void> {
+    const id = dcpIdOf(colour)
+    if (!id || dcpOf(id)) return
+    const profile = readProfile(await this.index.cameraProfile(id).catch(() => null))
+    if (!profile) return
+    registerDcp(id, profile)
+    await this.profiles?.keep(id, profile).catch(() => undefined)
+  }
+
+  /** As-shot whites under a camera profile, by photo version and profile. */
+  private dcpWhites = new Map<string, Promise<WhitePoint | null>>()
+
+  /**
+   * The white a colour's develop balances for (where a temperature and tint
+   * start). Under a camera profile it is the one the profile's matrices find
+   * for the file's as-shot neutral: the engine's own, read off a small binned
+   * develop once per photo version and profile (kept beside its proxies).
+   * Anything else, and a linear DNG (its matrices are the profile's but its
+   * white is the file's), as `asShotFor` says.
+   */
+  private async asShot(row: PhotoRow, info: SourceInfo, c: RawColour): Promise<WhitePoint | null> {
+    if (!dcpIdOf(c) || !dcpOf(c) || isLinearRaw(info)) return asShotFor(info, c)
+    const k = `${versionOf(row)}:${c}`
+    let p = this.dcpWhites.get(k)
+    if (!p) {
+      // Not measured: the file's white for this run (not a failed develop
+      // again at every probe).
+      p = this.measureWhite(row, info, c, k).catch((err) => {
+        log.info('camera profile white not measured', row.id, (err as Error).message)
+        return info.as_shot_white
+      })
+      this.dcpWhites.set(k, p)
+    }
+    return p
+  }
+
+  private async measureWhite(
+    row: PhotoRow,
+    info: SourceInfo,
+    c: RawColour,
+    k: string
+  ): Promise<WhitePoint | null> {
+    const file = join(paths.photoCachePath(row.id), `white-${hash32(k).toString(16)}.json`)
+    try {
+      return JSON.parse(await readFile(file, 'utf8')) as WhitePoint
+    } catch {
+      // not measured yet
+    }
+    const report = await this.engine.convert(
+      profileWhiteRequest(row.path, info, c, cellFactor(row))
+    )
+    const kelvin = report.raw?.white_temperature_kelvin
+    const tint = report.raw?.white_tint
+    if (typeof kelvin !== 'number' || typeof tint !== 'number') return info.as_shot_white
+    const [x, y] = whiteXy(kelvin, tint)
+    const white: WhitePoint = { x, y, temperature_kelvin: kelvin, tint }
+    await mkdir(paths.photoCachePath(row.id), { recursive: true })
+    await writeFile(file, JSON.stringify(white)).catch(() => undefined)
+    return white
   }
 
   /** A default `container` moved to PIXL's colour (`upgradesToPixl`): recorded, whites carried. */
@@ -224,19 +388,81 @@ export class Library {
     const row = await this.photoRow(key)
     if (row.is_raw !== 1) throw new Error(t('only a RAW has a camera colour'))
     const info = await this.engineProbe(row, this.engine)
+    await this.knowProfile(row.raw_colour)
     const to = resolveRawColour(colour, info)
     const from = resolveRawColour(row.raw_colour, info)
     if (to === from && parseRawColour(row.raw_colour)) return to
+    // A camera profile goes into the index first: the photo's sidecar or
+    // project carries it with the colour that names it.
+    const id = dcpIdOf(to)
+    const profile = dcpOf(to)
+    if (id && profile) await this.index.setCameraProfile(id, JSON.stringify(profile))
     await this.index.setRawColour(row.id, to, true)
     await this.index.carryWhite(
       row.id,
-      { isRaw: true, asShot: asShotFor(info, from) },
-      { isRaw: true, asShot: asShotFor(info, to) },
+      { isRaw: true, asShot: await this.asShot(row, info, from) },
+      { isRaw: true, asShot: await this.asShot(row, info, to) },
       t('Camera colour: {{colour}}', { colour: rawColourLabel(info, to) })
     )
     // Its thumbnail's stamp names the colour: made again.
     this.queueThumb(row.id, null, true)
     return to
+  }
+
+  /**
+   * The DNG camera profiles a RAW's colour can be (engine 0.21, E21): those
+   * kept for its body, and Adobe's for it that are not kept yet.
+   */
+  async cameraProfiles(key: string): Promise<CameraProfileChoices> {
+    const row = await this.photoRow(key)
+    if (row.is_raw !== 1 || !this.profiles) return { kept: [], adobe: [] }
+    const info = await this.engineProbe(row, this.engine)
+    return {
+      kept: this.profiles
+        .forCamera(info)
+        .map((k) => ({ colour: `dcp:${k.id}` as const, name: profileLabel(k.profile) })),
+      adobe: await this.profiles.adobe(info)
+    }
+  }
+
+  /**
+   * A `.dcp` imported for a RAW (the person's file, or one of Adobe's found
+   * for it): kept as the engine reads it, never by its path. Whether it is
+   * for this photo's body is said; one that is not is kept, but offered only
+   * for its own camera. The engine refuses a file that is not a profile.
+   */
+  async addCameraProfile(
+    key: string,
+    path: string,
+    from: 'chosen' | 'adobe' = 'chosen'
+  ): Promise<CameraProfileAdded> {
+    if (!this.profiles) throw new Error(t('Camera profiles are not available'))
+    // A path the renderer names is only ever one of Adobe's it was offered.
+    if (from === 'adobe' && !(await this.profiles.isAdobe(path)))
+      throw new Error(
+        t('{{name}} is not a DNG camera profile Playroom can read.', { name: basename(path) })
+      )
+    const row = await this.photoRow(key)
+    const info = await this.engineProbe(row, this.engine)
+    let kept
+    try {
+      kept = await this.profiles.import(path)
+    } catch (err) {
+      if (
+        (err instanceof EngineError && err.code === 'InvalidRequest') ||
+        err instanceof NotAProfile
+      )
+        throw new Error(
+          t('{{name}} is not a DNG camera profile Playroom can read.', { name: basename(path) })
+        )
+      throw err
+    }
+    return {
+      colour: `dcp:${kept.id}`,
+      name: profileLabel(kept.profile),
+      fits: profileFits(kept.profile, info),
+      camera: kept.profile.unique_camera_model
+    }
   }
 
   private async engineProbe(photo: PhotoRow, engine: EngineClient): Promise<SourceInfo> {
@@ -252,18 +478,33 @@ export class Library {
   }
 
   private async probeOnce(photo: PhotoRow, k: string, engine: EngineClient): Promise<SourceInfo> {
-    // Per app version too: the engine ships with it, and a newer one may say more.
-    const file = join(
-      paths.photoCachePath(photo.id),
-      `probe-${hash32(`${k}:${app.getVersion()}`).toString(16)}.json`
-    )
+    // Per app version and per engine build too (a development run's engine
+    // shares the app's version): a newer engine may say more (0.21's
+    // `raw_previews`). Before the engine has said which it is, it is asked.
+    const file = (): string | null => {
+      const status = engine.getStatus()
+      const build = status.build?.commit ?? status.version
+      if (!build) return null
+      const name = hash32(`${k}:${app.getVersion()}:${build}`).toString(16)
+      return join(paths.photoCachePath(photo.id), `probe-${name}.json`)
+    }
+    const known = file()
     let info: SourceInfo | null = null
     try {
-      info = JSON.parse(await readFile(file, 'utf8')) as SourceInfo
+      if (!known) throw new Error('the engine has not said which build it is')
+      info = JSON.parse(await readFile(known, 'utf8')) as SourceInfo
     } catch {
       info = await engine.probe(photo.path)
-      await mkdir(paths.photoCachePath(photo.id), { recursive: true })
-      await writeFile(file, JSON.stringify(info)).catch(() => undefined)
+      const to = file()
+      if (to) {
+        const dir = paths.photoCachePath(photo.id)
+        await mkdir(dir, { recursive: true })
+        await writeFile(to, JSON.stringify(info)).catch(() => undefined)
+        // Those of another version or engine are not read again.
+        for (const f of await readdir(dir).catch(() => [] as string[]))
+          if (/^probe-[0-9a-f]+\.json$/.test(f) && join(dir, f) !== to)
+            await rm(join(dir, f), { force: true }).catch(() => undefined)
+      }
     }
     this.probes.set(k, info)
     // The grid's HDR badge learns what the file is.
@@ -334,9 +575,24 @@ export class Library {
   /** A folder's items as the index has them; its thumbnails are queued. */
   async openFolder(folder: string): Promise<LibraryItem[]> {
     const items = await this.index.listFolder(folder)
+    this.listed = new Set(items.map((it) => it.key))
     for (const it of items) this.queueThumb(it.photoId, it.copyId)
     this.queueHdr(items)
     return items
+  }
+
+  /**
+   * Tell the window a folder changed: the changed photos' items in, when
+   * only their facts did (the thumbnails of those it lists made again if the
+   * sidecar moved the recipe), else a listing to ask for again.
+   */
+  private async tellChanged(folder: string): Promise<void> {
+    const photos = this.changedPhotos.get(folder)
+    this.changedPhotos.delete(folder)
+    const items = photos ? await this.index.itemsOfIds([...photos]).catch(() => null) : null
+    if (!items) return this.broadcast(IPC.library.changed, { folder })
+    for (const it of thumbsAgain(items, this.listed)) this.queueThumb(it.photoId, it.copyId)
+    this.broadcast(IPC.library.changed, { folder, items })
   }
 
   /**
@@ -351,6 +607,7 @@ export class Library {
       src.kind === 'duplicates'
         ? await this.duplicates(src.folder, src.threshold)
         : await this.index.listSource(src)
+    this.listed = new Set(listing.items.map((it) => it.key))
     for (const it of listing.items) if (!it.offline) this.queueThumb(it.photoId, it.copyId)
     this.queueHdr(listing.items)
     return listing
@@ -552,12 +809,13 @@ export class Library {
       this.running++
       this.thumb(job)
         .catch((err) => {
-          log.warn('thumbnail failed', job, err?.message ?? err)
+          warnThumb('thumbnail failed', job, err?.message ?? err)
           // Only the engine failing to read the file says the photo is
           // unreadable (once per version of it: not tried again until it
           // changes). Anything else (the index stopping at quit, a plane not
-          // found) leaves it to be tried another time.
-          if (!(err instanceof EngineError) || err.cancelled) return
+          // found, a request the engine refuses) leaves it to be tried
+          // another time.
+          if (!(err instanceof EngineError) || !unreadableFile(err.code, err.detail)) return
           void this.index.markFailed(job.photoId, err.userMessage).catch(() => {})
           this.broadcast(IPC.library.thumb, {
             key: keyOf(job.photoId, job.copyId),
@@ -595,10 +853,10 @@ export class Library {
     const recipe = await this.planes.hydrate(work.recipe)
     const row = await this.readable(work.row)
     const key = keyOf(row.id, job.copyId)
-    const raw = row.is_raw === 1
-
     const info = await this.probe(row)
-    const out = join(
+    // The first RAW of a camera and ISO: its noise read into the book (E65).
+    if (row.is_raw === 1) void fillNoiseBook(this.engine, row, info)
+    const out = cacheFile(
       paths.thumbs(),
       `${row.id}${job.copyId ? '-' + job.copyId : ''}-${hash32(stamp).toString(16)}.jpg`
     )
@@ -612,26 +870,7 @@ export class Library {
     if (!edited) {
       // The quickest honest picture: a RAW's embedded preview, anything else
       // its own pixels, upright and small.
-      const rawMode = raw ? ('EmbeddedPreview' as const) : null
-      const orientation = sourceOrientation(info, rawMode)
-      const long = Math.max(info.width, info.height)
-      const factor = Math.min(1, THUMB_EDGE / long)
-      try {
-        await this.engine.convert({
-          ...blankRequest(row.path, out, info.input, info),
-          ...base,
-          raw: rawMode,
-          resize: factor < 1 ? { Scale: { factor } } : 'None',
-          framing:
-            orientation === 'Normal'
-              ? null
-              : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
-        })
-      } catch (err) {
-        if (!raw) throw err
-        // Some RAWs have no usable embedded preview: develop instead.
-        await this.graded(row, info, recipe, out, base)
-      }
+      await this.unedited(row, info, THUMB_EDGE, out, base, recipe)
     } else if (!picture || !(await this.shrunk(picture, out, base))) {
       await this.graded(row, info, recipe, out, base)
     }
@@ -663,7 +902,6 @@ export class Library {
   async writeUnedited(photoId: number, edge: number, out: string): Promise<void> {
     const row = await this.readable(await this.index.row(keyOf(photoId, null)))
     const info = await this.probe(row)
-    const raw = row.is_raw === 1
     const base = {
       encode: { Jpeg: { quality: 90, subsampling: 'Quarter' as const, optimize: false } },
       pixel: { depth: 'Eight' as const, channels: 3 },
@@ -671,23 +909,314 @@ export class Library {
       threads: BACKGROUND_THREADS,
       color: displayPolicy(info, 'Srgb')
     }
+    await this.unedited(row, info, edge, out, base, defaultRecipe(true))
+  }
+
+  /**
+   * An unedited RAW's first look while it opens (engine 0.21, OBS-1d): its
+   * embedded preview at about the stage's size (`edge`, device pixels),
+   * Display P3 as the develop's pictures are, so the photo shows at once and
+   * its develop fades in over it. Null for an edited photo (the camera's
+   * rendering would read as the edit: the renderer shows its thumbnail), for
+   * anything that is not a RAW, and for a RAW with no preview to decode or
+   * one no bigger than its thumbnail.
+   * `engine`: the interactive one, beside the open's own work.
+   */
+  async firstLook(
+    key: string,
+    edge: number,
+    engine: EngineClient = this.engine
+  ): Promise<{ url: string; width: number; height: number } | null> {
+    const item = await this.index.item(key)
+    if (!item || item.edited || !item.isRaw) return null
+    const row = await this.photoRow(key)
+    if (row.is_raw !== 1) return null
+    const info = await this.probe(row, engine)
+    // The renderer's number, held to a sane size before it names a file.
+    const side = Number.isFinite(edge) ? Math.max(256, Math.min(8192, Math.round(edge))) : 2560
+    const plan = previewPlan(info, true, side)
+    // A preview no bigger than the thumbnail (an older body's, a DNG's
+    // small one) adds nothing to the thumbnail already showing.
+    if (plan === 'develop' || plan.long <= THUMB_EDGE) return null
+    // Swept with the photo's other renders as it leaves Develop (sweep.ts).
+    const dir = join(paths.photoCache(row.id), 'renders')
+    await mkdir(dir, { recursive: true })
+    const stamp = `${versionOf(row)}:${side}`
+    const out = join(dir, `first-${hash32(stamp).toString(16)}.jpg`)
+    const request = (reduce: PreviewPlan['reduce'], factor: number): ConvertRequest => ({
+      ...blankRequest(row.path, out, info.input, info),
+      raw: 'EmbeddedPreview',
+      decode_reduce: reduce,
+      resize: factor < 1 ? { Scale: { factor } } : 'None',
+      encode: { Jpeg: { quality: 90, subsampling: 'Quarter', optimize: false } },
+      pixel: { depth: 'Eight', channels: 3 },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color: displayPolicy(info, 'DisplayP3')
+    })
+    const report = await engine.convert(request(plan.reduce, plan.factor)).catch((err) => {
+      if (!(err instanceof EngineError) || !plan.reduce || !reduceRefused(err.code, err.detail))
+        throw err
+      return engine.convert(request(null, Math.min(1, side / plan.long)))
+    })
+    return { url: cacheUrl(out, stamp), width: report.width, height: report.height }
+  }
+
+  // ── the Library's larger pictures (main/previews.ts names, caches and queues them) ──
+
+  /**
+   * A photo's picture at most `edge` on its long side, Display P3 as
+   * Develop's are, from `work` (the index's `previewJob`): an unedited one
+   * from its embedded preview or its own pixels on `engine`, an edited one
+   * graded from its proxies on the background engine. `Infinity` keeps it
+   * whole (a 1:1 of the camera's full-size preview, or of a JPEG). `sdr`:
+   * an HDR photo, or one edited in HDR, shown here in SDR.
+   */
+  async libraryPicture(
+    work: ThumbWork,
+    edge: number,
+    out: string,
+    engine: EngineClient,
+    threads: number
+  ): Promise<PictureSize & { sdr: boolean }> {
+    const recipe = await this.planes.hydrate(work.recipe)
+    const row = await this.readable(work.row)
+    const info = await this.probe(row, engine)
+    const base = {
+      encode: { Jpeg: { quality: 90, subsampling: 'Quarter' as const, optimize: false } },
+      pixel: { depth: 'Eight' as const, channels: 3 },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      threads,
+      color: displayPolicy(info, 'DisplayP3')
+    }
+    const size = work.edited
+      ? await this.graded(row, info, recipe, out, base, edge)
+      : await this.unedited(row, info, edge, out, base, recipe, engine)
+    return { ...size, sdr: hdrKindOf(info) !== '' }
+  }
+
+  /** How a photo's 1:1 is made (shared/previews.ts), from its probe. */
+  async focusPlanOf(work: ThumbWork, engine: EngineClient): Promise<FocusPlan> {
+    const row = await this.readable(work.row)
+    return focusPlan(await this.probe(row, engine), row.is_raw === 1, work.edited)
+  }
+
+  /** RAW develops' own frame sizes, learnt from a region's report (the probe states the sensor's). */
+  private rawFrames = new Map<number, { width: number; height: number }>()
+
+  /**
+   * What a 1:1 region of a photo is rendered from and how: its source (a
+   * RAW developed for the region, else the file), the recipe compiled at
+   * full size with its crop, and the framed picture's size, whose fractions
+   * a region is asked in.
+   */
+  async regionSetup(work: ThumbWork, engine: EngineClient): Promise<RegionSetup> {
+    const recipe = await this.planes.hydrate(work.recipe)
+    const row = await this.readable(work.row)
+    const info = await this.probe(row, engine)
+    const raw = row.is_raw === 1
+    // A gain-map photo edited as HDR: its applied rendition, upright, as `graded` reads it.
+    const applied =
+      !raw && editsHdr(recipe, info) ? await ensureHdrSource(this.engine, row, info) : null
+    const hdr = applied
+      ? { path: applied.master.path, input: applied.master.input, info: applied.info }
+      : null
+    const shownInfo = hdr?.info ?? info
+    // A RAW's develop is cropped to the sensor's best area: its frame is
+    // the one its proxies (or thumbnail source) state, to a pixel or two,
+    // taken a little short so a region at its edge is never refused (the
+    // first region's report says it exactly).
+    let frame: PictureSize = applied
+      ? { width: applied.master.width, height: applied.master.height }
+      : uprightSize(info, sourceOrientation(info, null))
+    if (raw) {
+      const learnt = this.rawFrames.get(row.id)
+      const px = learnt ? null : await ensureThumbSource(this.engine, row, info, BACKGROUND_THREADS)
+      frame = learnt ?? {
+        width: (px?.frameWidth ?? info.width) - FRAME_SLACK,
+        height: (px?.frameHeight ?? info.height) - FRAME_SLACK
+      }
+    }
+    const { user, width, height } = orientedFrame(recipe, frame.width, frame.height)
+    const maskFrames = await maskFramesFor(
+      pixelDeps(this.engine, this.index, row),
+      recipe,
+      raw,
+      frame.width,
+      frame.height
+    ).catch(() => null)
+    const compiled = compile(recipe, {
+      isRaw: raw,
+      asShot: shownInfo.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(row)),
+      sourceOrientation: raw || hdr ? 'Normal' : sourceOrientation(info, null),
+      frameWidth: frame.width,
+      frameHeight: frame.height,
+      scale: 1,
+      seed: seedOf(row),
+      brushPaths: await brushPlanes(row.id, recipe, user, { isRaw: raw, frames: maskFrames }),
+      maskFrames,
+      luts: await lutsFor(recipe, paths.luts()),
+      applyCrop: true,
+      // As the screen preview's grade (`graded`): an HDR source graded as HDR, then shown in SDR.
+      hdr: shownInfo.is_hdr
+    })
+    // The oriented frame after the lens correction's crop, then the framing's.
+    let lensed = { width, height }
+    if (compiled.lens) {
+      const f = await engine.lensFrame(compiled.lens, width, height)
+      lensed = { width: f.frame.width, height: f.frame.height }
+    }
+    let framed = lensed
+    if (compiled.framing) {
+      const r = await engine.framingCrop(
+        { ...compiled.framing, orientation: 'Normal' },
+        lensed.width,
+        lensed.height
+      )
+      framed = { width: r.width, height: r.height }
+    }
+    const margin = await engine
+      .regionReach({
+        grade: compiled.grade,
+        sdr_grade: null,
+        frame_width: lensed.width,
+        frame_height: lensed.height,
+        output_width: framed.width,
+        output_height: framed.height
+      })
+      .then(
+        (r) => Math.min(Math.ceil(r.pixels), Math.max(framed.width, framed.height)),
+        () => 0
+      )
+    return { row, info, raw, compiled, hdr, framed, margin: Math.max(REGION_MARGIN, margin) }
+  }
+
+  /**
+   * A part of a photo at 1:1 (`rect`, fractions of the framed picture), its
+   * saved edit applied, never through a Develop session: the RAW developed
+   * for it, or the file read. Where it landed comes back as fractions.
+   */
+  async regionPicture(
+    setup: RegionSetup,
+    rect: { x: number; y: number; width: number; height: number },
+    out: string,
+    engine: EngineClient,
+    signal?: AbortSignal
+  ): Promise<{ x: number; y: number; width: number; height: number }> {
+    const { row, info, raw, compiled, hdr, framed } = setup
+    const px = regionPixels(rect, framed.width, framed.height)
+    const report = await engine.convert(
+      {
+        ...(hdr
+          ? blankRequest(hdr.path, out, hdr.input)
+          : blankRequest(row.path, out, raw ? 'Raw' : info.input, raw ? null : info)),
+        raw: raw ? rawMaster(colourOf(row)) : null,
+        encode: { Jpeg: { quality: 92, subsampling: 'None', optimize: false } },
+        pixel: { depth: 'Eight', channels: 3 },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        // Tone mapped as the screen preview is (`graded`), so the 1:1 lies over it unchanged.
+        color: hdr ? displayPolicy(hdr.info, 'Srgb') : displayPolicy(info, 'DisplayP3'),
+        grade: compiled.grade,
+        framing: compiled.framing,
+        lens: compiled.lens,
+        retouch: compiled.retouch,
+        region: { ...px, margin: setup.margin },
+        threads: interactiveThreads()
+      },
+      { signal }
+    )
+    if (raw) this.rawFrames.set(row.id, { width: report.frame_width, height: report.frame_height })
+    return {
+      x: px.x / framed.width,
+      y: px.y / framed.height,
+      width: px.width / framed.width,
+      height: px.height / framed.height
+    }
+  }
+
+  /**
+   * The photo `key` graded with `recipe` into `out`, at most `edge` on its
+   * long side, with no Develop session: Quick develop's look preview and its
+   * Auto tone measure (main/quickdevelop.ts). Made as a thumbnail is (a JPEG
+   * in sRGB on the background engine); `request` changes what it says.
+   */
+  async render(
+    key: string,
+    recipe: Recipe,
+    out: string,
+    o: {
+      edge: number
+      request?: Partial<ConvertRequest>
+      /** What it is shown in: sRGB as a thumbnail, Display P3 as Develop measures. */
+      space?: 'Srgb' | 'DisplayP3'
+      signal?: AbortSignal
+    }
+  ): Promise<{ report: ConvertReport; row: PhotoRow }> {
+    const row = await this.photoRow(key)
+    const info = await this.probe(row)
+    const base = {
+      encode: { Jpeg: { quality: 85, subsampling: 'Quarter' as const, optimize: false } },
+      pixel: { depth: 'Eight' as const, channels: 3 },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      threads: BACKGROUND_THREADS,
+      color: displayPolicy(info, o.space ?? 'Srgb'),
+      ...o.request
+    }
+    const graded = await this.planes.hydrate(recipe)
+    const report = await this.graded(row, info, graded, out, base, o.edge, o.signal)
+    return { report, row }
+  }
+
+  /** A file version's stamp: what a render of it is cached under. */
+  versionStamp(row: PhotoRow): string {
+    return versionOf(row)
+  }
+
+  /**
+   * The photo unedited at most `edge` on its long side (`previewPlan`): a
+   * RAW's embedded preview sized from the preview, a JPEG decoded at a
+   * fraction of its size where that still leaves the edge. Only a RAW with
+   * no preview the engine can decode is developed instead (graded with
+   * `recipe`); any other refusal is the photo's.
+   */
+  private async unedited(
+    row: PhotoRow,
+    info: SourceInfo,
+    edge: number,
+    out: string,
+    base: Record<string, unknown>,
+    recipe: Recipe,
+    engine: EngineClient = this.engine
+  ): Promise<PictureSize> {
+    const raw = row.is_raw === 1
+    const plan = previewPlan(info, raw, edge)
+    if (plan === 'develop') return this.graded(row, info, recipe, out, base, edge)
     const rawMode = raw ? ('EmbeddedPreview' as const) : null
     const orientation = sourceOrientation(info, rawMode)
-    const factor = Math.min(1, edge / Math.max(info.width, info.height))
-    try {
-      await this.engine.convert({
+    const convert = ({ reduce, factor }: PreviewPlan): ReturnType<EngineClient['convert']> =>
+      engine.convert({
         ...blankRequest(row.path, out, info.input, info),
         ...base,
         raw: rawMode,
+        decode_reduce: reduce,
         resize: factor < 1 ? { Scale: { factor } } : 'None',
         framing:
           orientation === 'Normal'
             ? null
             : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
       })
+    try {
+      const report = await convert(plan).catch((err) => {
+        // A JPEG the scaled decode cannot read (a lossless one): whole, then.
+        if (!(err instanceof EngineError) || !plan.reduce || !reduceRefused(err.code, err.detail))
+          throw err
+        return convert({ reduce: null, long: plan.long, factor: Math.min(1, edge / plan.long) })
+      })
+      return { width: report.width, height: report.height }
     } catch (err) {
-      if (!raw) throw err
-      await this.graded(row, info, defaultRecipe(true), out, base)
+      if (!raw || !(err instanceof EngineError) || !noPreview(err.code, err.detail)) throw err
+      // No usable embedded preview after all: develop instead.
+      return this.graded(row, info, recipe, out, base, edge)
     }
   }
 
@@ -723,15 +1252,20 @@ export class Library {
   /**
    * A thumbnail of the graded picture, from the photo's draft proxy — a
    * quarter of the proxy's pixels, and still more than a thumbnail needs —
-   * or the proxy when a tight crop leaves the draft too few.
+   * or the proxy when a tight crop leaves the draft too few. Larger than a
+   * thumbnail (`edge`, the Library's screen preview), from the proxies
+   * themselves, never a binned develop smaller than the picture.
    */
   private async graded(
     row: PhotoRow,
     file: SourceInfo,
     recipe: Recipe,
     out: string,
-    base: Record<string, unknown>
-  ): Promise<void> {
+    base: Record<string, unknown>,
+    /** The long edge wanted (a thumbnail's, a look's preview, a measure). */
+    edge = THUMB_EDGE,
+    signal?: AbortSignal
+  ): Promise<ConvertReport> {
     // A gain-map photo edited as HDR: its applied rendition, tone mapped.
     const hdr = editsHdr(recipe, file) ? await ensureHdrSource(this.engine, row, file) : null
     const info = hdr?.info ?? file
@@ -742,7 +1276,7 @@ export class Library {
     // though, are laid on the proxies, which the editor then finds made.
     const plain =
       hdr?.px ??
-      (activeSteps(recipe.pixels).length > 0
+      (activeSteps(recipe.pixels).length > 0 || edge > DRAFT_EDGE
         ? await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
         : await ensureThumbSource(this.engine, row, info, BACKGROUND_THREADS))
     const px =
@@ -761,6 +1295,7 @@ export class Library {
     const cropOf = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(row)),
       sourceOrientation: 'Normal',
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,
@@ -770,30 +1305,50 @@ export class Library {
       applyCrop: true
     }).crop
     const cropLong = Math.max((cropOf?.width ?? 1) * width, (cropOf?.height ?? 1) * height)
-    const src = cropLong * (px.draft.width / px.frameWidth) >= THUMB_EDGE ? px.draft : px.proxy
+    const src = cropLong * (px.draft.width / px.frameWidth) >= edge ? px.draft : px.proxy
+    // Masks drawn under another lens than the one rendered are carried to it.
+    const maskFrames = await maskFramesFor(
+      pixelDeps(this.engine, this.index, row),
+      recipe,
+      row.is_raw === 1,
+      px.frameWidth,
+      px.frameHeight
+    ).catch((err) => {
+      log.warn('thumbnail: masks on another lens not mapped', err)
+      return null
+    })
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(row)),
       sourceOrientation: 'Normal',
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,
       scale: src.width / px.frameWidth,
       seed: seedOf(row),
-      brushPaths: await brushPlanes(row.id, recipe, user),
+      brushPaths: await brushPlanes(row.id, recipe, user, {
+        isRaw: row.is_raw === 1,
+        frames: maskFrames
+      }),
+      maskFrames,
+      luts: await lutsFor(recipe, paths.luts()),
       applyCrop: true,
       hdr: info.is_hdr
     })
     const cropW = (compiled.crop?.width ?? 1) * width
     const cropH = (compiled.crop?.height ?? 1) * height
-    const factor = Math.min(1, THUMB_EDGE / (Math.max(cropW, cropH) * (src.width / px.frameWidth)))
-    await this.engine.convert({
-      ...blankRequest(src.path, out, src.input),
-      ...base,
-      resize: factor < 1 ? { Scale: { factor } } : 'None',
-      grade: compiled.grade,
-      framing: compiled.framing,
-      lens: compiled.lens,
-      retouch: compiled.retouch
-    })
+    const factor = Math.min(1, edge / (Math.max(cropW, cropH) * (src.width / px.frameWidth)))
+    return this.engine.convert(
+      {
+        ...blankRequest(src.path, out, src.input),
+        ...base,
+        resize: factor < 1 ? { Scale: { factor } } : 'None',
+        grade: compiled.grade,
+        framing: compiled.framing,
+        lens: compiled.lens,
+        retouch: compiled.retouch
+      },
+      { signal }
+    )
   }
 }

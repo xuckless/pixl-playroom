@@ -5,17 +5,24 @@
  * layout and what each place shows are kept (the ui store's `scopes`).
  */
 import { t } from '../lib/i18n'
-import { Modal } from '../components/ui'
+import { Modal, Segmented } from '../components/ui'
 import { Icon } from '../components/icons'
-import { cycleExpanded, type ExpandedScope } from '../../../shared/scopes'
+import {
+  cycleExpanded,
+  EXPANDED_SCOPES,
+  withQuick,
+  type ExpandedScope
+} from '../../../shared/scopes'
 import { useLibrary } from '../state/library'
 import { useUi } from '../state/ui'
 import { ScopeOptions, ScopeView } from './scopes/ScopeView'
-import { SCOPE_LABEL } from './scopes/labels'
+import { ProofTag } from './Scopes'
+import { ScopeName } from './scopes/ScopeName'
 
 function Place({ index }: { index: number }): React.JSX.Element {
   const kind = useUi((s) => s.scopes.slots[index])
   const slots = useUi((s) => s.scopes.slots)
+  const quick = useUi((s) => s.scopes.quick)
   const setScopes = useUi((s) => s.setScopes)
   const step = (d: 1 | -1): void => {
     const next = [...slots]
@@ -28,12 +35,25 @@ function Place({ index }: { index: number }): React.JSX.Element {
         <button className="icon sm" aria-label={t('Previous scope')} onClick={() => step(-1)}>
           <Icon name="chevronLeft" />
         </button>
-        <span className="scope-name">{t(SCOPE_LABEL[kind as ExpandedScope])}</span>
+        <ScopeName kind={kind as ExpandedScope} kinds={EXPANDED_SCOPES} />
         <button className="icon sm" aria-label={t('Next scope')} onClick={() => step(1)}>
           <Icon name="chevronRight" />
         </button>
+        <ProofTag />
         <span className="spacer" />
         <ScopeOptions kind={kind} />
+        {kind !== 'metrics' && (
+          <label className="check se-quick" title={t('Show this scope in the right column’s ◀ ▶')}>
+            <input
+              type="checkbox"
+              checked={quick.includes(kind)}
+              // The last one stays: the column always shows a scope.
+              disabled={quick.length === 1 && quick.includes(kind)}
+              onChange={(e) => setScopes({ quick: withQuick(quick, kind, e.target.checked) })}
+            />{' '}
+            {t('In the side panel')}
+          </label>
+        )}
       </div>
       <div className="se-body">
         <ScopeView kind={kind} expanded />
@@ -60,18 +80,15 @@ export function ScopesExpandedDialog(): React.JSX.Element {
       }
     >
       <div className="se-tabs">
-        <div className="seg" role="group" aria-label={t('Scopes at once')}>
-          {([1, 2, 4] as const).map((n) => (
-            <button
-              key={n}
-              className={layout === n ? 'on' : ''}
-              aria-pressed={layout === n}
-              onClick={() => setScopes({ layout: n })}
-            >
-              {n === 1 ? t('One') : n === 2 ? t('Two') : t('Four')}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label={t('Scopes at once')}
+          value={layout}
+          onChange={(n) => setScopes({ layout: n })}
+          options={([1, 2, 4] as const).map((n) => ({
+            value: n,
+            label: n === 1 ? t('One') : n === 2 ? t('Two') : t('Four')
+          }))}
+        />
       </div>
       <div className="se-grid">
         {Array.from({ length: layout }, (_, i) => (

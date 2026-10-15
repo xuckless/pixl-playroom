@@ -85,6 +85,55 @@ test('migrateLook is safe to run twice, and leaves 0.19.2 shapes alone', () => {
   assert.deepEqual(migrateLook(structuredClone(ll)), ll)
 })
 
+// A 0.20 layer: a parametric curve without a reach, a grain without response or colour (engine 0.21's clean breaks).
+const old20 = (): Record<string, unknown> => ({
+  name: 'custom',
+  enabled: true,
+  opacity: 1,
+  blend: { mode: 'Normal', space: 'LinearWorking' },
+  mask: null,
+  stages: [
+    {
+      space: {
+        Encoded: {
+          space: 'DisplayP3',
+          intent: 'RelativeColorimetric',
+          black_point_compensation: false
+        }
+      },
+      ops: [
+        {
+          ParametricCurve: {
+            shadows: 0.2,
+            darks: 0,
+            lights: 0,
+            highlights: -0.1,
+            splits: { low: 0.25, mid: 0.5, high: 0.75 }
+          }
+        },
+        { Grain: { amount: 0.3, size: 0.002, roughness: 0.5, seed: 7 } }
+      ]
+    }
+  ]
+})
+
+test('migrateLook brings a 0.20 parametric curve and grain to 0.21’s shapes, the same bytes', () => {
+  const l = migrateLook(old20()) as {
+    stages: { ops: Record<string, Record<string, unknown>>[] }[]
+  }
+  const [curve, grain] = l.stages[0].ops
+  assert.equal(curve.ParametricCurve.reach, 'HalfGap')
+  assert.equal(grain.Grain.response, 'Midtones')
+  assert.deepEqual(grain.Grain.chroma, { amount: 0, size: 1 })
+  // Twice is the same; a stated reach and colour grain are kept.
+  assert.deepEqual(migrateLook(structuredClone(l)), l)
+  const now = {
+    ParametricCurve: { ...curve.ParametricCurve, reach: { Range: 0.25 } },
+    Grain: { ...grain.Grain, response: { Curve: { points: [] } }, chroma: { amount: 0.2, size: 2 } }
+  }
+  assert.deepEqual(migrateLook(structuredClone(now)), now)
+})
+
 test('a sidecar’s custom layers are migrated as the recipe loads', () => {
   const r = normaliseRecipe(
     { version: 5, custom: [{ id: 'c1', name: 'old', enabled: true, layer: old19() }] },

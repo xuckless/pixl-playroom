@@ -20,3 +20,9 @@ src/native/*/build/
 
 # local verification builds (never the user's dev out/)
 out-verify/
+
+# scripts/look-delta.mjs scratch (removed after each run)
+tests/.look-delta/
+
+# Supabase CLI link state (supabase link), local only
+supabase/.temp/

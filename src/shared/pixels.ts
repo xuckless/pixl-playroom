@@ -13,6 +13,7 @@
  */
 
 import { t, tk } from './i18n'
+import { isBlobHash } from './ids'
 
 export type PixelStepKind = 'denoise' | 'enhance' | 'retouch'
 
@@ -76,9 +77,19 @@ export const RAW_DEVELOP_REV = 's'
  * mixer) renders differently. (A RAW's develop is `Container`, 0.16.0's
  * pixels, so `RAW_DEVELOP_REV` and the steps laid on it stand.) 3 is engine
  * 0.18: Dehaze v2, the Color Mixer's luminance in stops, Denoise's reach,
- * the Smoothing slider.
+ * the Smoothing slider. 4 is engine 0.21: smoothed adjustments near zero
+ * (E63, E53), and saved edits on the engine's exact colour ops (the region
+ * curve, Hue vs Lum and Sat vs Sat, the Log wheels, Temp and Tint beside
+ * the Primaries); Resolve's qualifiers as ops where they sit (E77).
  */
-export const ENGINE_RENDER_REV = 3
+export const ENGINE_RENDER_REV = 4
+
+/**
+ * The making of an unedited RAW's thumbnail, its embedded preview. 2 is
+ * engine 0.21 (OBS-1): sized from the preview, not the sensor (a body whose
+ * preview is about 1600 px across had thumbnails of about 108).
+ */
+export const PREVIEW_THUMB_REV = 2
 
 /**
  * A step on a RAW made from another develop than the photo's now (rawler's,
@@ -97,13 +108,11 @@ export function staleRawStep(
   return isRaw && step.params.develop !== mark
 }
 
-const HEX64 = /^[0-9a-f]{64}$/
-
 /** A step read from anywhere (a project, a sidecar, history), or null when it is not one. */
 export function normalisePixelStep(v: unknown): PixelStep | null {
   if (!v || typeof v !== 'object') return null
   const s = v as Record<string, unknown>
-  if (typeof s.id !== 'string' || typeof s.blob !== 'string' || !HEX64.test(s.blob)) return null
+  if (typeof s.id !== 'string' || !isBlobHash(s.blob)) return null
   if (s.kind !== 'denoise' && s.kind !== 'enhance' && s.kind !== 'retouch') return null
   const num = (x: unknown, d: number): number =>
     typeof x === 'number' && Number.isFinite(x) ? x : d
@@ -112,7 +121,7 @@ export function normalisePixelStep(v: unknown): PixelStep | null {
     kind: s.kind,
     label: typeof s.label === 'string' ? s.label : PIXEL_LABEL[s.kind],
     blob: s.blob,
-    alpha: typeof s.alpha === 'string' && HEX64.test(s.alpha) ? s.alpha : null,
+    alpha: isBlobHash(s.alpha) ? s.alpha : null,
     scope: typeof s.scope === 'string' ? s.scope : null,
     opacity: Math.max(0, Math.min(100, num(s.opacity, 100))),
     width: Math.max(1, Math.round(num(s.width, 1))),

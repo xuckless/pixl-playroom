@@ -56,18 +56,33 @@ test('a mid grey picture is one line across the waveform and the parade', async 
   }
 })
 
+/** Where a Cb/Cr pair lands among `size²` bins drawn Cr up (the engine's cells, rows turned over). */
+const vectorCell = (cb: number, cr: number, size: number): number =>
+  (size - 1 - Math.min(size - 1, Math.floor((cr + 0.5) * size))) * size +
+  Math.min(size - 1, Math.floor((cb + 0.5) * size))
+
 test('75% red lands on the vectorscope’s R target; grey at the centre', async () => {
   const { binScopes, vectorTargets } = await import('../src/shared/scopes')
   const size = 256
   const red = binScopes(solid(8, 8, [0.75, 0, 0], true), { vector: size, want: ['vectorscope'] })
   const t = vectorTargets().find((x) => x.name === 'R')!
-  const at = Math.floor((0.5 - t.cr) * size) * size + Math.floor((t.cb + 0.5) * size)
-  assert.equal(red.vector![at], red.pixels)
+  assert.equal(red.vector![vectorCell(t.cb, t.cr, size)], red.pixels)
   const grey = binScopes(solid(8, 8, [0.4, 0.4, 0.4], true), {
     vector: size,
     want: ['vectorscope']
   })
-  assert.equal(grey.vector![(size / 2) * size + size / 2], grey.pixels)
+  assert.equal(grey.vector![vectorCell(0, 0, size)], grey.pixels)
+})
+
+test('the scopes weigh luma and Cb/Cr by BT.709, as the engine does', async () => {
+  const { cbcr, vectorTargets, LUMA_709 } = await import('../src/shared/scopes')
+  assert.deepEqual([...LUMA_709], [0.2126, 0.7152, 0.0722])
+  // An encoded primary reaches 0.5 on its own axis; 75% of it, 0.375.
+  const r = vectorTargets().find((x) => x.name === 'R')!
+  assert.ok(Math.abs(r.cr - 0.375) < 1e-9 && Math.abs(r.cb + (0.75 * 0.2126) / 1.8556) < 1e-9)
+  const b = cbcr(0, 0, 1)
+  assert.ok(Math.abs(b.cb - 0.5) < 1e-9)
+  assert.ok(Math.abs(cbcr(0.5, 0.5, 0.5).y - 0.5) < 1e-9)
 })
 
 test('skin sits near the vectorscope’s skin line', async () => {
@@ -132,4 +147,233 @@ test('in mask, only the pixels the mask holds are counted', async () => {
   const all = binScopes(px, { want: ['vectorscope'] })
   const half = binScopes(px, { want: ['vectorscope'], mask })
   assert.equal(half.pixels, all.pixels / 2)
+})
+
+test('in mask, a feathered edge counts by how much the mask holds it', async () => {
+  const { binScopes } = await import('../src/shared/scopes')
+  const px = solid(8, 8, [0.5, 0.5, 0.5], true)
+  // Every pixel held at half: each counts half, where it used to count whole or not at all.
+  const mask = new Uint8ClampedArray(8 * 8 * 4).fill(0)
+  for (let i = 0; i < 64; i++) mask[i * 4] = 51
+  const b = binScopes(px, { want: ['waveform'], mask, columns: 8 })
+  assert.ok(Math.abs(b.pixels - 64 * 0.2) < 1e-6)
+  const sum = b.waveform!.reduce((a, c) => a + c, 0)
+  assert.ok(Math.abs(sum - 64 * 0.2) < 1e-4)
+})
+
+// ── The engine's scopes of a settled picture (E76) ──────────────────────────
+
+test('the engine is asked for what the charts draw, its waveform never wider than the picture', async () => {
+  const { engineScopeSpec, ENGINE_COLUMNS } = await import('../src/shared/scopes')
+  const spec = engineScopeSpec(['waveform', 'cie'], 4000)!
+  assert.deepEqual(spec.waveform, {
+    columns: ENGINE_COLUMNS,
+    levels: 256,
+    planes: 'LumaAndChannels'
+  })
+  assert.equal(spec.vectorscope, null)
+  // A narrow picture (a tall crop shown small): one column a pixel at most.
+  assert.equal(engineScopeSpec(['parade'], 300)!.waveform!.columns, 300)
+  assert.equal(engineScopeSpec(['parade'], 300, 2)!.waveform!.columns, 150)
+  assert.deepEqual(engineScopeSpec(['vectorscope'], 10)!.vectorscope, {
+    size: 256,
+    matrix: 'Bt709',
+    extent: 0.5
+  })
+  // The CIE chart and the histogram are not the engine's here.
+  assert.equal(engineScopeSpec(['cie', 'histogram'], 4000), null)
+})
+
+test('the engine’s grids become the charts’: the vectorscope turned over, the parade side by side', async () => {
+  const { engineBins } = await import('../src/shared/scopes')
+  const columns = 4
+  const levels = 8
+  const luma = new Float64Array(columns * levels)
+  luma[5 * columns + 2] = 7
+  const grey = new Float64Array(columns * levels)
+  grey[1 * columns + 0] = 3
+  const size = 4
+  const counts = new Float64Array(size * size)
+  // The engine's row 0 is Cr's bottom: a count there is the chart's last row.
+  counts[0 * size + 3] = 9
+  const b = engineBins(
+    {
+      waveform: { columns, levels, luma, channels: [grey] },
+      vectorscope: { size, counts, outside: 0 },
+      chromaticity: null
+    },
+    7
+  )
+  assert.ok(b.exact)
+  assert.ok(b.waveform instanceof Float32Array)
+  assert.equal(b.waveform![5 * columns + 2], 7)
+  // A grey picture's one channel stands for all three.
+  for (let k = 0; k < 3; k++) assert.equal(b.parade![k * columns * levels + 1 * columns + 0], 3)
+  assert.equal(b.vector![(size - 1) * size + 3], 9)
+  assert.equal(b.vector![3], 0)
+  assert.equal(b.cie, null)
+})
+
+/** The native engine, where it is built (not in CI: these checks skip). */
+const realEngine = await (async () => {
+  try {
+    const { createRequire } = await import('node:module')
+    return createRequire(import.meta.url)('@xuckless/pixl-engine') as {
+      analyze(r: unknown): Promise<{ scopes: unknown; pixels_measured: number }>
+    }
+  } catch {
+    return null
+  }
+})()
+
+test(
+  'a settled picture’s engine scopes and the drag’s bins put every pixel in the same cell',
+  { skip: realEngine === null ? 'the engine is not built for this platform' : false },
+  async () => {
+    const { binScopes, engineBins, engineScopeSpec } = await import('../src/shared/scopes')
+    const { READ_LIMITS } = await import('../src/shared/limits')
+    const { encodePng8 } = await import('../src/main/pngio')
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'scopes-'))
+    const w = 96
+    const h = 40
+    const rgba = new Uint8Array(w * h * 4)
+    for (let i = 0; i < w * h; i++) {
+      const x = i % w
+      const y = Math.floor(i / w)
+      rgba.set([(x * 5 + y) % 256, (x * 3 + y * 7) % 256, (y * 11 + x) % 256, 255], i * 4)
+    }
+    const path = join(dir, 'p.png')
+    writeFileSync(path, encodePng8(rgba, w, h))
+    try {
+      const want = ['waveform', 'vectorscope'] as const
+      // As main's `analyzeRequest` states it (main/autowb.ts), with the scopes.
+      const stats = (await realEngine!.analyze({
+        source: { Path: path },
+        input: 'Png',
+        raw: null,
+        domain: 'Encoded',
+        bins: 256,
+        percentiles: [50],
+        clip_low: 0,
+        clip_high: 1,
+        hue_bins: 36,
+        stride: 1,
+        transparent: 'Include',
+        threads: 2,
+        weights: null,
+        noise: false,
+        orientation: 'Normal',
+        lens: null,
+        limits: READ_LIMITS,
+        hdr: null,
+        gain_map: null,
+        phash: false,
+        focus: null,
+        scopes: engineScopeSpec(want, w)
+      })) as { scopes: Parameters<typeof engineBins>[0]; pixels_measured: number }
+      const exact = engineBins(stats.scopes, stats.pixels_measured)
+      const binned = binScopes(
+        { width: w, height: h, data: new Uint8ClampedArray(rgba) },
+        { want, columns: exact.columns }
+      )
+      assert.equal(exact.columns, binned.columns)
+      assert.deepEqual([...exact.waveform!], [...binned.waveform!], 'the luma waveform')
+      assert.deepEqual([...exact.parade!], [...binned.parade!], 'the parade')
+      // Cb/Cr in floats: a value on a cell's edge may round either way.
+      let moved = 0
+      for (let i = 0; i < exact.vector!.length; i++)
+        moved += Math.abs(exact.vector![i] - binned.vector![i])
+      assert.ok(moved <= 0.01 * w * h * 2, `${moved} counts in other cells`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+)
+
+test(
+  'a float picture is measured as linear light: its numbers come from its 8-bit companion',
+  { skip: realEngine === null ? 'the engine is not built for this platform' : false },
+  async () => {
+    // Why render.ts measures a settled SDR picture in float on its companion:
+    // the engine reads an F16 output's values as they are, under `Encoded`
+    // too. Should it one day encode them, this fails and the workaround goes.
+    const { blankRequest } = await import('../src/main/source')
+    const { withRequiredFields } = await import('../src/main/engine/required')
+    const { encodePng8 } = await import('../src/main/pngio')
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const engine = realEngine as unknown as {
+      convert(r: unknown): Promise<{ stats: { luma_percentiles: { value: number }[] } }>
+    }
+    const dir = mkdtempSync(join(tmpdir(), 'floatstats-'))
+    const path = join(dir, 'grey.png')
+    writeFileSync(path, encodePng8(new Uint8Array(16 * 8 * 4).fill(128), 16, 8))
+    const measure = {
+      at: 'Output',
+      domain: 'Encoded',
+      bins: 256,
+      percentiles: [50],
+      clip_low: 0,
+      clip_high: 1,
+      hue_bins: 36,
+      stride: 1,
+      transparent: 'Include',
+      noise: false
+    }
+    const median = async (to: string, depth: string, sample: string): Promise<number> => {
+      const r = await engine.convert(
+        withRequiredFields('convert', [
+          {
+            ...blankRequest(path, '', 'Png'),
+            sink: 'Bytes',
+            pixel: { depth, channels: 4 },
+            encode: { Pixels: { sample } },
+            metadata: { exif: false, icc: true, xmp: false, iptc: false },
+            color: {
+              ConvertTo: { to, intent: 'RelativeColorimetric', black_point_compensation: false }
+            },
+            measure
+          }
+        ])[0]
+      )
+      return r.stats.luma_percentiles[0].value
+    }
+    try {
+      const encoded = await median('DisplayP3', 'Eight', 'U8')
+      const float = await median('LinearDisplayP3', 'F32', 'F16')
+      assert.ok(Math.abs(encoded - 0.5) < 0.01, String(encoded))
+      assert.ok(Math.abs(float - 0.214) < 0.01, `linear light: ${float}`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+)
+
+test('the right column steps through the scopes ticked for it, the histogram and colour bars by default', async () => {
+  const { normaliseScopes, DEFAULT_SCOPES, cycleScope, withQuick } =
+    await import('../src/shared/scopes')
+  assert.deepEqual(DEFAULT_SCOPES.quick, ['histogram', 'hue'])
+  assert.equal(cycleScope('histogram', 1, DEFAULT_SCOPES.quick), 'hue')
+  assert.equal(cycleScope('hue', 1, DEFAULT_SCOPES.quick), 'histogram')
+  assert.equal(cycleScope('histogram', -1, DEFAULT_SCOPES.quick), 'hue')
+  // One not among them steps to the first.
+  assert.equal(cycleScope('cie', 1, ['parade', 'waveform']), 'parade')
+  // Ticked in any order, kept in the scopes' own; the last one stays.
+  assert.deepEqual(withQuick(['histogram', 'hue'], 'parade', true), ['histogram', 'hue', 'parade'])
+  assert.deepEqual(withQuick(['histogram', 'hue'], 'histogram', false), ['hue'])
+  assert.deepEqual(withQuick(['hue'], 'hue', false), ['hue'])
+  // Saved before there was a choice: the defaults, and the one shown then.
+  assert.deepEqual(normaliseScopes({ inline: 'vectorscope' }).quick, [
+    'histogram',
+    'hue',
+    'vectorscope'
+  ])
+  // The one shown is always among them; nothing ticked takes the defaults.
+  const p = normaliseScopes({ inline: 'cie', quick: ['waveform'] })
+  assert.equal(p.inline, 'waveform')
+  assert.deepEqual(normaliseScopes({ quick: [] }).quick, ['histogram', 'hue'])
 })

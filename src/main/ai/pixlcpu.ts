@@ -5,14 +5,18 @@
  * On the CPU the PIXL demosaic takes about 40 s a RAW and PIXL Enhance one
  * to two minutes a photo.
  *
- * One question (Electron's own dialog, from main), shared by every caller
- * while it is open. A "no" is `CpuDeclined`: a RAW develops as before
- * (`ai/rawdevelop.ts`), an Enhance step fails pointing at Settings.
- */
-import { BrowserWindow, dialog } from 'electron'
+ * One question, shared by every caller while it is open, asked in the app's
+ * own dialog (the renderer's `PixlCpuHost`): main sends it to the window and
+ * waits for the answer (`answerPixlCpu`). "Not now" asks again next session;
+ * no window to ask in is a "not now". A "no" is `CpuDeclined`: a RAW
+ * develops as before (`ai/rawdevelop.ts`), an Enhance step fails pointing
+ * at Settings. */
+import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { t } from '../../shared/i18n'
+import { homedir } from 'node:os'
+import { IPC } from '../../shared/ipc'
 import type { PixlCpuAnswer } from '../../shared/heavy'
+import { cpuDetail, type PixlCpuQuestion, type PixlCpuReply } from '../../shared/pixlcpu'
 
 export { CpuDeclined, isPixlModel } from '../../shared/pixlcpu'
 
@@ -24,6 +28,10 @@ export interface PixlCpuStore {
 
 let store: PixlCpuStore | null = null
 let open: Promise<boolean> | null = null
+/** The question on screen, and how it is answered. */
+let pending: { question: PixlCpuQuestion; answer: (reply: PixlCpuReply) => void } | null = null
+/** "Not now" this session: not asked again until the app starts again. */
+let later = false
 
 export function setPixlCpuStore(s: PixlCpuStore): void {
   store = s
@@ -47,6 +55,7 @@ export async function mayUsePixlCpu(
 ): Promise<boolean> {
   const answer = await pixlCpuNow()
   if (answer !== 'ask') return answer === 'yes'
+  if (later) return false
   open ??= ask(ids, why, detail).finally(() => {
     open = null
   })
@@ -58,27 +67,43 @@ async function ask(
   why: 'no-gpu' | 'refused',
   detail?: string
 ): Promise<boolean> {
-  const cost = t(
-    'On the processor a RAW takes about 40 seconds to develop, and PIXL Enhance one to two minutes a photo. Without them, RAWs develop as before PIXL’s models and Detail’s AI boxes wait. You can change this in Settings → AI models.'
-  )
-  const opts: Electron.MessageBoxOptions = {
-    type: 'question',
-    buttons: [t('Use the processor'), t('Not on this computer')],
-    defaultId: 0,
-    cancelId: 1,
-    noLink: true,
-    message: t('PIXL’s models would run on this computer’s processor'),
-    detail:
-      why === 'no-gpu'
-        ? `${t('This computer has no graphics chip Playroom can run them on.')} ${cost}`
-        : `${t('The graphics chip refused one of them: {{error}}', { error: detail ?? '' })}\n\n${cost}`
+  const windows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
+  if (windows.length === 0) {
+    log.info('PIXL models on the CPU: no window to ask in; not now', ids.join(', '), why)
+    later = true
+    return false
   }
-  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-  const { response } = win
-    ? await dialog.showMessageBox(win, opts)
-    : await dialog.showMessageBox(opts)
-  const yes = response === 0
-  log.info('PIXL models on the CPU:', yes ? 'yes' : 'no', ids.join(', '), why)
-  await store?.setPixlCpu(yes ? 'yes' : 'no')
-  return yes
+  const question: PixlCpuQuestion = {
+    why,
+    detail: detail ? cpuDetail(detail, [app.getPath('userData')], homedir()) : null
+  }
+  const reply = await new Promise<PixlCpuReply>((resolve) => {
+    pending = { question, answer: resolve }
+    for (const w of windows) w.webContents.send(IPC.ai.pixlCpuAsk, question)
+  })
+  pending = null
+  for (const w of BrowserWindow.getAllWindows())
+    if (!w.isDestroyed()) w.webContents.send(IPC.ai.pixlCpuAsk, null)
+  log.info('PIXL models on the CPU:', reply, ids.join(', '), why, detail ?? '')
+  if (reply === 'later') {
+    later = true
+    return false
+  }
+  await store?.setPixlCpu(reply)
+  return reply === 'yes'
+}
+
+/** The question still on screen (a window that reloads shows it again). */
+export function pixlCpuPending(): PixlCpuQuestion | null {
+  return pending?.question ?? null
+}
+
+/**
+ * The window's answer, or Settings → AI models changing it while the
+ * question is open (`ask` there is "not now"). Any answer from Settings
+ * also ends "not now".
+ */
+export function answerPixlCpu(reply: PixlCpuReply): void {
+  if (reply !== 'later') later = false
+  pending?.answer(reply)
 }

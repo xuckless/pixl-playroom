@@ -4,10 +4,15 @@
  * those sliders and leaves the photo's others alone:
  *
  *   look('chrome-reportage', 'Chrome Reportage', { tags: [...], inspiredBy: '…' },
- *     tone({ contrast: 15, shadows: -10 }),
- *     presence({ saturation: -20 }),
- *     split(200, 8, 50, 8),
- *     hsl({ green: [-10, -25, 0] }))
+ *     prim({ contrast: 1.09, sat: -20 }),
+ *     tone({ shadows: -10 }),
+ *     lift(200, 8),
+ *     gain(50, 8),
+ *     hueCurve('hueSat', [[120, 0.75]]))
+ *
+ * Looks are built on Playroom's colour tools (the Primaries' wheels and bar,
+ * the hue and Lum vs Sat curves, HSL for brightness by colour), never on
+ * Lightroom's retired Colour grading wheels.
  *
  * Steps add to what is there, so two steps on one slider sum. `fade` and
  * `rolloff` work on the finished master curve, whatever shaped it.
@@ -16,8 +21,10 @@ import {
   changedFields,
   defaultRecipe,
   HSL_BANDS,
+  type BloomStyle,
   type CalibrationSetting,
   type CurvePointSetting,
+  type GrainResponseKind,
   type HslBand,
   type Recipe,
   type RecipeGroup
@@ -71,6 +78,7 @@ const ROOT_GROUP: Record<string, RecipeGroup> = {
   hsl: 'hsl',
   bwMix: 'hsl',
   pointColors: 'hsl',
+  density: 'hsl',
   colorGrade: 'colorGrade',
   effects: 'effects',
   calibration: 'calibration',
@@ -235,10 +243,19 @@ export const hueCurve =
       curve === 'hueHue' ? round(0.5 + v / 360) : round(Math.min(1, Math.max(0, v / 2)))
     const pts = new Map<number, number>()
     const wrap = (h: number): number => round((((h % 360) + 360) % 360) / 360)
+    // Each bump eases back to none at its sides; a side that would land
+    // within 12° of another bump or side is left out (one point there is
+    // enough, and a curve keeps at most 16).
+    const apart = (a: number, b: number): number => {
+      const d = Math.abs((((a - b) % 360) + 360) % 360)
+      return Math.min(d, 360 - d)
+    }
+    const placed = at.map(([h]) => h)
     for (const [h] of at) {
       for (const side of [-width, width]) {
-        const x = wrap(h + side)
-        if (!pts.has(x)) pts.set(x, 0.5)
+        if (placed.some((o) => apart(h + side, o) < 12)) continue
+        placed.push(h + side)
+        pts.set(wrap(h + side), 0.5)
       }
     }
     for (const [h, v] of at) pts.set(wrap(h), y(v))
@@ -289,24 +306,6 @@ export const hsl =
       r.hsl[b].saturation += s
       r.hsl[b].luminance += l
     }
-  }
-
-/**
- * Foliage, as [hue, saturation, luminance]. Leaves sit mostly in the yellow
- * band (yellow-greens, 60–100°) and only partly in green, so "mute the
- * greens" moves green fully and yellow at 60%; a bare `hsl({ green })` barely
- * touches a tree.
- */
-export const foliage =
-  (h: number, s: number, l: number): LookStep =>
-  (r) => {
-    const k = 0.6
-    r.hsl.green.hue += h
-    r.hsl.green.saturation += s
-    r.hsl.green.luminance += l
-    r.hsl.yellow.hue += Math.round(h * k)
-    r.hsl.yellow.saturation += Math.round(s * k)
-    r.hsl.yellow.luminance += Math.round(l * k)
   }
 
 /**
@@ -367,33 +366,6 @@ export const parametric =
     for (const [k, v] of Object.entries(p)) r.toneCurve[k as keyof typeof p] += v
   }
 
-type Region = 'shadows' | 'midtones' | 'highlights' | 'global'
-
-/** One grading wheel: hue 0…360, saturation 0…100, luminance −100…100. */
-export const wheel =
-  (region: Region, hue: number, saturation: number, luminance = 0): LookStep =>
-  (r) => {
-    r.colorGrade[region] = { hue, saturation, luminance }
-  }
-
-/** Split toning: a shadow colour and a highlight colour. */
-export const split =
-  (
-    shadowHue: number,
-    shadowSat: number,
-    highlightHue: number,
-    highlightSat: number,
-    opts: { balance?: number; blending?: number } = {}
-  ): LookStep =>
-  (r) => {
-    if (shadowSat > 0)
-      r.colorGrade.shadows = { hue: shadowHue, saturation: shadowSat, luminance: 0 }
-    if (highlightSat > 0)
-      r.colorGrade.highlights = { hue: highlightHue, saturation: highlightSat, luminance: 0 }
-    if (opts.balance !== undefined) r.colorGrade.balance = opts.balance
-    if (opts.blending !== undefined) r.colorGrade.blending = opts.blending
-  }
-
 /** Calibration primaries and the shadows' tint, −100…100. */
 export const calib =
   (c: Partial<CalibrationSetting>): LookStep =>
@@ -413,15 +385,29 @@ export const mono =
     }
   }
 
+/**
+ * Film grain: amount, size and roughness, and for a colour film its colour
+ * (0…100) and where in the tones it is strongest (`film`, the midtones, by
+ * default).
+ */
 export const grain =
-  (amount: number, size = 25, roughness = 50): LookStep =>
+  (
+    amount: number,
+    size = 25,
+    roughness = 50,
+    opts: { colour?: number; response?: GrainResponseKind } = {}
+  ): LookStep =>
   (r, s) => {
     r.effects.grainAmount = amount
     r.effects.grainSize = size
     r.effects.grainRoughness = roughness
-    // A grain is all three: the photo's own size never mixes with this amount.
+    r.effects.grainColour = opts.colour ?? 0
+    r.effects.grainResponse = opts.response ?? 'film'
+    // A grain is all of it: the photo's own size or colour never mixes with this amount.
     s.include.add('effects.grainSize')
     s.include.add('effects.grainRoughness')
+    s.include.add('effects.grainColour')
+    s.include.add('effects.grainResponse')
   }
 
 export const vignette =
@@ -454,31 +440,56 @@ export const addLight =
   }
 
 /**
- * Halation as the sliders can suggest it: a warm red in the highlights, a
- * faint red wash, a little less local contrast. Marked, so the look can be
- * redone when the engine has the real thing.
+ * Halation: a red glow around the highlights, as light scattered back
+ * through a colour film's base (0…100; threshold and size 0…100, hue 0…45
+ * from red to amber). The whole effect, so a photo's own never mixes in.
  */
-export const halationApprox =
-  (k: number): LookStep =>
+export const halation =
+  (amount: number, opts: { threshold?: number; size?: number; hue?: number } = {}): LookStep =>
   (r, s) => {
-    r.colorGrade.highlights = {
-      hue: 12,
-      saturation: Math.round(Math.max(r.colorGrade.highlights.saturation, k * 0.18)),
-      luminance: r.colorGrade.highlights.luminance
+    r.effects.halation = {
+      amount,
+      threshold: opts.threshold ?? 80,
+      size: opts.size ?? 50,
+      hue: opts.hue ?? 12
     }
-    r.effects.wash = { hue: 8, saturation: 70, amount: Math.round(k * 0.05) }
-    r.presence.clarity -= Math.round(k * 0.08)
-    s.approximates.add('halation')
+    for (const k of ['threshold', 'size', 'hue']) s.include.add(`effects.halation.${k}`)
   }
 
-/** Bloom or diffusion as the sliders can suggest it: softer local contrast, lifted shadows. */
-export const bloomApprox =
-  (k: number): LookStep =>
+/**
+ * Bloom: `diffusion` veils the whole picture as a diffusion filter does
+ * (a Pro-Mist), `glow` spreads only the highlights (neon at night). Amount,
+ * size and threshold 0…100, warmth −100…100.
+ */
+export const bloom =
+  (
+    amount: number,
+    opts: { style?: BloomStyle; size?: number; threshold?: number; warmth?: number } = {}
+  ): LookStep =>
   (r, s) => {
-    r.presence.clarity -= Math.round(k * 0.25)
-    r.presence.texture -= Math.round(k * 0.1)
-    r.basic.shadows += Math.round(k * 0.15)
-    s.approximates.add('bloom')
+    r.effects.bloom = {
+      style: opts.style ?? 'diffusion',
+      amount,
+      size: opts.size ?? 65,
+      threshold: opts.threshold ?? 75,
+      warmth: opts.warmth ?? 0
+    }
+    for (const k of ['style', 'size', 'threshold', 'warmth']) s.include.add(`effects.bloom.${k}`)
+  }
+
+/**
+ * Density (−100…100): saturated colour darkened as a slide film's dyes
+ * make it, its hue kept. `bands` weighs each hue (−100…100, 100 untouched).
+ * Every band is the look's.
+ */
+export const density =
+  (amount: number, bands: Partial<Record<HslBand, number>> = {}): LookStep =>
+  (r, s) => {
+    r.density.amount += amount
+    for (const b of HSL_BANDS) {
+      r.density.bands[b] = bands[b] ?? 100
+      s.include.add(`density.bands.${b}`)
+    }
   }
 
 /** Marks a look as standing in for something the sliders cannot quite do. */

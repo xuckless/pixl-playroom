@@ -13,20 +13,24 @@
  */
 import type { ExecutionProvider } from '../shared/engine-types'
 import { developedLine, standInNote } from '../shared/develops'
+import { DEV_BUILD } from './build'
 
 /**
- * The kit's folder, or null without one. Never in a packaged app
- * (`defaultApp`: Electron started on a folder or a script, which a packaged
- * app never is), whatever its environment says.
+ * The kit's folder, or null without one. A development build's only
+ * (build.ts), and never in a packaged app (`defaultApp`: Electron started
+ * on a folder or a script, which a packaged app never is), whatever its
+ * environment says.
  */
-export const DEV_KIT = (process.defaultApp && process.env.PLAYROOM_DEV_KIT) || null
+export const DEV_KIT = (DEV_BUILD && process.defaultApp && process.env.PLAYROOM_DEV_KIT) || null
 
 /** Where a model ran, in a word or two: `CoreMl (CpuAndGpu, static shapes)`, `Cpu`. */
 export function providerName(p: ExecutionProvider | null | undefined): string {
   if (!p) return 'no model'
   if (typeof p === 'string') return p
-  if ('CoreMl' in p)
-    return `CoreMl (${p.CoreMl.units}${p.CoreMl.static_shapes ? ', static shapes' : ''})`
+  if ('CoreMl' in p) {
+    const shapes = p.CoreMl.static_shapes ? ', static shapes' : ''
+    return `CoreMl (${p.CoreMl.units}${shapes}${p.CoreMl.cache ? ', compile kept' : ''})`
+  }
   return Object.keys(p)[0] ?? 'unknown'
 }
 

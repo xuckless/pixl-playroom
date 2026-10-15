@@ -28,11 +28,14 @@ import type {
   HdrWorking,
   InputFormat,
   LensCorrection,
+  Progress,
   RawMode,
   Retouch,
   SourceInfo
 } from '../shared/engine-types'
-import type { EngineClient } from './engine/client'
+import { EngineError, type EngineClient } from './engine/client'
+import { reduceRefused } from '../shared/engine-types'
+import { proxyReduce, reducedSide, uprightSize } from '../shared/thumbsize'
 import {
   keptMasterTags,
   PLAIN_DEVELOP,
@@ -45,6 +48,7 @@ import { noiseKept } from './ai/noisebook'
 import { exists } from './exists'
 import type { PhotoRow } from './db'
 import { paths } from './paths'
+import { SharedWork } from './sharedwork'
 import { traceRegion } from './trace'
 import {
   BACKGROUND_THREADS,
@@ -91,6 +95,11 @@ export interface Proxies {
   /** The full-resolution base frame (upright, before the user's turns). */
   frameWidth: number
   frameHeight: number
+  /**
+   * A camera profile's tables as the develop ran them (engine 0.21, E21:
+   * `RawReport.profile_tables`), for the info panel; absent when none ran.
+   */
+  profileTables?: string | null
 }
 
 const building = new Map<string, Promise<Proxies>>()
@@ -253,11 +262,15 @@ async function build(
   // whose developed frame is a little smaller than its mosaic; either way the
   // report's frame size is the truth, and the scale here only has to be close.
   const long = Math.max(info.width, info.height)
+  // A large camera JPEG decodes at half size (engine 0.21's `decode_reduce`,
+  // the owner's choice: only at twice the proxy's edge), Lanczos the rest.
+  let reduce = raw ? null : proxyReduce(info, PROXY_EDGE)
   const develop = (mode: RawMode | null, across: number): ReturnType<EngineClient['convert']> => {
-    const factor = Math.min(1, PROXY_EDGE / across)
+    const factor = Math.min(1, PROXY_EDGE / reducedSide(across, reduce))
     return engine.convert({
       ...blankRequest(photo.path, proxyPath, info.input, info),
       raw: mode,
+      decode_reduce: reduce,
       resize: factor < 1 ? { Scale: { factor } } : 'None',
       resampler: 'Lanczos3',
       // Averaging in linear light keeps a downscale's tones honest; an HDR
@@ -282,7 +295,13 @@ async function build(
   let byCell = raw !== null && !linear && proxyByCell(long, cell, PROXY_EDGE)
   let report = byCell
     ? await develop(rawProxyMaster(colour), long / cell).catch(() => null)
-    : await develop(raw, long)
+    : await develop(raw, long).catch((err) => {
+        // A JPEG the scaled decode cannot read (a lossless one): whole, then.
+        if (!reduce || !(err instanceof EngineError) || !reduceRefused(err.code, err.detail))
+          throw err
+        reduce = null
+        return develop(raw, long)
+      })
   // A sensor the cells were not as expected on (or a develop that refused
   // them): the full develop, as before.
   if (
@@ -301,6 +320,11 @@ async function build(
     ...(float ? { float } : {})
   }
   const scaleUp = byCell ? cell : 1
+  // A reduced decode's report states the reduced frame (`⌈w / 2⌉`, a pixel
+  // off): the frame is the probe's, upright.
+  const frame = reduce
+    ? uprightSize(info, orientation)
+    : { width: report.frame_width * scaleUp, height: report.frame_height * scaleUp }
 
   const draftPath = join(dir, `draft-${s}.${ext}`)
   const dFactor = Math.min(1, DRAFT_EDGE / Math.max(proxy.width, proxy.height))
@@ -330,8 +354,9 @@ async function build(
     draft,
     // The develop's frame (its cells' times their width when it was a half
     // size one): what masks and every normalised size are fractions of.
-    frameWidth: report.frame_width * scaleUp,
-    frameHeight: report.frame_height * scaleUp
+    frameWidth: frame.width,
+    frameHeight: frame.height,
+    ...(report.raw?.profile_tables ? { profileTables: report.raw.profile_tables } : {})
   }
   await writeFile(meta, JSON.stringify(out))
   return out
@@ -560,7 +585,10 @@ export async function pruneLensed(
   }
 }
 
-const mastering = new Map<string, Promise<ProxyFile>>()
+/** Full-size develops under way, by photo, version and develop: every caller joins the one. */
+const mastering = new Map<string, SharedWork<ProxyFile>>()
+/** Quick masters (`ensureQuickMaster`) being made. */
+const quickening = new Map<string, Promise<ProxyFile>>()
 
 /**
  * Masters another develop stood in for, this run, by the plan's key: used
@@ -640,40 +668,55 @@ export async function viewProxies(
   return ensureDevelopedProxies(engine, photo, plain, master, plan.tag, threads)
 }
 
-/** A RAW's full-size develop starting or ending, for the window's progress (`MasterEvent`). */
+/**
+ * A RAW's full-size develop starting, counting or ending, for the window's
+ * bar (`MasterEvent`). `progress` is what the engine has counted (engine
+ * 0.21.0, E68: the model's windows, the develop's bands; `total` 0 before
+ * anything is counted).
+ */
 export interface MasterWork {
   photoId: number
-  phase: 'start' | 'end'
-  /** How long it is expected to take: what the last one of its kind took for its size here. */
-  expectedMs: number
+  phase: 'start' | 'progress' | 'end'
+  progress?: Progress
 }
 
 let masterWork: ((e: MasterWork) => void) | null = null
 /** Masters being developed for each photo: over when the last one is. */
 const developing = new Map<number, number>()
 
-function masterStarted(photoId: number, expectedMs: number): void {
+function masterStarted(photoId: number): void {
   developing.set(photoId, (developing.get(photoId) ?? 0) + 1)
-  masterWork?.({ photoId, phase: 'start', expectedMs })
+  masterWork?.({ photoId, phase: 'start' })
 }
 
 function masterEnded(photoId: number): void {
   const left = (developing.get(photoId) ?? 1) - 1
   if (left > 0) return void developing.set(photoId, left)
   developing.delete(photoId)
-  masterWork?.({ photoId, phase: 'end', expectedMs: 0 })
+  masterWork?.({ photoId, phase: 'end' })
+}
+
+/** The window hears a develop's count at most this often, and only when a whole percent moved. */
+const MASTER_PROGRESS_MS = 200
+
+/** A develop's count, told to the window now and then (`MASTER_PROGRESS_MS`). */
+function masterCounter(photoId: number): (p: Progress) => void {
+  let at = 0
+  let shown = -1
+  return (p) => {
+    if (p.total <= 0) return
+    const percent = Math.floor((100 * p.done) / p.total)
+    const now = Date.now()
+    if (percent === shown || (now - at < MASTER_PROGRESS_MS && percent < 100)) return
+    at = now
+    shown = percent
+    masterWork?.({ photoId, phase: 'progress', progress: p })
+  }
 }
 
 /** Who is told when a master is developed (the open photo's session, which tells the window). */
 export function onMasterWork(listener: (e: MasterWork) => void): void {
   masterWork = listener
-}
-
-/** What a develop took for each megapixel, by its tag: the last one's, this run. */
-const masterRate = new Map<string, number>()
-/** Before the first: about what an M2 Pro takes (the PIXL demosaic, DemosaicNet, AHD, the classic). */
-function firstRate(demosaic: string): number {
-  return demosaic === 'pixl' ? 350 : demosaic === 'model' ? 240 : demosaic === 'ahd' ? 135 : 50
 }
 
 /**
@@ -692,6 +735,22 @@ export async function masterCached(
 }
 
 /**
+ * Whether another develop stood in for this one's master this run, and is
+ * still what `ensureMaster` would give (`stoodIn`): the plan's own model is
+ * then not what the 1:1 view shows, so it is not developed for a region
+ * either (E66).
+ */
+export async function masterStoodIn(
+  photo: PhotoRow,
+  info: Pick<SourceInfo, 'raw_cfa'>,
+  ask: RawDevelopAsk = PLAIN_DEVELOP
+): Promise<boolean> {
+  const plan = await scenePlan(info.raw_cfa, ask)
+  const stood = stoodIn.get(`${photo.id}:${stamp(photo)}:${plan.tag}`)
+  return !!stood && (!stood.photoOnly || stood.kept === noiseKept())
+}
+
+/**
  * The quick master for a first 1:1 look (the engine's viewing guide,
  * 2026-10-09): the same Scene develop with the classic demosaic (PPG on a
  * Bayer sensor, about 1.2 s for 24 MP on an M2 Pro, against DemosaicNet's
@@ -702,7 +761,7 @@ export async function masterCached(
 export function ensureQuickMaster(engine: EngineClient, photo: PhotoRow): Promise<ProxyFile> {
   const s = stamp(photo)
   const key = `${photo.id}:${s}:quick`
-  let p = mastering.get(key)
+  let p = quickening.get(key)
   if (!p) {
     p = (async (): Promise<ProxyFile> => {
       const dir = paths.photoCache(photo.id)
@@ -735,8 +794,8 @@ export function ensureQuickMaster(engine: EngineClient, photo: PhotoRow): Promis
       }
       await writeFile(meta, JSON.stringify(out))
       return out
-    })().finally(() => mastering.delete(key))
-    mastering.set(key, p)
+    })().finally(() => quickening.delete(key))
+    quickening.set(key, p)
   }
   return p
 }
@@ -750,13 +809,20 @@ export function ensureQuickMaster(engine: EngineClient, photo: PhotoRow): Promis
  * makes it again, and the one it replaces goes. With a development kit
  * (`devkit.ts`) the PIXL demosaic's master and DemosaicNet's stay side by
  * side, and each develop says what ran.
+ *
+ * Every caller joins the one develop (`SharedWork`). One with a `signal`
+ * (the photo open in Develop) may leave: when the last such caller has
+ * left and none stays (an export, a pixel step: no signal), the develop
+ * stops, unless it is nearly done (engine 0.21.0, E6 and E68; the owner,
+ * 2026-10-14), and a caller who left is answered `Cancelled` at once.
  */
 export async function ensureMaster(
   engine: EngineClient,
   photo: PhotoRow,
   info: Pick<SourceInfo, 'raw_cfa' | 'input' | 'dng'> &
     Partial<Pick<SourceInfo, 'width' | 'height'>>,
-  ask: RawDevelopAsk = PLAIN_DEVELOP
+  ask: RawDevelopAsk = PLAIN_DEVELOP,
+  signal?: AbortSignal
 ): Promise<ProxyFile> {
   const plan = await scenePlan(info.raw_cfa, ask)
   const s = stamp(photo)
@@ -764,143 +830,153 @@ export async function ensureMaster(
   const stood = stoodIn.get(key)
   if (stood && (!stood.photoOnly || stood.kept === noiseKept()) && (await exists(stood.out.path)))
     return stood.out
-  let p = mastering.get(key)
-  if (!p) {
-    // Said over only once the master's record is written: what hears it finds the master made.
-    let said = false
-    p = (async (): Promise<ProxyFile> => {
-      // F32 (engine 0.18: a RAW's master is Scene in float): twice a 16-bit
-      // TIFF's size, nothing clipped at 1.0.
-      const dir = paths.photoCache(photo.id)
-      const name = `master-${s}-${plan.tag}`
-      const path = join(dir, `${name}.tiff`)
-      const meta = `${path}.json`
-      if ((await exists(path)) && (await exists(meta))) {
-        const kept = JSON.parse(await readFile(meta, 'utf8')) as ProxyFile
-        traceRegion({
-          step: 'master',
-          photoId: photo.id,
-          tag: plan.tag,
-          cached: true,
-          path,
-          width: kept.width,
-          height: kept.height
-        })
-        return kept
-      }
-      const t0 = Date.now()
-      let request: unknown = null
-      // The engine says nothing while it develops: the window shows how far by the clock.
-      const megapixels = ((info.width ?? 0) * (info.height ?? 0)) / 1e6 || 24
-      masterStarted(photo.id, (masterRate.get(plan.tag) ?? firstRate(plan.demosaic)) * megapixels)
-      said = true
-      const {
-        value: report,
-        classic,
-        ran,
-        refused,
-        statedFrom,
-        photoOnly,
-        declined
-      } = await withScene(
-        plan,
-        (scene) => {
-          const req = {
-            ...blankRequest(photo.path, path, 'Raw'),
-            raw: rawMaster(colourOf(photo), scene, isLinearRaw(info)),
-            pixel: { depth: 'F32', channels: 3 } as const,
-            encode: { Tiff: { compression: 'None' } } as const,
-            metadata: { exif: false, icc: true, xmp: false, iptc: false },
-            color: 'Preserve' as const
-          }
-          request = req
-          return engine.convert(req)
-        },
-        undefined,
-        { camera: photo.camera, iso: photo.iso }
-      )
-      const ms = Date.now() - t0
-      if (!classic) masterRate.set(plan.tag, ms / megapixels)
-      log.info(
-        'RAW master developed',
-        plan.tag,
-        classic ? `(${ran} stood in)` : '',
-        statedFrom ? `(noise stated from ${statedFrom})` : '',
-        ms,
-        'ms'
-      )
-      // What stood in, for the user (and a development kit's trial: what ran, where and how long).
-      noteDeveloped(photo.id, {
-        planned: plan.tag,
-        ran,
-        provider: providerName(report.raw?.demosaic_model?.provider),
-        ms,
-        refused,
-        declined
-      })
+  const had = mastering.get(key)
+  if (had && !had.stopped) return had.join(signal)
+  const cancelled = (): Error =>
+    new EngineError({ message: 'the RAW develop: cancelled', code: 'Cancelled' })
+  // Its photo left already (a 1:1 ask landing as it closes): no develop nobody waits for.
+  if (signal?.aborted) throw cancelled()
+  // Said over only once the master's record is written: what hears it finds the master made.
+  let said = false
+  const work: SharedWork<ProxyFile> = new SharedWork(async (stop): Promise<ProxyFile> => {
+    // F32 (engine 0.18: a RAW's master is Scene in float): twice a 16-bit
+    // TIFF's size, nothing clipped at 1.0.
+    const dir = paths.photoCache(photo.id)
+    const name = `master-${s}-${plan.tag}`
+    const path = join(dir, `${name}.tiff`)
+    const meta = `${path}.json`
+    if ((await exists(path)) && (await exists(meta))) {
+      const kept = JSON.parse(await readFile(meta, 'utf8')) as ProxyFile
       traceRegion({
         step: 'master',
         photoId: photo.id,
         tag: plan.tag,
-        cached: false,
-        classic,
-        ran,
-        // A stand-in is kept for this run only (`stoodIn`).
-        keptForNextTime: !classic,
-        ms,
-        request,
-        report: {
-          width: report.width,
-          height: report.height,
-          input_bytes: report.input_bytes,
-          output_bytes: report.output_bytes,
-          decode_ms: report.decode_ms,
-          color_ms: report.color_ms,
-          encode_ms: report.encode_ms,
-          raw: report.raw
-        }
-      })
-      const out: ProxyFile = {
+        cached: true,
         path,
-        input: 'Tiff',
+        width: kept.width,
+        height: kept.height
+      })
+      return kept
+    }
+    const t0 = Date.now()
+    let request: unknown = null
+    // The window's bar: what the engine counts (each model window, each band).
+    masterStarted(photo.id)
+    said = true
+    const told = masterCounter(photo.id)
+    const onProgress = (p: Progress): void => {
+      work.count(p)
+      told(p)
+    }
+    const {
+      value: report,
+      classic,
+      ran,
+      refused,
+      statedFrom,
+      photoOnly,
+      declined
+    } = await withScene(
+      plan,
+      (scene) => {
+        const req = {
+          ...blankRequest(photo.path, path, 'Raw'),
+          raw: rawMaster(colourOf(photo), scene, isLinearRaw(info)),
+          pixel: { depth: 'F32', channels: 3 } as const,
+          encode: { Tiff: { compression: 'None' } } as const,
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: 'Preserve' as const
+        }
+        request = req
+        return engine.convert(req, { signal: stop, onProgress })
+      },
+      stop,
+      { camera: photo.camera, iso: photo.iso }
+    )
+    const ms = Date.now() - t0
+    if (work.finishing) log.info('RAW master finished after its photo was left', plan.tag)
+    log.info(
+      'RAW master developed',
+      plan.tag,
+      classic ? `(${ran} stood in)` : '',
+      statedFrom ? `(noise stated from ${statedFrom})` : '',
+      ms,
+      'ms'
+    )
+    // What stood in, for the user (and a development kit's trial: what ran, where and how long).
+    noteDeveloped(photo.id, {
+      planned: plan.tag,
+      ran,
+      provider: providerName(report.raw?.demosaic_model?.provider),
+      ms,
+      refused,
+      declined
+    })
+    traceRegion({
+      step: 'master',
+      photoId: photo.id,
+      tag: plan.tag,
+      cached: false,
+      classic,
+      ran,
+      // A stand-in is kept for this run only (`stoodIn`).
+      keptForNextTime: !classic,
+      ms,
+      request,
+      report: {
         width: report.width,
         height: report.height,
-        float: true
+        input_bytes: report.input_bytes,
+        output_bytes: report.output_bytes,
+        decode_ms: report.decode_ms,
+        color_ms: report.color_ms,
+        encode_ms: report.encode_ms,
+        raw: report.raw
       }
-      // Kept only when it is the plan's, with what developed it (the engine's
-      // `report.raw.demosaic_model`: a later develop can be compared with it).
-      // A stand-in is kept for this run only.
-      const model = report.raw?.demosaic_model
-      if (!classic)
-        await writeFile(
-          meta,
-          JSON.stringify({
-            ...out,
-            developed: {
-              tag: plan.tag,
-              model: model?.model ?? null,
-              provider: providerName(model?.provider),
-              noise_from: model?.noise_from ?? null,
-              ms,
-              ...(statedFrom ? { stated_from: statedFrom } : {})
-            }
-          })
-        )
-      else stoodIn.set(key, { out, photoOnly: photoOnly === true, kept: noiseKept() })
-      // Masters of another demosaic (the model since downloaded, or removed)
-      // and the untagged ones from before: off the disk. With and without
-      // PMRID are both kept, for edits that differ; with a development kit,
-      // the PIXL demosaic's and DemosaicNet's too (its switch flips between them).
-      const kept = keptMasterTags(plan.tag, DEV_KIT !== null).map((tag) => `master-${s}-${tag}.`)
-      for (const f of await readdir(dir).catch(() => [] as string[]))
-        if (f.startsWith('master-') && !kept.some((k) => f.startsWith(k)))
-          await unlink(join(dir, f)).catch(() => undefined)
-      return out
-    })().finally(() => {
-      mastering.delete(key)
-      if (said) masterEnded(photo.id)
     })
-    mastering.set(key, p)
+    const out: ProxyFile = {
+      path,
+      input: 'Tiff',
+      width: report.width,
+      height: report.height,
+      float: true
+    }
+    // Kept only when it is the plan's, with what developed it (the engine's
+    // `report.raw.demosaic_model`: a later develop can be compared with it).
+    // A stand-in is kept for this run only.
+    const model = report.raw?.demosaic_model
+    if (!classic)
+      await writeFile(
+        meta,
+        JSON.stringify({
+          ...out,
+          developed: {
+            tag: plan.tag,
+            model: model?.model ?? null,
+            provider: providerName(model?.provider),
+            noise_from: model?.noise_from ?? null,
+            ms,
+            ...(statedFrom ? { stated_from: statedFrom } : {})
+          }
+        })
+      )
+    else stoodIn.set(key, { out, photoOnly: photoOnly === true, kept: noiseKept() })
+    // Masters of another demosaic (the model since downloaded, or removed)
+    // and the untagged ones from before: off the disk. With and without
+    // PMRID are both kept, for edits that differ; with a development kit,
+    // the PIXL demosaic's and DemosaicNet's too (its switch flips between them).
+    const kept = keptMasterTags(plan.tag, DEV_KIT !== null).map((tag) => `master-${s}-${tag}.`)
+    for (const f of await readdir(dir).catch(() => [] as string[]))
+      if (f.startsWith('master-') && !kept.some((k) => f.startsWith(k)))
+        await unlink(join(dir, f)).catch(() => undefined)
+    return out
+  }, cancelled)
+  mastering.set(key, work)
+  const forget = (): void => {
+    // A develop stopped may be followed by a new one under the same key before it lets go.
+    if (mastering.get(key) === work) mastering.delete(key)
+    if (said) masterEnded(photo.id)
   }
-  return p
+  work.promise.then(forget, forget)
+  return work.join(signal)
 }

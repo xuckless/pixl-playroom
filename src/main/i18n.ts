@@ -8,7 +8,7 @@ import log from 'electron-log/main'
 import type { i18n } from 'i18next'
 import { IPC } from '../shared/ipc'
 import { pickLanguage, type Language, type LanguageSetting } from '../shared/i18n'
-import { startI18n } from '../shared/i18n/setup'
+import { startI18n, withLanguage } from '../shared/i18n/setup'
 import { readSettings, writeSettings } from './settings'
 
 export interface LanguageState {
@@ -56,10 +56,22 @@ function stateFor(setting: LanguageSetting): LanguageState {
   }
 }
 
+/**
+ * `language` in force: its catalog loaded (a chunk of its own, a moment
+ * after the start in English), then the menus made again in it.
+ */
+function bring(to: i18n, language: Language): void {
+  const still = (): boolean => state?.language === language
+  void withLanguage(to, language, still).then(() => {
+    if (still()) listeners.forEach((f) => f())
+  })
+}
+
 /** Start in the saved language (call at ready, before the menus). */
 export function startLanguage(): LanguageState {
   state = stateFor(readSettings().language ?? 'system')
   inst = startI18n(state.language, PSEUDO)
+  if (state.language !== 'en') bring(inst, state.language)
   return state
 }
 
@@ -72,10 +84,9 @@ export function setLanguage(setting: LanguageSetting): LanguageState {
   writeSettings({ language: setting })
   state = stateFor(setting)
   if (!inst) inst = startI18n(state.language, PSEUDO)
-  else void inst.changeLanguage(state.language)
+  bring(inst, state.language)
   for (const w of BrowserWindow.getAllWindows())
     if (!w.isDestroyed()) w.webContents.send(IPC.app.languageChanged, state)
-  listeners.forEach((f) => f())
   return state
 }
 

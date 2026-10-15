@@ -142,3 +142,24 @@ test('the library’s badge: legacy bits, told against the pipeline here', () =>
   assert.equal(olderDevelop(legacyBits(jpeg, false), false, { ...NONE, pixlEnhance: true }), true)
   assert.equal(olderDevelop(legacyBits(jpeg, false), false, { ...NONE, pixlDemosaic: true }), false)
 })
+
+test('steps made on a 0.20 Bayer PIXL master are from an older develop; X-Trans ones are not', () => {
+  // Engine 0.21.0 (E64): a Bayer master's red and blue are told the greens'
+  // noise line, so it is developed again, and what was laid on it shows.
+  const bayer = pixlMark('s', true, 'Bayer')
+  const xtrans = pixlMark('s', true, 'XTrans')
+  assert.equal(bayer, 's+pdg')
+  assert.equal(xtrans, 's+pd')
+  const r = defaultRecipe(true)
+  r.pixels = [
+    step('h', 'retouch', { develop: 's+pd' }),
+    enhanceStep('e', { pixl: 'denoise' }, 's+pd')
+  ]
+  assert.deepEqual(rebuildReasons(r, true, ALL, bayer), ['staleSteps'])
+  assert.deepEqual(rebuildReasons(r, true, ALL, xtrans), [])
+  // Either generation is the PIXL demosaic's to the library's list.
+  r.pixels = [step('h', 'retouch', { develop: 's+pdg' })]
+  assert.equal(legacyBits(r, true) & LEGACY.notPixl, 0)
+  r.pixels = [step('h', 'retouch', { develop: 's+pd' })]
+  assert.equal(legacyBits(r, true) & LEGACY.notPixl, 0)
+})

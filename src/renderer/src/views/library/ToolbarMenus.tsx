@@ -1,5 +1,12 @@
 import { useMemo, useRef, useState } from 'react'
-import { clearedFilters, extraFilterCount, type FlagFilter } from '../../../../shared/filter'
+import {
+  clearedFilters,
+  extraFilterCount,
+  moreFilters,
+  type FlagFilter
+} from '../../../../shared/filter'
+import { GlassSelect } from '../../components/GlassSelect'
+import { Segmented, Slider } from '../../components/ui'
 import type { ColorLabel } from '../../../../shared/ipc'
 import { keywordLabel, keywordPaths } from '../../../../shared/keywords'
 import { cameraName } from '../../../../shared/smart'
@@ -10,6 +17,7 @@ import { useUi } from '../../state/ui'
 import { LABEL_COLOURS } from '../../lib/helpers'
 import { useLibrary, useTargets } from '../../state/library'
 import { keyHint } from '../../lib/commands'
+import { FLAGS, labelName } from './filterNames'
 import { t, tk, tp } from '../../lib/i18n'
 
 const stop = (e: React.KeyboardEvent): void => e.stopPropagation()
@@ -70,47 +78,30 @@ function Range({
   )
 }
 
-const FLAGS: [FlagFilter, string][] = [
-  ['notRejected', tk('Hide rejected')],
-  ['all', tk('All photos')],
-  ['pick', tk('Picks')],
-  ['unflagged', tk('Unflagged')],
-  ['reject', tk('Rejected only')]
-]
-
-const LABEL_NAME: Record<string, string> = {
-  red: tk('Red'),
-  yellow: tk('Yellow'),
-  green: tk('Green'),
-  blue: tk('Blue'),
-  purple: tk('Purple')
-}
-
-const cap = (s: string): string => s[0].toUpperCase() + s.slice(1)
-const labelName = (l: string): string => (LABEL_NAME[l] ? t(LABEL_NAME[l]) : cap(l))
-
 /**
  * Every filter but the search: rating, flag, colour label and edits first
  * (the quick ones), then camera, lens, file kind, ISO and focal ranges,
  * capture dates and a keyword. The button counts those narrowing the view.
  */
-export function FilterButton(): React.JSX.Element {
+export function FilterButton({ more }: { more?: boolean }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const filter = useLibrary((s) => s.filter)
-  const n = extraFilterCount(filter)
+  // In the filter bar, "More…" counts only what the bar does not show.
+  const n = more ? moreFilters(filter).length : extraFilterCount(filter)
+  const label = more ? t('More…') : t('Filters')
   return (
     <span className="menu-anchor">
       <button
-        className={`lg${n ? ' on' : ''}`}
+        className={`${more ? 'sm ghost' : 'lg'}${n ? ' on' : ''}`}
         title={t(
           'Filter by rating, flag, label, edits, camera, lens, kind, ISO, focal length, date or keyword'
         )}
-        aria-label={n ? tp('Filters, {{count}} on', 'Filters, {{count}} on', n) : t('Filters')}
+        aria-label={n ? tp('Filters, {{count}} on', 'Filters, {{count}} on', n) : label}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         <Icon name="filter" />
-        {t('Filters')}
+        {label}
         {n > 0 && <span className="filter-count t-num">{n}</span>}
       </button>
       {open && <FilterForm onClose={() => setOpen(false)} />}
@@ -133,44 +124,43 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
     <Popover onClose={onClose} className="filter-pop">
       <div className="field">
         <span>{t('Rating')}</span>
-        <div className="seg rating-seg" role="group" aria-label={t('Minimum rating')}>
-          {[0, 1, 2, 3, 4, 5].map((r) => (
-            <button
-              key={r}
-              className={filter.minRating === r ? 'on' : ''}
-              aria-pressed={filter.minRating === r}
-              title={
-                r === 0
-                  ? t('Any rating')
-                  : tp('{{count}} star or more', '{{count}} stars or more', r)
-              }
-              onClick={() => setFilter({ minRating: r })}
-            >
-              {r === 0 ? (
+        <Segmented
+          className="rating-seg"
+          label={t('Minimum rating')}
+          value={filter.minRating}
+          onChange={(minRating) => setFilter({ minRating })}
+          options={[0, 1, 2, 3, 4, 5].map((r) => ({
+            value: r,
+            title:
+              r === 0
+                ? t('Any rating')
+                : tp('{{count}} star or more', '{{count}} stars or more', r),
+            ariaLabel:
+              r === 0
+                ? t('Any rating')
+                : tp('{{count}} star or more', '{{count}} stars or more', r),
+            label:
+              r === 0 ? (
                 t('Any')
               ) : (
                 <>
                   {r}
-                  <span className="seg-star">★</span>
+                  <span className="seg-star" aria-hidden>
+                    ★
+                  </span>
                 </>
-              )}
-            </button>
-          ))}
-        </div>
+              )
+          }))}
+        />
       </div>
       <div className="field">
         <span>{t('Flag')}</span>
-        <select
+        <GlassSelect<FlagFilter>
           value={filter.flag}
-          onChange={(e) => setFilter({ flag: e.target.value as FlagFilter })}
-          aria-label={t('Flag')}
-        >
-          {FLAGS.map(([v, label]) => (
-            <option key={v} value={v}>
-              {t(label)}
-            </option>
-          ))}
-        </select>
+          onChange={(flag) => setFilter({ flag })}
+          label={t('Flag')}
+          options={FLAGS.map(([v, label]) => ({ value: v, label: t(label) }))}
+        />
       </div>
       {cullSuggest && (
         <label
@@ -216,67 +206,58 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
       </div>
       <div className="field">
         <span>{t('Edits')}</span>
-        <div className="seg" role="group" aria-label={t('Edited')}>
-          {(
+        <Segmented
+          label={t('Edited')}
+          value={filter.edited}
+          onChange={(edited) => setFilter({ edited })}
+          options={(
             [
               ['all', tk('Any')],
               ['edited', tk('Edited')],
               ['unedited', tk('Unedited')]
             ] as const
-          ).map(([v, label]) => (
-            <button
-              key={v}
-              className={filter.edited === v ? 'on' : ''}
-              aria-pressed={filter.edited === v}
-              onClick={() => setFilter({ edited: v })}
-            >
-              {t(label)}
-            </button>
-          ))}
-        </div>
+          ).map(([v, label]) => ({ value: v, label: t(label) }))}
+        />
       </div>
       <div className="pop-rule" />
       <div className="field">
         <span>{t('Camera')}</span>
-        <select value={filter.camera} onChange={(e) => setFilter({ camera: e.target.value })}>
-          <option value="">{t('Any camera')}</option>
-          {withCurrent(cameras, filter.camera).map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+        <GlassSelect
+          value={filter.camera}
+          onChange={(camera) => setFilter({ camera })}
+          label={t('Camera')}
+          options={[
+            { value: '', label: t('Any camera') },
+            ...withCurrent(cameras, filter.camera).map((c) => ({ value: c, label: c }))
+          ]}
+        />
       </div>
       <div className="field">
         <span>{t('Lens')}</span>
-        <select value={filter.lens} onChange={(e) => setFilter({ lens: e.target.value })}>
-          <option value="">{t('Any lens')}</option>
-          {withCurrent(lenses, filter.lens).map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+        <GlassSelect
+          value={filter.lens}
+          onChange={(lens) => setFilter({ lens })}
+          label={t('Lens')}
+          options={[
+            { value: '', label: t('Any lens') },
+            ...withCurrent(lenses, filter.lens).map((c) => ({ value: c, label: c }))
+          ]}
+        />
       </div>
       <div className="field">
         <span>{t('Kind')}</span>
-        <div className="seg">
-          {(
+        <Segmented
+          label={t('Kind')}
+          value={filter.kind}
+          onChange={(kind) => setFilter({ kind })}
+          options={(
             [
               ['all', tk('All')],
               ['raw', 'RAW'],
               ['nonraw', tk('Not RAW')]
             ] as const
-          ).map(([v, label]) => (
-            <button
-              key={v}
-              className={filter.kind === v ? 'on' : ''}
-              onClick={() => setFilter({ kind: v })}
-            >
-              {t(label)}
-            </button>
-          ))}
-        </div>
+          ).map(([v, label]) => ({ value: v, label: t(label) }))}
+        />
       </div>
       <Range label="ISO" value={filter.iso} onChange={(iso) => setFilter({ iso })} />
       <Range
@@ -307,14 +288,18 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
       </div>
       <div className="field">
         <span>{t('Keyword')}</span>
-        <select value={filter.keyword} onChange={(e) => setFilter({ keyword: e.target.value })}>
-          <option value="">{t('Any keyword')}</option>
-          {withCurrent(keywords, filter.keyword).map((k) => (
-            <option key={k} value={k}>
-              {keywordLabel(k)}
-            </option>
-          ))}
-        </select>
+        <GlassSelect
+          value={filter.keyword}
+          onChange={(keyword) => setFilter({ keyword })}
+          label={t('Keyword')}
+          options={[
+            { value: '', label: t('Any keyword') },
+            ...withCurrent(keywords, filter.keyword).map((k) => ({
+              value: k,
+              label: keywordLabel(k)
+            }))
+          ]}
+        />
       </div>
       <div className="row between pop-foot">
         <span className="muted small">{t('Search also finds titles, captions and keywords.')}</span>
@@ -476,51 +461,44 @@ export function DuplicateControls(): React.JSX.Element | null {
     void openSource({ ...shown, ...patch })
   return (
     <>
-      <label
-        className="bar-range dup-range"
-        title={t(
-          'How different two pictures may be and still count as similar (0: only identical pictures)'
-        )}
-      >
-        <span className="micro">{t('Similar')}</span>
-        <span className="bar-track">
-          <span className="bar-fill" style={{ width: `${(level / 16) * 100}%` }} />
-          <input
-            type="range"
-            min={0}
-            max={16}
-            value={level}
-            aria-label={t('Similarity threshold')}
-            onChange={(e) => {
-              const v = Number(e.target.value)
-              setThreshold(v)
-              if (timer.current) clearTimeout(timer.current)
-              timer.current = setTimeout(() => {
-                setThreshold(null)
-                reopen({ threshold: v })
-              }, 350)
-            }}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
-        </span>
-        <span className="bar-value t-num">{level}</span>
-      </label>
-      <div className="seg" role="group" aria-label={t('Where to look')}>
-        <button
-          className={shown.folder !== null ? 'on' : ''}
-          disabled={!lastFolder}
-          title={lastFolder ?? t('Open a folder first')}
-          onClick={() => reopen({ folder: lastFolder })}
-        >
-          {t('This folder')}
-        </button>
-        <button
-          className={shown.folder === null ? 'on' : ''}
-          onClick={() => reopen({ folder: null })}
-        >
-          {t('Whole library')}
-        </button>
-      </div>
+      <span className="bar-range dup-range">
+        <Slider
+          label={t('Similar')}
+          title={t(
+            'How different two pictures may be and still count as similar (0: only identical pictures)'
+          )}
+          value={level}
+          min={0}
+          max={16}
+          def={6}
+          format={(v) => String(Math.round(v))}
+          onChange={(raw) => {
+            const v = Math.round(raw)
+            setThreshold(v)
+            if (timer.current) clearTimeout(timer.current)
+            timer.current = setTimeout(() => {
+              setThreshold(null)
+              reopen({ threshold: v })
+            }, 350)
+          }}
+          onCommit={() => undefined}
+          adjusts={false}
+        />
+      </span>
+      <Segmented
+        label={t('Where to look')}
+        value={shown.folder !== null ? 'folder' : 'library'}
+        onChange={(where) => reopen({ folder: where === 'folder' ? lastFolder : null })}
+        options={[
+          {
+            value: 'folder',
+            label: t('This folder'),
+            disabled: !lastFolder,
+            title: lastFolder ?? t('Open a folder first')
+          },
+          { value: 'library', label: t('Whole library') }
+        ]}
+      />
     </>
   )
 }

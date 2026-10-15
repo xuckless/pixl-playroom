@@ -20,6 +20,7 @@ import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { t, tk, tp } from '../lib/i18n'
+import { Icon } from '../components/icons'
 
 type Num = (l: LensSetting) => number
 
@@ -53,14 +54,15 @@ function LS({
   title?: string
   format?: (v: number) => string
 }): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
+  // Its own number only: a tick of another slider does not re-render this one.
+  const value = useDevelop((s) => (s.recipe ? read(s.recipe.lens) : null))
   const edit = useDevelop((s) => s.edit)
   const commit = useDevelop((s) => s.commit)
-  if (!recipe) return null
+  if (value === null) return null
   return (
     <Slider
       label={label}
-      value={read(recipe.lens)}
+      value={value}
       min={min}
       max={max}
       def={def}
@@ -86,7 +88,14 @@ const shortVersion = (v: string | null): string => (v ? v.slice(0, 8) : '—')
  */
 function LensProfileSection(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
-  const recipe = useDevelop((s) => s.recipe)
+  // The lens alone, and whether anything is drawn on the picture: the
+  // section rides out the other sliders' ticks.
+  const lens = useDevelop((s) => s.recipe?.lens)
+  const drawnOn = useDevelop(
+    (s) =>
+      !!s.recipe &&
+      (s.recipe.layers.length > 0 || s.recipe.retouch.length > 0 || s.recipe.geometry.crop !== null)
+  )
   const edit = useDevelop((s) => s.edit)
   const commit = useDevelop((s) => s.commit)
   const say = useLibrary((s) => s.say)
@@ -99,7 +108,7 @@ function LensProfileSection(): React.JSX.Element | null {
   const [hits, setHits] = useState<LensSearchHit[]>([])
   const [checking, setChecking] = useState(false)
   const key = session?.key ?? null
-  const id = recipe?.lens.profile.id ?? null
+  const id = lens?.profile.id ?? null
 
   useEffect(() => {
     void api.lens.status().then(setStatus, () => undefined)
@@ -148,8 +157,8 @@ function LensProfileSection(): React.JSX.Element | null {
     return () => clearTimeout(timer)
   }, [picking, query])
 
-  if (!session || !recipe || !key) return null
-  const l = recipe.lens
+  if (!session || !lens || !key) return null
+  const l = lens
   const shot = session.info.lens
   const resolved = l.profile.enabled ? l.profile.resolved : null
 
@@ -358,7 +367,7 @@ function LensProfileSection(): React.JSX.Element | null {
                     commit(on ? tk('Lens: defish') : tk('Lens: keep the fisheye'))
                   }}
                   title={t(
-                    "Make this fisheye's picture rectilinear: straight lines straight (its projection, from the profile)"
+                    'Make this fisheye’s picture rectilinear: straight lines straight (its projection, from the profile)'
                   )}
                 >
                   {t('Defish')}
@@ -374,21 +383,18 @@ function LensProfileSection(): React.JSX.Element | null {
                   max={100}
                   def={100}
                   title={t(
-                    "How much of the defished picture shows: lower brings more of the fisheye's edge into view"
+                    'How much of the defished picture shows: lower brings more of the fisheye’s edge into view'
                   )}
                   format={(v) => `${Math.round(v)}%`}
                 />
               )}
-              {l.profile.defish &&
-                (recipe.layers.length > 0 ||
-                  recipe.retouch.length > 0 ||
-                  recipe.geometry.crop !== null) && (
-                  <p className="note small">
-                    {t(
-                      'Defishing moves everything in the picture: masks, spots and the crop stay where they were drawn on the fisheye.'
-                    )}
-                  </p>
-                )}
+              {l.profile.defish && drawnOn && (
+                <p className="note small">
+                  {t(
+                    'Defishing moves everything in the picture: masks, spots and the crop stay where they were drawn on the fisheye.'
+                  )}
+                </p>
+              )}
             </>
           )}
         </>
@@ -399,7 +405,7 @@ function LensProfileSection(): React.JSX.Element | null {
 
 export function LensPanel(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
-  const recipe = useDevelop((s) => s.recipe)
+  const lens = useDevelop((s) => s.recipe?.lens)
   const edit = useDevelop((s) => s.edit)
   const commit = useDevelop((s) => s.commit)
   const tool = useDevelop((s) => s.tool)
@@ -408,8 +414,8 @@ export function LensPanel(): React.JSX.Element | null {
   const [measured, setMeasured] = useState<CaMeasurement | null>(null)
   const [measuring, setMeasuring] = useState(false)
 
-  if (!session || !recipe) return null
-  const l = recipe.lens
+  if (!session || !lens) return null
+  const l = lens
   const measureCa = async (): Promise<void> => {
     setMeasuring(true)
     try {
@@ -532,7 +538,8 @@ export function LensPanel(): React.JSX.Element | null {
             onChange={(on) => setTool(on ? 'fringe-pick' : 'none')}
             title={t('Click a purple or green fringe to aim at its hue')}
           >
-            ⌖ {t('Pick')}
+            <Icon name="picker" />
+            {t('Pick')}
           </Toggle>
         }
       >

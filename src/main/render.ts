@@ -20,8 +20,9 @@ import { pipeline } from './pipeline'
 import { rebuildReasons } from '../shared/rebuild'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { mkdir, readdir, rm, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises'
+import { join, sep } from 'path'
+import { createHash } from 'crypto'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
 import {
   compile,
@@ -29,7 +30,11 @@ import {
   framingTransparent,
   framingWarps,
   gradeKey,
+  maskProbe,
   orientedFrame,
+  probeInspect,
+  probeLayer,
+  sourceFrameOf,
   type Compiled
 } from '../shared/compile'
 import { lensCorrection, MANUAL_GEOMETRY } from '../shared/lens'
@@ -43,11 +48,18 @@ import {
   type SpotRefine
 } from '../shared/retouch'
 import { activeSteps, stackSignature, type PixelStep } from '../shared/pixels'
-import { effective } from '../shared/edits'
-import { pixlSupported, resolveRawColour } from '../shared/rawcolour'
+import { effective, renderedLens } from '../shared/edits'
+import {
+  dcpOf,
+  exposureOffsetOf,
+  pixlSupported,
+  profileLabel,
+  resolveRawColour,
+  type RawColour
+} from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
-import { askOf, scenePlan, type ScenePlan } from './ai/rawdevelop'
+import { askOf, scenePlan, withScene, type ScenePlan } from './ai/rawdevelop'
 import { takeDevelopedNote } from './devkit'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking, frameOf, layStepsOn, workingKey, type WorkingSet } from './pixels/working'
@@ -65,14 +77,19 @@ import type {
   Retouch,
   Transform,
   ImageStats,
+  Inspect,
+  InspectPlane,
+  MaskProbe,
   Measure,
   NativeRefs,
   NoiseEstimate,
+  ScopeReport,
   SourceInfo
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import { CEILING_MAX, CEILING_MIN } from '../shared/export'
-import { DETECTED_PEAK, REFERENCE_WHITE } from '../shared/hdrdisplay'
+import { DETECTED_PEAK, floatSettled, REFERENCE_WHITE } from '../shared/hdrdisplay'
+import { displayDepth } from './hdrdisplay'
 import {
   IPC,
   type BasicSetting,
@@ -81,13 +98,37 @@ import {
   type LookThumbEvent,
   type MasterEvent,
   type PixlDemosaicState,
+  type ProofCheck,
+  type ProofIssue,
+  type ProofShown,
   type RegionRequest,
   type RegionResult,
   type RenderEvent,
   type RenderReport,
   type SampleResult,
+  type ScopesRequest,
   type ViewState
 } from '../shared/ipc'
+import { engineBins, engineScopeSpec, type ScopeBins } from '../shared/scopes'
+import { gamutCoverage, type GamutCoverage } from '../shared/scopemetrics'
+import { softProofTarget } from '../shared/gamutwarning'
+import {
+  checkRequests,
+  COVERAGE_SIZE,
+  coverageRequest,
+  gamutOnFile,
+  gamutWarningRequest,
+  paperPng,
+  probePng,
+  proofSteps,
+  resolveProof,
+  toFile,
+  toneMapped,
+  type GamutTarget,
+  type ProofPlan,
+  type ProofTarget
+} from './proofing'
+import { isBuiltin, proofKey, type ProofSettings } from '../shared/proof'
 import { beforeRecipe, hash32, normaliseRecipe, sameValue, type Recipe } from '../shared/recipe'
 import { LookThumbQueue, type LookThumb, type ThumbJob } from './lookthumbs'
 import type { Vec3 } from '../shared/wb'
@@ -99,12 +140,25 @@ import {
   measureAutoWb,
   rendersDir
 } from './autowb'
-import { brushPlanes } from './brushes'
+import { brushPlanes, forgetPlanes } from './brushes'
+import { lutsFor } from './lutfile'
+import { cacheFile } from './contain'
+import { maskFramesFor, maskGrid, planeOnFrame, rebaseMasks } from './maskframe'
+import {
+  lensFrameOf,
+  spotFramesKey,
+  spotsOn,
+  type LensFrame,
+  type LensGrid,
+  type MaskFrames
+} from '../shared/lensframe'
 import { paths } from './paths'
 import { sweepPhoto } from './sweep'
 import type { PhotoRow } from './db'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import { GpuDrag, HeldSlot, type FrameRef } from './gpudrag'
+import { MaskPlanes, planeRefused } from './maskplanes'
+import { swapsAxes } from '../shared/orientation'
 import {
   dragRegion,
   dragVerdict,
@@ -114,11 +168,12 @@ import {
   gradeShape,
   heldKey,
   inputKey,
-  measuresPhoto
+  measuresPhoto,
+  refineKey
 } from '../shared/gpudrag'
 import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
-import { CICP_DISPLAY_P3, encodePng8, pngToFloats } from './pngio'
+import { CICP_DISPLAY_P3, decodePng, encodeGreyPng, encodePng8, grey8, pngToFloats } from './pngio'
 import { pixels } from './workers/pool'
 import { traceRegion } from './trace'
 import { cacheUrl } from './protocol'
@@ -132,6 +187,7 @@ import {
   ensureProxies,
   ensureQuickMaster,
   masterCached,
+  masterStoodIn,
   pruneLensed,
   type Proxies,
   type ProxyFile
@@ -149,6 +205,7 @@ import {
   colourOf,
   isLinearRaw,
   rawDevelop,
+  rawMaster,
   RAW_DEVELOP,
   sourceOrientation,
   seedOf,
@@ -345,15 +402,51 @@ function companionOf(c: Companion): { width: number; height: number; data: Uint8
 }
 
 /**
+ * The mask a qualifier's key is shown inside: its layer's, for a mask's own
+ * qualifier (E77's `QualifierKey` is the key alone); null for the photo's.
+ */
+function keyWithin(compiled: Compiled, probe: MaskProbe): Inspect | null {
+  if (!('QualifierKey' in probe)) return null
+  const layer = probe.QualifierKey.layer
+  return compiled.grade?.layers[layer]?.mask ? { LayerMask: { layer } } : null
+}
+
+/**
  * A convert's rejection, an `Invariant` named against the compiled request it
  * came from (engine 0.18, HR-0.18-9): the window marks that adjustment, the
  * edit stays, and nothing renders again without it.
  */
-function named(compiled: Pick<Compiled, 'grade' | 'layerIndex'>): (err: unknown) => never {
+function named(
+  compiled: Pick<Compiled, 'grade' | 'layerIndex' | 'qualifierIndex'>
+): (err: unknown) => never {
   return (err) => {
-    if (err instanceof EngineError) err.nameInvariant(compiled.grade, null, compiled.layerIndex)
+    if (err instanceof EngineError)
+      err.nameInvariant(compiled.grade, null, compiled.layerIndex, compiled.qualifierIndex)
     throw err
   }
+}
+
+/** What a picture says the proof it shows is. */
+function shownProof(p: Extract<ProofTarget, { ok: true }>): ProofShown {
+  return { key: p.key, name: p.name, ...(p.warnOnly ? { warnOnly: true } : {}) }
+}
+
+/** What a picture says of its proof: the proof shown (or a CMYK one warned against), or why none is. */
+function proofFields(
+  proof: ProofTarget | null,
+  made: boolean,
+  issue: ProofIssue | undefined
+): Pick<RenderEvent, 'proof' | 'proofIssue'> {
+  return {
+    proof: proof?.ok && (made || proof.warnOnly) ? shownProof(proof) : undefined,
+    proofIssue: issue
+  }
+}
+
+/** The engine (Little CMS) refused the proof's profile: building its transform, or the profile itself. */
+function proofRefused(err: unknown): boolean {
+  if (!(err instanceof EngineError) || err.cancelled) return false
+  return err.code === 'Color' || /^color/.test(err.field ?? '')
 }
 
 /**
@@ -375,6 +468,9 @@ function measureOf(stride: number): Measure {
     noise: false
   }
 }
+
+/** A 1:1 tile's held refine planes were refused: the tile is made again without them. */
+class HeldRefused extends Error {}
 
 /** The measurement a `measure` asked for; the engine returns it whenever one was. */
 function statsOf(r: ConvertReport): ImageStats {
@@ -434,6 +530,12 @@ class Session {
   private abort: AbortController | null = null
   /** The 1:1 region being rendered: a newer one stops it. */
   private regionAbort: AbortController | null = null
+  /**
+   * What this photo's view waits on its RAW develop with (on open and at
+   * 1:1): aborted when the photo is left, so a develop nobody else waits
+   * for stops (engine 0.21.0, E6). A pan never stops it.
+   */
+  private readonly developAbort = new AbortController()
   private pending: Kind | null = null
   /** The render running now, or the last one. */
   private current: Promise<void> = Promise.resolve()
@@ -515,6 +617,7 @@ class Session {
   ) {
     this.dir = rendersDir(row.id)
     this.heldSlot = new HeldSlot(owner.engine, `${key}#held`)
+    this.refineSlot = new HeldSlot(owner.engine, `${key}#refine`)
     this.opened = recipe
     void this.clearEarlier()
   }
@@ -534,7 +637,10 @@ class Session {
   /** An earlier session's picture files: nothing names them now. */
   private async clearEarlier(): Promise<void> {
     for (const name of await readdir(this.dir).catch(() => [] as string[])) {
-      if (/^(view|mask|headroom|look)-/.test(name) && !name.includes(`-${this.tag}-`))
+      if (
+        /^(view|mask|headroom|gamut|look|proofmid|unproofed)-/.test(name) &&
+        !name.includes(`-${this.tag}-`)
+      )
         await rm(join(this.dir, name), { force: true }).catch(() => undefined)
     }
   }
@@ -564,15 +670,24 @@ class Session {
     // The working pixels' frame: the photo's, or an upscale step's.
     const px = baked ? this.lensed!.px : this.basePx()
     const { user } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
+    // Masks drawn under another lens than the one rendered; a draft takes the
+    // maps only once they are made (see `maskFramesFor`).
+    const maskFrames = await this.maskFrames(recipe, smoothing)
     const compiled = compile(recipe, {
       isRaw: this.isRaw,
       asShot: this.info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(this.row)),
       sourceOrientation: 'Normal',
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,
       scale: source.width / px.frameWidth,
       seed: seedOf(this.row),
-      brushPaths: await brushPlanes(this.row.id, recipe, user),
+      brushPaths: await brushPlanes(this.row.id, recipe, user, {
+        isRaw: this.isRaw,
+        frames: maskFrames
+      }),
+      maskFrames,
+      luts: await lutsFor(recipe, paths.luts()),
       applyCrop,
       // HDR only where the request's pipeline has room above white (Preserve
       // with the HDR working space: masks, the headroom plane, HDR stats). A
@@ -588,6 +703,49 @@ class Session {
       gpuDrag: drag === 'gpu'
     })
     return baked ? { ...compiled, lens: null, retouch: null } : compiled
+  }
+
+  /**
+   * What carries a recipe's masks to the lens it renders with
+   * (main/maskframe.ts); null when they are on it, or when the maps could
+   * not be made (the masks then show where they were drawn, as before).
+   */
+  async maskFrames(recipe: Recipe, wait = true): Promise<MaskFrames | null> {
+    const base = this.basePx()
+    return maskFramesFor(
+      this.frameDeps(),
+      recipe,
+      this.isRaw,
+      base.frameWidth,
+      base.frameHeight,
+      wait
+    ).catch((err) => {
+      log.warn('masks on another lens: not mapped', err)
+      return null
+    })
+  }
+
+  /** What the masks' lens maps are made with: the background engine, the photo's cache. */
+  private frameDeps(): ReturnType<typeof pixelDeps> {
+    return pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row)
+  }
+
+  /** A recipe with its masks rewritten onto its own lens (a lens edit settling). */
+  rebaseMasks(recipe: Recipe): Promise<Recipe> {
+    const base = this.basePx()
+    return rebaseMasks(this.frameDeps(), recipe, base.frameWidth, base.frameHeight)
+  }
+
+  /** The loupe's grid between the masks' lens frame and the one rendered. */
+  maskGrid(masks: LensFrame, rendered: LensFrame): Promise<LensGrid | null> {
+    const base = this.basePx()
+    return maskGrid(this.frameDeps(), masks, rendered, base.frameWidth, base.frameHeight)
+  }
+
+  /** A plane drawn on one lens frame, re-warped onto another (painted into again). */
+  planeOnFrame(png: string, from: LensFrame, to: LensFrame): Promise<string> {
+    const base = this.basePx()
+    return planeOnFrame(this.frameDeps(), png, from, to, base.frameWidth, base.frameHeight)
   }
 
   /** Whether a source is one of the prepared set's (lens and spots baked in). */
@@ -646,13 +804,13 @@ class Session {
         await new Promise((r) => setTimeout(r, DEVELOP_ON_OPEN_MS))
         if (this.closed || this.developedTag || !(await this.pixlPlan())) return
         this.setPixl('developing')
-        await ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+        await ensureMaster(this.owner.bgEngine, this.row, this.file, ask, this.developAbort.signal)
       }
       // The engine refused the model: the released develop stood in, and is planned from now on.
       if (!(await this.pixlPlan())) return this.setPixl('refused')
       await this.adoptDeveloped()
     } catch (err) {
-      if (this.closed) return
+      if (this.closed || isCancelled(err)) return
       this.setPixl('refused')
       this.masterRefused(err)
     }
@@ -867,7 +1025,11 @@ class Session {
    * What the prepared proxies hold for a recipe: its lens correction and
    * its spots, placed on the base frame (the proxy's own).
    */
-  private prepared(recipe: Recipe): {
+  private prepared(
+    recipe: Recipe,
+    /** Spots drawn under another lens than the one rendered: what carries them to it (`maskFrames`). */
+    frames: MaskFrames | null = null
+  ): {
     lens: LensCorrection | null
     retouch: Retouch | null
     /** The proxies they are prepared from: the plain ones or the working pixels (steps laid on). */
@@ -879,7 +1041,7 @@ class Session {
       base: this.basePx().proxy.path,
       lens: lensCorrection(shown.lens),
       retouch: compileRetouch(
-        shown.retouch,
+        spotsOn(shown, frames),
         'Normal',
         this.basePx().frameWidth,
         this.basePx().frameHeight
@@ -889,20 +1051,45 @@ class Session {
 
   /** What names the prepared proxies a recipe needs: '' for none (the plain proxies serve). */
   /** The last `lensKey` asked for, by what it is made from (asked several times per update). */
-  private lensKeyMemo: { lens: unknown; retouch: unknown; base: Proxies; key: string } | null = null
+  private lensKeyMemo: {
+    lens: unknown
+    retouch: unknown
+    masks: unknown
+    off: unknown
+    base: Proxies
+    key: string
+  } | null = null
 
   private lensKey(recipe: Recipe): string {
     const base = this.basePx()
     const m = this.lensKeyMemo
-    if (m && m.lens === recipe.lens && m.retouch === recipe.retouch && m.base === base) return m.key
+    if (
+      m &&
+      m.lens === recipe.lens &&
+      m.retouch === recipe.retouch &&
+      m.masks === recipe.masks &&
+      m.off === recipe.off &&
+      m.base === base
+    )
+      return m.key
     const key = this.lensKeyOf(recipe)
-    this.lensKeyMemo = { lens: recipe.lens, retouch: recipe.retouch, base, key }
+    this.lensKeyMemo = {
+      lens: recipe.lens,
+      retouch: recipe.retouch,
+      masks: recipe.masks,
+      off: recipe.off,
+      base,
+      key
+    }
     return key
   }
 
   private lensKeyOf(recipe: Recipe): string {
     const p = this.prepared(recipe)
-    return p.lens || p.retouch ? hash32(JSON.stringify(p)).toString(16) : ''
+    if (!p.lens && !p.retouch) return ''
+    // Spots drawn under another lens are baked carried over (see `bake`).
+    const carried = spotFramesKey(effective(recipe, this.isRaw), lensFrameOf(p.lens))
+    return hash32(JSON.stringify(carried ? [p, carried] : p)).toString(16)
   }
 
   /**
@@ -933,38 +1120,45 @@ class Session {
   private bake(): void {
     const key = this.lensKey(this.recipe)
     if (!key || this.lensed?.key === key || this.baking === key || this.bakeFailed === key) return
-    const { lens, retouch } = this.prepared(this.recipe)
+    const recipe = this.recipe
     const base = this.basePx()
     this.baking = key
-    ensureLensedProxies(
-      this.owner.bgEngine,
-      this.row,
-      base,
-      lens,
-      retouch,
-      key,
-      this.hdrWorking
-    ).then(
-      (px) => {
-        if (this.baking === key) this.baking = null
-        if (this.closed) return
-        if (this.lensKey(this.recipe) === key) {
-          const before = this.lensed?.key
-          this.lensed = { key, px }
-          this.schedule('full')
-          // The sets before the last go now, not only when the photo closes
-          // (each is two proxies: a session of lens edits made gigabytes).
-          void pruneLensed(this.row, this.key, key, before)
-        } else this.bake()
-      },
-      (err) => {
-        if (this.baking === key) this.baking = null
-        log.warn('lens proxies failed; correcting live', (err as Error).message)
-        this.bakeFailed = key
-        // The settled render, mask, before and headroom waited for the bake: they run now.
-        if (!this.closed && this.lensKey(this.recipe) === key) this.schedule('full')
-      }
-    )
+    // Spots drawn under another lens than the one rendered are baked where
+    // their content now is: renders from the set leave the spots out.
+    this.maskFrames(recipe)
+      .then((frames) => {
+        const { lens, retouch } = this.prepared(recipe, frames)
+        return ensureLensedProxies(
+          this.owner.bgEngine,
+          this.row,
+          base,
+          lens,
+          retouch,
+          key,
+          this.hdrWorking
+        )
+      })
+      .then(
+        (px) => {
+          if (this.baking === key) this.baking = null
+          if (this.closed) return
+          if (this.lensKey(this.recipe) === key) {
+            const before = this.lensed?.key
+            this.lensed = { key, px }
+            this.schedule('full')
+            // The sets before the last go now, not only when the photo closes
+            // (each is two proxies: a session of lens edits made gigabytes).
+            void pruneLensed(this.row, this.key, key, before)
+          } else this.bake()
+        },
+        (err) => {
+          if (this.baking === key) this.baking = null
+          log.warn('lens proxies failed; correcting live', (err as Error).message)
+          this.bakeFailed = key
+          // The settled render, mask, before and headroom waited for the bake: they run now.
+          if (!this.closed && this.lensKey(this.recipe) === key) this.schedule('full')
+        }
+      )
   }
 
   update(next: Recipe, interactive: boolean, rev?: number): void {
@@ -1117,6 +1311,7 @@ class Session {
     const abort = new AbortController()
     this.abort = abort
     const { signal } = abort
+    this.besideSent = null
     try {
       // A settled edit bakes its lens correction in the background.
       if (kind === 'full') this.bake()
@@ -1132,6 +1327,7 @@ class Session {
         kind === 'draft' &&
         this.view.maskLive &&
         this.view.maskLayer &&
+        this.besideSent !== this.view.maskLayer &&
         !this.closed &&
         !this.previewing
       )
@@ -1153,9 +1349,14 @@ class Session {
             log.warn(`${what} render failed`, e.code, e.message)
           }
         }
-        if (this.view.maskLayer) await beside('mask', () => this.renderMask('full', signal))
+        // The picture carried the mask's plane (E38), or it is drawn on its own.
+        if (this.view.maskLayer && this.besideSent !== this.view.maskLayer)
+          await beside('mask', () => this.renderMask('full', signal))
         if (this.view.before) await beside('before', () => this.renderBefore(signal))
         if (this.view.headroom) await beside('headroom', () => this.renderHeadroom(signal))
+        if (this.view.gamut) await beside('gamut', () => this.renderGamut(signal))
+        if (this.view.proof && this.view.proofScreen)
+          await beside('unproofed', () => this.renderUnproofed(signal))
         if (this.view.maskThumbs) await beside('mask thumbs', () => this.renderMaskThumbs(signal))
       }
     } catch (err) {
@@ -1203,13 +1404,15 @@ class Session {
   /** A level that could not be made (or has no full-size frame yet): not asked again. */
   private screenFailed: string | null = null
 
-  /**
-   * Whether a settled SDR picture (or a 1:1 tile) goes as an F16 frame: the
-   * window draws float frames (`ViewState.float`), and the photo has no light
-   * above white to tone map (that keeps its 8-bit path).
-   */
+  /** Whether a settled SDR picture (or a 1:1 tile) goes as an F16 frame (`floatSettled`). */
   private floatSdr(kind: Kind, display: unknown): boolean {
-    return kind === 'full' && !display && this.view.float === true && !this.info.is_hdr
+    return floatSettled({
+      settled: kind === 'full',
+      display,
+      float: this.view.float === true,
+      isHdr: this.info.is_hdr,
+      depth: displayDepth()
+    })
   }
 
   /** The edge the loupe wants past the proxy's, or null when the proxy serves. */
@@ -1307,7 +1510,7 @@ class Session {
     }
     // The lensed set's correction, baked as on its proxies; a live one is the render's.
     if (key.endsWith(':live') === false) {
-      const { lens, retouch } = this.prepared(this.recipe)
+      const { lens, retouch } = this.prepared(this.recipe, await this.maskFrames(this.recipe))
       file = await lensOn(
         engine,
         file,
@@ -1388,10 +1591,16 @@ class Session {
       kind !== 'draft',
       display !== null
     )
+    // Soft proofing: the settled picture is the proof itself (never shown
+    // unproofed first); a drag's frames stay the screen's.
+    const proof = kind === 'full' ? await this.proofTarget() : null
+    const plan = proof?.ok && !proof.warnOnly ? proof.plan : null
     const seq = ++this.seq
     // A whole picture of this recipe (framed, no corners left empty): what
-    // the library's thumbnail can be shrunk from. A preview is never that.
-    const whole = kind === 'full' && !cropMode && !preview && !framingTransparent(compiled.framing)
+    // the library's thumbnail can be shrunk from. A preview is never that,
+    // nor a proof.
+    const whole =
+      kind === 'full' && !cropMode && !preview && !plan && !framingTransparent(compiled.framing)
     const sig = String(
       hash32(
         gradeKey([
@@ -1399,6 +1608,7 @@ class Session {
           cropMode,
           display,
           this.floatSdr(kind, display),
+          plan && proof?.ok ? proof.key : null,
           compiled.grade,
           compiled.framing,
           compiled.lens,
@@ -1416,6 +1626,8 @@ class Session {
         this.lastSig.full = sig
         this.lastEvent.full = known.event
         this.lastOut.full = known.out
+        // Shown again: its scopes read it again (E76), however many came between.
+        this.keepScopeFile(known.event.url, { path: known.out, width: known.event.width })
       }
       // In Full HDR the picture a thumbnail shrinks from is the companion,
       // whose size is its own.
@@ -1424,11 +1636,17 @@ class Session {
           ? this.lastCompanion
           : { path: this.lastFull, width: last.width, height: last.height }
       if (whole && shown) this.fullPicture = { recipe, picture: shown }
-      if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq, rev })
+      // What it says of the proof is said as things stand now (a profile
+      // gone since, a CMYK profile's warning, which leaves the pixels alone).
+      const now = proofFields(proof, plan !== null, proof && !proof.ok ? proof.issue : undefined)
+      if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, ...now, seq, rev })
       return
     }
     // A warp shown whole (the crop tool) keeps its empty corners: PNG with alpha.
     const alpha = framingTransparent(compiled.framing)
+    // The selected mask's plane from this same render (0.21.0, E38), where a
+    // plane would follow it: no second render for the overlay.
+    let besideProbe = this.besideProbe(kind, compiled, alpha, preview !== null)
     // A draft (a slider moving) goes to the window as pixels, straight from
     // the engine: no file written, served and decoded for a picture that is
     // replaced a moment later. The settled picture stays a file: the mask's
@@ -1452,49 +1670,86 @@ class Session {
       kind === 'draft' && !this.heldOff && measuresPhoto(compiled.grade)
         ? heldKey(src.path, compiled.framing)
         : null
-    const report = await this.convertHeld(
-      {
-        ...blankRequest(src.path, out, src.input),
-        ...(frame ? { sink: 'Bytes' as const } : {}),
-        pixel: {
-          depth: (display || floatSdr) && frame ? 'F32' : 'Eight',
-          channels: alpha || frame ? 4 : 3
-        },
-        encode: frame
-          ? { Pixels: { sample: display || floatSdr ? 'F16' : 'U8' } }
-          : avif
-            ? SETTLED_AVIF
-            : alpha
-              ? { Png: { compression: 'Fast', filter: 'Sub' } }
-              : {
-                  // A settled picture is a few MB less as 4:2:0, which a screen
-                  // shows the same; the draft keeps full chroma at its lower quality.
-                  Jpeg: {
-                    quality: kind === 'draft' ? 92 : 95,
-                    subsampling: kind === 'draft' ? 'None' : 'Quarter',
-                    optimize: false
-                  }
-                },
-        metadata: { exif: false, icc: true, xmp: false, iptc: false },
-        color: display
-          ? masterFor(display, undefined, kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE)
-          : floatSdr
-            ? LINEAR_P3
-            : displayPolicy(this.info, 'DisplayP3'),
-        // The master reads a gain map itself, and refuses the field.
-        ...(display ? { gain_map: null } : {}),
-        grade: compiled.grade,
-        framing: compiled.framing,
-        lens: compiled.lens,
-        retouch: compiled.retouch,
-        threads: interactiveThreads(),
-        // A warp shown whole counts its empty corners (as black) rather than
-        // risk measuring nothing when little of the picture is left.
-        measure: measureOf(kind === 'draft' ? 2 : 1)
+    const planes = await this.planesFor(compiled, src)
+    const request = (beside: { probe: MaskProbe } | null): ConvertRequest => ({
+      ...blankRequest(src.path, out, src.input),
+      ...(frame ? { sink: 'Bytes' as const } : {}),
+      pixel: {
+        depth: (display || floatSdr) && frame ? 'F32' : 'Eight',
+        channels: alpha || frame ? 4 : 3
       },
-      { signal, frame, ...(floatSdr ? { native: { sdrCompanion: COMPANION_EDGE } } : {}) },
-      keyHeld
-    ).catch(named(compiled))
+      encode: frame
+        ? { Pixels: { sample: display || floatSdr ? 'F16' : 'U8' } }
+        : avif
+          ? SETTLED_AVIF
+          : alpha
+            ? { Png: { compression: 'Fast', filter: 'Sub' } }
+            : {
+                // A settled picture is a few MB less as 4:2:0, which a screen
+                // shows the same; the draft keeps full chroma at its lower quality.
+                Jpeg: {
+                  quality: kind === 'draft' ? 92 : 95,
+                  subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                  optimize: false
+                }
+              },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color: display
+        ? masterFor(display, undefined, kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE)
+        : floatSdr
+          ? LINEAR_P3
+          : displayPolicy(this.info, 'DisplayP3'),
+      // The master reads a gain map itself, and refuses the field.
+      ...(display ? { gain_map: null } : {}),
+      grade: compiled.grade,
+      framing: compiled.framing,
+      lens: compiled.lens,
+      retouch: compiled.retouch,
+      threads: interactiveThreads(),
+      // A warp shown whole counts its empty corners (as black) rather than
+      // risk measuring nothing when little of the picture is left.
+      measure: measureOf(kind === 'draft' ? 2 : 1),
+      ...(beside ? { inspect: { Beside: { mask: beside.probe, depth: 'Eight' as const } } } : {})
+    })
+    const opts = (
+      native: NativeRefs | undefined
+    ): { signal: AbortSignal; frame?: string; native?: NativeRefs } => ({
+      signal,
+      frame,
+      ...(floatSdr || native
+        ? { native: { ...native, ...(floatSdr ? { sdrCompanion: COMPANION_EDGE } : {}) } }
+        : {})
+    })
+    // A profile the engine refuses as it is used: the picture as the screen
+    // shows it, and the window told why (never another profile in its place).
+    let proofIssue = proof && !proof.ok ? proof.issue : undefined
+    // A proof carries no mask beside it: `renderMask` draws the overlay after.
+    if (plan && proof?.ok) besideProbe = null
+    const proofed =
+      plan && proof?.ok
+        ? await this.withPlanes(planes, (native) => this.proofed(request(null), plan, opts(native)))
+            .catch((err: unknown) => {
+              if (!proofRefused(err)) throw err
+              proofIssue = this.refuseProof(proof, err as EngineError)
+              return null
+            })
+            .catch(named(compiled))
+        : null
+    const picture = (beside: { probe: MaskProbe } | null): Promise<ConvertReport> =>
+      this.withPlanes(planes, (native) => this.convertHeld(request(beside), opts(native), keyHeld))
+    // The overlay's plane refused (the inspection, not the picture): the
+    // picture renders on its own, and `renderMask` draws the plane after it.
+    const report =
+      proofed ??
+      (await picture(besideProbe)
+        .catch((err) => {
+          if (!besideProbe || !(err instanceof EngineError) || !err.field?.startsWith('inspect'))
+            throw err
+          log.warn('the mask beside the picture was refused', err.field, err.message)
+          besideProbe = null
+          return picture(null)
+        })
+        .catch(named(compiled)))
     // The engine had no way to the window (it was reloading): main passes the frame on.
     if (frame && report.output)
       this.owner.send(IPC.develop.previewFrame, {
@@ -1505,10 +1760,12 @@ class Session {
         sample: display || floatSdr ? 'F16' : 'U8',
         ...(report.companion ? { companion: companionOf(report.companion) } : {})
       })
-    const stats = statsOf(report)
+    let stats = statsOf(report)
     // Full HDR's settled picture, either arm: what measures it (inside a
     // mask) and what reads its pixels take its SDR companion, kept as a PNG.
     let readUrl: string | undefined
+    /** The file the engine's scopes read for this picture (E76): an SDR one's, not Full HDR's. */
+    let scopeFile: { path: string; width: number } | null = null
     if (kind === 'full' && (display || floatSdr)) {
       const m = report.color.master
       if (display)
@@ -1524,12 +1781,20 @@ class Session {
         // Full HDR the master's SDR rendition of it, not a second SDR grade.
         this.lastCompanion = { path: file, width: c.width, height: c.height }
         if (!preview) this.fullPicture = whole ? { recipe, picture: this.lastCompanion } : null
+        if (floatSdr) {
+          // The engine measures a float output's values as they are, linear
+          // light; the histogram, the hue chart and the metrics read encoded
+          // ones, as the 8-bit picture's were. The companion is that picture.
+          stats = (await this.measureFile(file, signal)) ?? stats
+          scopeFile = { path: file, width: c.width }
+        }
       } else {
         this.lastFull = ''
         this.lastCompanion = null
       }
     } else if (kind === 'full' && out) {
       this.lastFull = out
+      scopeFile = { path: out, width: report.width }
       if (!preview)
         this.fullPicture = whole
           ? { recipe, picture: { path: out, width: report.width, height: report.height } }
@@ -1552,6 +1817,7 @@ class Session {
       ...(display && report.color.master?.display
         ? { ceiling: report.color.master.display.headroom }
         : {}),
+      ...proofFields(proof, proofed !== null, proofIssue),
       report: reportOf(
         report,
         Math.round(performance.now() - t0),
@@ -1563,6 +1829,7 @@ class Session {
     this.lastEvent[kind] = event
     this.lastSent = event
     this.lastOut[kind] = out
+    if (scopeFile) this.keepScopeFile(event.url, scopeFile)
     // A frame is kept by the window only a moment: a file alone can be shown
     // again (and Full HDR's AVIF arm, which stays a dev switch, is not kept).
     // Nor is a held slider's stand-in (the draft's size) one to go back to.
@@ -1573,12 +1840,100 @@ class Session {
         this.recentFull.delete(this.recentFull.keys().next().value as string)
     }
     this.owner.send(IPC.develop.rendered, event)
+    // The picture is shown: its plane failing is logged, and drawn on its own (`renderMask`).
+    if (besideProbe && report.beside)
+      await this.sendBeside(kind, report.beside, besideProbe.layerId, rev, signal).catch((err) => {
+        if (isCancelled(err)) throw err
+        log.warn('mask beside the picture failed', (err as Error).message)
+      })
+  }
+
+  /**
+   * The mask plane a picture render can carry (E38): the selected mask's (or
+   * the key view's) when one follows this picture (any settled one, a draft
+   * while a range is live), on the CPU, for the photo's own recipe, and not
+   * a warp shown whole (a plane has no alpha). Null: `renderMask` draws it.
+   */
+  private besideProbe(
+    kind: Kind,
+    compiled: Compiled,
+    alpha: boolean,
+    preview: boolean
+  ): { layerId: string; probe: MaskProbe } | null {
+    const layerId = this.view.maskLayer
+    if (!layerId || preview || alpha || !compiled.grade) return null
+    if (kind === 'draft' && !this.view.maskLive) return null
+    const probe = maskProbe(compiled, layerId)
+    // A mask's qualifier shows its key inside the mask: two planes, `renderMask`'s.
+    if (!probe || keyWithin(compiled, probe)) return null
+    return { layerId, probe }
+  }
+
+  /** The mask the last picture carried (`besideProbe`): its bytes' hash, its file. */
+  private lastBeside: { hash: string; out: string } | null = null
+  /** This run's picture carried the selected mask: the plane needs no render of its own. */
+  private besideSent: string | null = null
+
+  /**
+   * The plane beside the picture (E38) sent as the mask overlay, as
+   * `renderMask` sends its own: written once as a grey PNG (the overlay's
+   * URL, and the weights the masked hue chart measures with), not again
+   * while its bytes are the same, and measured again only on a new picture.
+   */
+  private async sendBeside(
+    kind: Kind,
+    plane: InspectPlane,
+    layerId: string,
+    rev: number,
+    signal: AbortSignal
+  ): Promise<void> {
+    const hash = `${plane.width}x${plane.height}:${createHash('sha1').update(plane.data).digest('hex')}`
+    const same = this.lastBeside?.hash === hash && this.lastBeside.out === this.lastMaskOut
+    let out = this.lastMaskOut
+    if (!same) {
+      out = this.nextFile('mask', 'png')
+      await writeFile(out, encodeGreyPng(plane.data, plane.width, plane.height, 1))
+      this.lastBeside = { hash, out }
+    }
+    const statsFor = kind === 'full' ? this.lastFull : null
+    const maskStats =
+      statsFor === null
+        ? undefined
+        : same && statsFor === this.maskStatsFor
+          ? this.lastMask?.maskStats
+          : await this.measureMask(out, signal)
+    if (statsFor !== null) this.maskStatsFor = statsFor
+    // What `renderMask` keeps no longer names the plane shown.
+    this.maskSig = ''
+    this.lastMaskOut = out
+    this.besideSent = layerId
+    if (this.closed) return
+    this.lastMask = {
+      key: this.key,
+      seq: this.seq,
+      rev,
+      kind: 'mask',
+      layerId,
+      cropMode: this.view.cropMode,
+      url: cacheUrl(out, `${this.seq}-m`),
+      width: plane.width,
+      height: plane.height,
+      ...(maskStats ? { maskStats } : {})
+    }
+    this.owner.send(IPC.develop.rendered, this.lastMask)
   }
 
   // ── the GPU drag path (Phase A §4.3) and held measurements (§4.4) ──
 
   /** This photo's held measurements, kept in the interactive host (see `HeldSlot`). */
   private readonly heldSlot: HeldSlot
+  /**
+   * The 1:1 view's held refine planes (engine 0.21.0, E62): a mask refined
+   * over the whole frame (Edge snap, the solver, Matting) and the whole
+   * photo's measurements, from the full-size render one tile made, kept
+   * apart from a drag's (`heldSlot`, of the proxy's frame). See `region`.
+   */
+  private readonly refineSlot: HeldSlot
   /**
    * The grade shapes (shared/gpudrag.ts `gradeShape`) the engine refused on
    * the GPU this drag: the rest of the drag goes straight to the CPU. The
@@ -1892,6 +2247,44 @@ class Session {
   }
 
   /**
+   * The prepared planes (E37) a render of `compiled` from `src` names: its
+   * raster masks' planes at its frame's size (the source turned as the
+   * framing turns it, where masks are planned), prepared now where missing.
+   */
+  private async planesFor(compiled: Compiled, src: ProxyFile): Promise<string[]> {
+    if (!compiled.grade) return []
+    const turned = compiled.framing !== null && swapsAxes(compiled.framing.orientation)
+    return this.owner.maskPlanes
+      .namesFor(
+        compiled.grade,
+        turned ? src.height : src.width,
+        turned ? src.width : src.height,
+        paths.photoCache(this.row.id) + sep
+      )
+      .catch(() => [])
+  }
+
+  /**
+   * `convert` naming the prepared planes `planes` (E37); refused for them
+   * (or the host gone since), forgotten and rendered again without.
+   */
+  private async withPlanes<T>(
+    planes: string[],
+    run: (native: NativeRefs | undefined) => Promise<T>
+  ): Promise<T> {
+    if (planes.length === 0) return run(undefined)
+    try {
+      return await run({ planes })
+    } catch (err) {
+      if (!planeRefused(err)) throw err
+      log.info('mask planes refused, rendering without', (err as Error).message)
+      // Gone with its host (Stale) is no refusal of the planes themselves.
+      this.owner.maskPlanes.forget(planes, (err as EngineError).code !== 'Stale')
+      return run(undefined)
+    }
+  }
+
+  /**
    * A CPU render, with the held measurement of `keyHeld` when one is kept
    * (a drag of Dehaze or Denoise: Phase A §4.4), keeping what it returns
    * for the next frame. `keyHeld` null: a plain render, as before. A `held`
@@ -2050,6 +2443,381 @@ class Session {
     }
   }
 
+  /** The last gamut warning sent, and what it was rendered from: the same again is said again. */
+  private gamutSig = ''
+  private lastGamut: RenderEvent | null = null
+
+  /**
+   * The gamut warning (E22, soft proofing's first part): beside a settled SDR
+   * picture, the engine's plane of how far (ΔE2000, `GAMUT_SCALE` at full
+   * scale) each pixel's colour lies from what the export's colour space
+   * makes of it, or (proofing) the proof's profile, by its intent. The
+   * engine measures it only on an SDR render: none while Full HDR shows the
+   * photo (the toolbar says why). An HDR source's SDR picture is a tone map,
+   * which it measures none through: that picture is made first, as a file.
+   */
+  private async renderGamut(signal: AbortSignal): Promise<void> {
+    if (this.view.display) return
+    const src = this.source('full')
+    const cropMode = this.view.cropMode
+    const compiled = await this.compileFor(this.recipe, src, !cropMode, false, true, false)
+    // A plane has one channel, so a warp's transparent corners cannot be said.
+    if (framingTransparent(compiled.framing)) return
+    const proof = await this.proofTarget()
+    const exported = proof?.ok
+      ? null
+      : softProofTarget(await this.owner.library.index.getSetting('export.last').catch(() => null))
+    const target: GamutTarget = proof?.ok ? proof.plan : (exported as GamutTarget)
+    const sig = String(
+      hash32(
+        gradeKey([
+          src.path,
+          cropMode,
+          // A profile's bytes go by their key, not hashed again each settle.
+          proof?.ok ? proof.key : exported,
+          compiled.grade,
+          compiled.framing,
+          compiled.lens,
+          compiled.retouch
+        ])
+      )
+    )
+    if (sig === this.gamutSig && this.lastGamut) {
+      this.lastGamut = { ...this.lastGamut, seq: this.seq }
+      if (!this.closed) this.owner.send(IPC.develop.rendered, this.lastGamut)
+      return
+    }
+    const out = this.nextFile('gamut', 'png')
+    const threads = interactiveThreads()
+    const plane = gamutWarningRequest(src, out, this.info, compiled, target, threads)
+    let r: ConvertReport
+    if (toneMapped(plane)) {
+      const mid = this.midFile()
+      try {
+        await this.owner.engine
+          .convert(toFile({ ...plane, inspect: null }, mid, plane.color), { signal })
+          .catch(named(compiled))
+        r = await this.owner.engine.convert(gamutOnFile(mid, out, target, threads), { signal })
+      } finally {
+        void rm(mid, { force: true }).catch(() => undefined)
+      }
+    } else r = await this.owner.engine.convert(plane, { signal }).catch(named(compiled))
+    if (this.closed) return
+    this.gamutSig = sig
+    this.lastGamut = {
+      key: this.key,
+      seq: this.seq,
+      kind: 'gamut',
+      cropMode,
+      url: cacheUrl(out, `${Date.now()}`),
+      width: r.width,
+      height: r.height,
+      ...(exported ? { gamutTo: exported.to } : {}),
+      ...(proof?.ok ? { gamutProof: proof.name } : {})
+    }
+    this.owner.send(IPC.develop.rendered, this.lastGamut)
+  }
+
+  // ── soft proofing (shared/proof.ts, main/proofing.ts) ──
+
+  /** The proof the view asks for, resolved once for its settings (a file's bytes read once). */
+  private proofMemo: { key: string; target: Promise<ProofTarget> } | null = null
+  /** Proofs the engine refused this session, by key: not asked for again. */
+  private proofRefusals = new Map<string, ProofIssue>()
+
+  /**
+   * The proof the view asks for, or null: none asked, or Full HDR showing
+   * the photo (the window asks for none then: paper has no light above white).
+   */
+  private async proofTarget(): Promise<ProofTarget | null> {
+    const s = this.view.proof
+    if (!s || this.view.display) return null
+    const key = proofKey(s)
+    const refused = this.proofRefusals.get(key)
+    if (refused) return { ok: false, issue: refused }
+    if (this.proofMemo?.key !== key) this.proofMemo = { key, target: resolveProof(s) }
+    const target = await this.proofMemo.target
+    // A profile not found is looked for again next time (its volume mounted since).
+    if (!target.ok && this.proofMemo?.key === key) this.proofMemo = null
+    return target
+  }
+
+  private refuseProof(p: Extract<ProofTarget, { ok: true }>, err: EngineError): ProofIssue {
+    const issue: ProofIssue = { kind: 'unusable', key: p.key, name: p.name, why: err.message }
+    this.proofRefusals.set(p.key, issue)
+    log.warn('proof profile refused', p.name, err.code, err.message)
+    return issue
+  }
+
+  /** A file between a proof's steps, dropped once the step after it has read it. */
+  private midFile(): string {
+    return join(this.dir, `proofmid-${this.tag}-${++this.fileSeq}.tiff`)
+  }
+
+  /**
+   * A picture's request made as a soft proof (`proofSteps`). Held refines
+   * go with the grade (the first step), the frame and its companion with
+   * the picture (the last); the report is the picture's, with what the
+   * grade said (its layers, region, frame and held refines).
+   */
+  private async proofed(
+    req: ConvertRequest,
+    plan: ProofPlan,
+    opts: { signal: AbortSignal; frame?: string; native?: NativeRefs }
+  ): Promise<ConvertReport> {
+    const mids: [string, string] = [this.midFile(), this.midFile()]
+    const { sdrCompanion, ...gradeRefs } = opts.native ?? {}
+    const { signal } = opts
+    try {
+      const steps = proofSteps(req, plan, mids)
+      const graded = await this.owner.engine.convert(steps[0], {
+        signal,
+        ...(Object.keys(gradeRefs).length > 0 ? { native: gradeRefs } : {})
+      })
+      for (const step of steps.slice(1, -1)) await this.owner.engine.convert(step, { signal })
+      const shown = await this.owner.engine.convert(steps[steps.length - 1], {
+        signal,
+        ...(opts.frame ? { frame: opts.frame } : {}),
+        ...(sdrCompanion !== undefined ? { native: { sdrCompanion } } : {})
+      })
+      return {
+        ...shown,
+        color: { ...shown.color, graded: graded.color.graded },
+        frame_width: graded.frame_width,
+        frame_height: graded.frame_height,
+        framing: graded.framing,
+        lens: graded.lens,
+        region: graded.region,
+        raw: graded.raw,
+        held: graded.held
+      }
+    } finally {
+      for (const m of mids) void rm(m, { force: true }).catch(() => undefined)
+    }
+  }
+
+  /** The settled picture unproofed, beside a proof (Screen | Proof), and what it was made of. */
+  private unproofedSig = ''
+  private lastUnproofed: RenderEvent | null = null
+
+  private async renderUnproofed(signal: AbortSignal): Promise<void> {
+    if (this.view.display) return
+    const src = this.source('full')
+    const cropMode = this.view.cropMode
+    const compiled = await this.compileFor(this.recipe, src, !cropMode, false, true, false)
+    const alpha = framingTransparent(compiled.framing)
+    const sig = String(
+      hash32(
+        gradeKey([
+          src.path,
+          cropMode,
+          compiled.grade,
+          compiled.framing,
+          compiled.lens,
+          compiled.retouch
+        ])
+      )
+    )
+    if (sig === this.unproofedSig && this.lastUnproofed) {
+      this.lastUnproofed = { ...this.lastUnproofed, seq: this.seq }
+      if (!this.closed) this.owner.send(IPC.develop.rendered, this.lastUnproofed)
+      return
+    }
+    const out = this.nextFile('unproofed', alpha ? 'png' : 'jpg')
+    const r = await this.owner.engine
+      .convert(
+        {
+          ...blankRequest(src.path, out, src.input),
+          pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
+          encode: alpha
+            ? { Png: { compression: 'Fast', filter: 'Sub' } }
+            : { Jpeg: { quality: 95, subsampling: 'Quarter', optimize: false } },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: displayPolicy(this.info, 'DisplayP3'),
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          threads: interactiveThreads()
+        },
+        { signal }
+      )
+      .catch(named(compiled))
+    if (this.closed) return
+    this.unproofedSig = sig
+    this.lastUnproofed = {
+      key: this.key,
+      seq: this.seq,
+      kind: 'screen',
+      cropMode,
+      url: cacheUrl(out, `${Date.now()}`),
+      width: r.width,
+      height: r.height
+    }
+    this.owner.send(IPC.develop.rendered, this.lastUnproofed)
+  }
+
+  /**
+   * A proof's settings tried on the engine before the window uses them
+   * (`checkRequests`): the profile found and read, Little CMS's transforms
+   * built, and the paper's white as Simulate paper and ink shows it. Any
+   * refusal is said, in the engine's words, as an unusable profile.
+   */
+  async proofCheck(s: ProofSettings): Promise<ProofCheck> {
+    const target = await resolveProof(s)
+    if (!target.ok) return target
+    if (isBuiltin(s.profile)) return { ok: true, warnOnly: false, paper: null }
+    const icc = (target.plan.to as { Icc: number[] }).Icc
+    const stem = join(this.dir, `proofmid-${this.tag}-check-${++this.fileSeq}`)
+    const [png, mid, out] = [`${stem}.png`, `${stem}.tiff`, `${stem}-out.png`]
+    try {
+      await writeFile(png, target.warnOnly ? probePng() : paperPng(icc))
+      for (const r of checkRequests(target, png, mid, out)) await this.owner.engine.convert(r)
+      if (target.warnOnly) return { ok: true, warnOnly: true, paper: null }
+      const px = decodePng(await readFile(out)).rows
+      return { ok: true, warnOnly: false, paper: [px[0], px[1], px[2]] }
+    } catch (err) {
+      if (!(err instanceof EngineError)) throw err
+      log.info('proof profile refused on check', target.name, err.code, err.message)
+      return {
+        ok: false,
+        issue: { kind: 'unusable', key: target.key, name: target.name, why: err.message }
+      }
+    } finally {
+      for (const f of [png, mid, out]) void rm(f, { force: true }).catch(() => undefined)
+    }
+  }
+
+  // ── the settled picture's exact scopes and gamut coverage (E76) ──
+
+  /**
+   * Settled SDR pictures' files by the url the window shows them at (a
+   * frame's, its companion): what `scopes` reads. The last few, as the
+   * window may still be asking for one just replaced.
+   */
+  private scopeFiles = new Map<string, { path: string; width: number }>()
+
+  private keepScopeFile(url: string, file: { path: string; width: number }): void {
+    this.scopeFiles.delete(url)
+    this.scopeFiles.set(url, file)
+    while (this.scopeFiles.size > RECENT_FULL + 2)
+      this.scopeFiles.delete(this.scopeFiles.keys().next().value as string)
+  }
+
+  /** A written picture measured as the histogram reads it (encoded), or undefined where it can't be. */
+  private async measureFile(path: string, signal: AbortSignal): Promise<ImageStats | undefined> {
+    try {
+      return await this.owner.engine.analyze(
+        analyzeRequest(path, path.endsWith('.png') ? 'Png' : 'Jpeg', 1),
+        { signal }
+      )
+    } catch (err) {
+      if (isCancelled(err)) throw err
+      log.info('settled picture unmeasured', (err as Error).message)
+      return undefined
+    }
+  }
+
+  /** The window's last ask for scopes: a newer one stops it. */
+  private scopesAbort: AbortController | null = null
+
+  /**
+   * The settled picture's waveform, parade and vectorscope as the engine
+   * measures them (E76): every pixel of the picture shown, binned on the
+   * same grids and by the same rules as the preview's bins, and in a mask
+   * weighed by its plane as the hue chart's numbers are. Null where there is
+   * nothing to measure (a draft, a Full HDR frame, whose headroom only the
+   * preview's float bins show; a plane no longer the selected mask's) or a
+   * newer ask stopped it: the window bins the preview instead.
+   */
+  async scopes(req: ScopesRequest): Promise<ScopeBins | null> {
+    const file = this.scopeFiles.get(req.url)
+    const spec = file ? engineScopeSpec(req.want, file.width) : null
+    if (!file || !spec) return null
+    const plane = req.mask && this.lastMask?.url === req.mask ? this.lastMaskOut : null
+    if (req.mask && !plane) return null
+    this.scopesAbort?.abort()
+    const abort = new AbortController()
+    this.scopesAbort = abort
+    try {
+      const stats = await this.owner.engine.analyze(
+        {
+          ...analyzeRequest(file.path, file.path.endsWith('.png') ? 'Png' : 'Jpeg', 1),
+          ...(plane ? { weights: { source: { Png: plane }, resampler: 'Bilinear' as const } } : {}),
+          scopes: spec
+        },
+        { signal: abort.signal }
+      )
+      return stats.scopes ? engineBins(stats.scopes, stats.pixels_measured) : null
+    } catch (err) {
+      if (!isCancelled(err)) log.info('engine scopes unavailable', (err as Error).message)
+      return null
+    } finally {
+      if (this.scopesAbort === abort) this.scopesAbort = null
+    }
+  }
+
+  /** The last gamut coverage, by what it was measured from: a settle that changed nothing asks nothing. */
+  private coverage: { sig: string; value: GamutCoverage } | null = null
+  private coverageAbort: AbortController | null = null
+
+  /**
+   * How much of the graded photo each colour space holds (the Metrics tab's
+   * Gamut coverage): the engine's u′v′ density of the float buffer before
+   * its egress (`measure.at: 'Working'`), so colours past the screen's
+   * gamut count where they really are. A render of its own from the draft
+   * proxy, its pixels left in the host, asked only while the Metrics tab
+   * shows and the picture has settled. The grade is the SDR picture's.
+   */
+  async gamutCoverage(): Promise<GamutCoverage | null> {
+    const src = this.viewPx().draft
+    const compiled = await this.compileFor(this.recipe, src, true, false, true, false)
+    const sig = String(
+      hash32(
+        gradeKey([src.path, compiled.grade, compiled.framing, compiled.lens, compiled.retouch])
+      )
+    )
+    if (this.coverage?.sig === sig) return this.coverage.value
+    this.coverageAbort?.abort()
+    const abort = new AbortController()
+    this.coverageAbort = abort
+    const { signal } = abort
+    try {
+      const alpha = framingTransparent(compiled.framing)
+      let density: NonNullable<ScopeReport['chromaticity']> | null | undefined
+      try {
+        const r = await this.owner.engine.convert(
+          coverageRequest(src, this.info, compiled, alpha, interactiveThreads()),
+          { signal, native: { discardOutput: true } }
+        )
+        density = r.stats?.scopes?.chromaticity
+      } catch (err) {
+        // Nothing to do in float (no grade, the proxy already Display P3):
+        // the picture is the proxy, measured as it is.
+        if (!(err instanceof EngineError) || err.field !== 'measure.at') throw err
+        const stats = await this.owner.engine.analyze(
+          {
+            ...analyzeRequest(src.path, src.input as 'Png' | 'Jpeg' | 'Tiff', 1),
+            domain: 'Linear',
+            transparent: 'Exclude',
+            scopes: { chromaticity: { size: COVERAGE_SIZE } }
+          },
+          { signal }
+        )
+        density = stats.scopes?.chromaticity
+      }
+      if (!density) return null
+      const value = gamutCoverage(density)
+      this.coverage = { sig, value }
+      return value
+    } catch (err) {
+      if (!isCancelled(err)) log.info('gamut coverage unavailable', (err as Error).message)
+      return null
+    } finally {
+      if (this.coverageAbort === abort) this.coverageAbort = null
+    }
+  }
+
   /**
    * The chosen layer's mask as a grey plane, and the picture measured inside
    * it. A draft (while a range slider moves) is the draft proxy's plane with
@@ -2082,35 +2850,61 @@ class Session {
     }
   }
 
+  /**
+   * The colour a mask's plane is rendered under: the picture's own (0.21.0,
+   * E39), so a range keys the values the grade sees there (an HDR photo's
+   * tone-mapped ones). A Full HDR picture's master without its companion
+   * (an inspection plane has no SDR rendition).
+   */
+  private maskColor(
+    display: ViewState['display'] | null
+  ): Pick<ConvertRequest, 'color' | 'gain_map'> {
+    if (!display) return { color: displayPolicy(this.info, 'DisplayP3'), gain_map: null }
+    const m = masterFor(display)
+    return {
+      color:
+        typeof m === 'object' && 'Master' in m ? { Master: { ...m.Master, companion: null } } : m,
+      gain_map: null
+    }
+  }
+
   private async renderMask(kind: Kind, signal: AbortSignal): Promise<void> {
     const src = kind === 'draft' ? this.viewPx().draft : this.source('full')
     const rev = this.rev
+    const display = this.view.display ?? null
+    // Compiled as the picture is, under its colour (E39).
     const compiled = await this.compileFor(
       this.recipe,
       src,
       !this.view.cropMode,
-      true,
-      kind !== 'draft'
+      false,
+      kind !== 'draft',
+      display !== null
     )
     const layerId = this.view.maskLayer ?? undefined
-    const index = layerId ? compiled.layerIndex[layerId] : undefined
+    // A mask's layer, or a qualifier's key where it sits (E77).
+    const probe = layerId && compiled.grade ? maskProbe(compiled, layerId) : null
     const send = (e: Omit<RenderEvent, 'key' | 'seq' | 'rev' | 'kind' | 'layerId'>): void => {
       if (this.closed) return
       this.lastMask = { key: this.key, seq: this.seq, rev, kind: 'mask', layerId, ...e }
       this.owner.send(IPC.develop.rendered, this.lastMask)
     }
-    if (index === undefined || !compiled.grade || framingTransparent(compiled.framing)) {
-      // Nothing left in the mask (its last component undone or deleted), or a
-      // warp shown whole, which a one-channel plane cannot carry: the
-      // overlay is told, or it would go on showing the old plane.
+    if (!probe || !compiled.grade || framingTransparent(compiled.framing)) {
+      // Nothing left in the mask (its last component undone or deleted), a
+      // qualifier switched off, or a warp shown whole, which a one-channel
+      // plane cannot carry: the overlay is told, or it would go on showing
+      // the old plane.
       this.maskSig = EMPTY
       send({ cropMode: this.view.cropMode, url: '', width: 0, height: 0 })
       return
     }
     const measure = kind === 'full'
+    const colour = this.maskColor(display)
     // The plane is the mask's own shapes over the frame; only a colour or
-    // luminance range also depends on the picture the layers before it make.
+    // luminance range also depends on the picture the layers before it make,
+    // and a qualifier's key on what comes before it in its own layer too.
     // The mask layer's own sliders, and anything after it, do not move it.
+    const index = probeLayer(probe)
     const layer = compiled.grade.layers[index]
     const keyed = layer.mask?.components.some((c) => 'Range' in c.shape) ?? false
     const sig = String(
@@ -2118,12 +2912,17 @@ class Session {
         gradeKey([
           src.path,
           layerId,
-          index,
+          probe,
           layer.mask,
-          keyed ? compiled.grade.layers.slice(0, index) : null,
+          'QualifierKey' in probe
+            ? compiled.grade.layers.slice(0, index + 1)
+            : keyed
+              ? compiled.grade.layers.slice(0, index)
+              : null,
           compiled.framing,
           compiled.lens,
-          compiled.retouch
+          compiled.retouch,
+          colour
         ])
       )
     )
@@ -2144,24 +2943,43 @@ class Session {
       return
     }
     const out = this.nextFile('mask', 'png')
-    const report = await this.owner.engine
-      .convert(
-        {
-          ...blankRequest(src.path, out, src.input),
-          pixel: { depth: 'Eight', channels: 1 },
-          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-          metadata: STRIP_ALL,
-          color: 'Preserve',
-          grade: compiled.grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          inspect: { LayerMask: { layer: index } },
-          hdr: this.hdrWorking
-        },
-        { signal }
-      )
-      .catch(named(compiled))
+    const grade = compiled.grade
+    const planes = await this.planesFor(compiled, src)
+    const plane = (file: string, inspect: Inspect): Promise<ConvertReport> =>
+      this.withPlanes(planes, (native) =>
+        this.owner.engine.convert(
+          {
+            ...blankRequest(src.path, file, src.input),
+            pixel: { depth: 'Eight', channels: 1 },
+            encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+            metadata: STRIP_ALL,
+            ...colour,
+            grade,
+            framing: compiled.framing,
+            lens: compiled.lens,
+            retouch: compiled.retouch,
+            inspect
+          },
+          { signal, ...(native ? { native } : {}) }
+        )
+      ).catch(named(compiled))
+    const report = await plane(out, probeInspect(probe))
+    // A mask's qualifier: its key where the mask lets it act (E77's key is
+    // the qualifier's alone), as the correction lands.
+    const within = keyWithin(compiled, probe)
+    if (within) {
+      const maskFile = this.nextFile('mask', 'png')
+      await plane(maskFile, within)
+      const [key, mask] = await Promise.all([readFile(out), readFile(maskFile)])
+      const k = grey8(key)
+      const m = grey8(mask)
+      if (k.width === m.width && k.height === m.height) {
+        for (let i = 0; i < k.data.length; i++)
+          k.data[i] = Math.round((k.data[i] * m.data[i]) / 255)
+        await writeFile(out, encodeGreyPng(k.data, k.width, k.height, 1))
+      }
+      void rm(maskFile, { force: true }).catch(() => undefined)
+    }
     const maskStats = measure ? await this.measureMask(out, signal) : undefined
     this.maskStatsFor = statsFor
     this.maskSig = sig
@@ -2180,11 +2998,15 @@ class Session {
    * thumbnails and the "show all" overlay. A thumbnail is redrawn only when
    * what shapes its mask changed (not its sliders), and the loop yields to a
    * newer edit waiting behind it. Always SDR, Full HDR or not: a mask is
-   * shown by its shape, not its light.
+   * shown by its shape, not its light; an HDR photo's ranges key the values
+   * its SDR picture's grade sees (E39).
    */
   private async renderMaskThumbs(signal: AbortSignal): Promise<void> {
     const src = this.viewPx().draft
-    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
+    // The recipe they are drawn from: the overlay shows none from before a
+    // framing or lens change (renderer state/maskplanes.ts).
+    const rev = this.rev
+    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
     // A warp shown whole has transparent corners a plane cannot carry; the
     // thumbnails wait for the crop tool to close.
     if (framingTransparent(compiled.framing)) return
@@ -2200,6 +3022,7 @@ class Session {
           this.owner.send(IPC.develop.rendered, {
             key: this.key,
             seq: this.seq,
+            rev,
             kind: 'mask-thumb',
             layerId: layer.id,
             cropMode: this.view.cropMode,
@@ -2228,11 +3051,14 @@ class Session {
         )
       )
       if (this.thumbSig[layer.id] === sig) continue
-      const out = join(this.dir, `mthumb-${layer.id}-${sig}.png`)
-      // Made small, not at the draft's size (see MASK_THUMB_EDGE).
+      const out = cacheFile(this.dir, `mthumb-${layer.id}-${sig}.png`)
+      // Made small, not at the draft's size (see MASK_THUMB_EDGE); its masks
+      // are planned on the draft's frame, so the draft's planes serve.
       const k = Math.min(1, MASK_THUMB_EDGE / Math.max(src.width, src.height))
-      const report = await this.owner.engine
-        .convert(
+      const grade = compiled.grade
+      const planes = await this.planesFor(compiled, src)
+      const report = await this.withPlanes(planes, (native) =>
+        this.owner.engine.convert(
           {
             ...blankRequest(src.path, out, src.input),
             resize: k < 1 ? { Scale: { factor: k } } : 'None',
@@ -2240,22 +3066,22 @@ class Session {
             pixel: { depth: 'Eight', channels: 1 },
             encode: { Png: { compression: 'Fast', filter: 'Sub' } },
             metadata: STRIP_ALL,
-            color: 'Preserve',
-            grade: compiled.grade,
+            ...this.maskColor(null),
+            grade,
             framing: compiled.framing,
             lens: compiled.lens,
             retouch: compiled.retouch,
-            inspect: { LayerMask: { layer: index } },
-            hdr: this.hdrWorking
+            inspect: { LayerMask: { layer: index } }
           },
-          { signal }
+          { signal, ...(native ? { native } : {}) }
         )
-        .catch(named(compiled))
+      ).catch(named(compiled))
       this.thumbSig[layer.id] = sig
       if (this.closed) return
       this.owner.send(IPC.develop.rendered, {
         key: this.key,
         seq: this.seq,
+        rev,
         kind: 'mask-thumb',
         layerId: layer.id,
         cropMode: this.view.cropMode,
@@ -2272,6 +3098,7 @@ class Session {
         this.owner.send(IPC.develop.rendered, {
           key: this.key,
           seq: this.seq,
+          rev,
           kind: 'mask-thumb',
           layerId: id,
           cropMode: this.view.cropMode,
@@ -2331,6 +3158,9 @@ class Session {
     // curve carried past 1 into a Display P3 picture is refused).
     if (alpha && display !== null)
       compiled = await this.compileFor(before, src, !this.view.cropMode, false, true, false)
+    // Proofing: the before drawn through the proof too (\ keeps its meaning).
+    const proof = await this.proofTarget()
+    const plan = proof?.ok && !proof.warnOnly ? proof.plan : null
     // Keyed on what the engine is asked for, not on the raw geometry: a
     // straighten in the crop tool changes the recipe but not this picture.
     const key = JSON.stringify([
@@ -2340,6 +3170,7 @@ class Session {
       src.path,
       this.view.cropMode,
       display,
+      plan && proof?.ok ? proof.key : null,
       // A Version compared with grades otherwise than the photo's defaults.
       this.compareRecipe ? compiled.grade : null
     ])
@@ -2347,28 +3178,25 @@ class Session {
     const hdr = display && !alpha ? hdrFile(display) : null
     const ext = hdr ? 'avif' : alpha ? 'png' : 'jpg'
     const out = join(this.dir, `before-${hash32(key).toString(16)}.${ext}`)
-    const report = await this.owner.engine
-      .convert(
-        {
-          ...blankRequest(src.path, out, src.input),
-          pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
-          encode: hdr
-            ? hdr.encode
-            : alpha
-              ? { Png: { compression: 'Fast', filter: 'Sub' } }
-              : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
-          metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: hdr ? hdr.color : displayPolicy(this.info, 'DisplayP3'),
-          ...(hdr ? { gain_map: null } : {}),
-          grade: compiled.grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          measure: measureOf(1)
-        },
-        { signal }
-      )
-      .catch(named(compiled))
+    const convert = (r: ConvertRequest): Promise<ConvertReport> =>
+      plan ? this.proofed(r, plan, { signal }) : this.owner.engine.convert(r, { signal })
+    const report = await convert({
+      ...blankRequest(src.path, out, src.input),
+      pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
+      encode: hdr
+        ? hdr.encode
+        : alpha
+          ? { Png: { compression: 'Fast', filter: 'Sub' } }
+          : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color: hdr ? hdr.color : displayPolicy(this.info, 'DisplayP3'),
+      ...(hdr ? { gain_map: null } : {}),
+      grade: compiled.grade,
+      framing: compiled.framing,
+      lens: compiled.lens,
+      retouch: compiled.retouch,
+      measure: measureOf(1)
+    }).catch(named(compiled))
     const stats = statsOf(report)
     this.beforeKey = key
     if (this.closed) return
@@ -2380,7 +3208,8 @@ class Session {
       url: cacheUrl(out, hash32(key)),
       width: report.width,
       height: report.height,
-      stats
+      stats,
+      ...(plan && proof?.ok ? { proof: shownProof(proof) } : {})
     } satisfies RenderEvent)
   }
 
@@ -2389,17 +3218,19 @@ class Session {
    * made; until then a quick classic one (PPG, about 1.2 s) at once, the
    * plan's made in the background, and the window told to ask again when it
    * is (the engine's viewing guide, 2026-10-09). The PIXL demosaic has no
-   * quick one before it: the view waits for its master (the bar in the
-   * badge says how far), or says in the window why there is none.
+   * quick one before it: its regions are developed from the RAW until the
+   * master is made (`regionFromRaw`, E66), and a 1:1 view that needs the
+   * master itself waits for it (the bar in the badge says how far), or
+   * says in the window why there is none.
    */
   private async rawMasterForView(): Promise<ProxyFile> {
     const ask = askOf(this.recipe)
     const plan = await scenePlan(this.file.raw_cfa, ask)
     const plain = (): Promise<ProxyFile> =>
-      ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+      ensureMaster(this.owner.bgEngine, this.row, this.file, ask, this.developAbort.signal)
     if (plan.demosaic === 'pixl')
       return plain().catch((err: unknown) => {
-        this.masterRefused(err)
+        if (!isCancelled(err)) this.masterRefused(err)
         throw err
       })
     // A linear DNG has no demosaic to wait for (`isLinearRaw`): its one master, at once.
@@ -2416,7 +3247,9 @@ class Session {
         const note = takeDevelopedNote(this.row.id) ?? undefined
         if (!this.closed) this.owner.send(IPC.develop.tileStale, { key, note })
       },
-      (err: unknown) => log.warn('RAW master for 1:1 not made', (err as Error).message)
+      (err: unknown) => {
+        if (!isCancelled(err)) log.warn('RAW master for 1:1 not made', (err as Error).message)
+      }
     )
     return ensureQuickMaster(this.owner.bgEngine, this.row)
   }
@@ -2429,8 +3262,46 @@ class Session {
     this.owner.send(IPC.develop.renderError, { key: this.key, message, code: 'Master' })
   }
 
+  /**
+   * The RAW develop's own frame size, once a region developed from the RAW
+   * said it (`report.frame_width`): the proxies' is the cells' times their
+   * width, within a pixel or two of it.
+   */
+  private rawFrame: { width: number; height: number } | null = null
+
+  /**
+   * Whether a 1:1 region is developed from the RAW itself until its master
+   * is made (engine 0.21.0, E66): the PIXL demosaic runs only the windows
+   * the region reads, about 1.7 s for a view against 8 s for the whole
+   * frame on an M2 Pro, and its pixels are the master's cut, to the bit
+   * (the owner, 2026-10-14: develop-on-open stays; this only fills the
+   * first 1:1 wait). The plan's, with nothing denoising the mosaic first.
+   */
+  private async regionFromRaw(): Promise<ScenePlan | null> {
+    if (!this.isRaw || this.hdrMaster || isLinearRaw(this.file)) return null
+    const ask = askOf(this.recipe)
+    const plan = await scenePlan(this.file.raw_cfa, ask)
+    if (plan.demosaic !== 'pixl' || plan.pmrid) return null
+    if (await masterCached(this.row, this.file, ask)) return null
+    // Refused for this photo (its noise unread, nothing to state it from):
+    // its stand-in master is the picture, not a region the model develops.
+    if (await masterStoodIn(this.row, this.file, ask)) return null
+    // The master goes on being made meanwhile (on open, or from here): the
+    // region's are the same pixels, so nothing moves when tiles come from it.
+    void ensureMaster(
+      this.owner.bgEngine,
+      this.row,
+      this.file,
+      ask,
+      this.developAbort.signal
+    ).catch((err: unknown) => {
+      if (!isCancelled(err)) this.masterRefused(err)
+    })
+    return plan
+  }
+
   /** A 1:1 (or smaller) render of part of the full-resolution frame. */
-  async region(req: RegionRequest): Promise<RegionResult> {
+  async region(req: RegionRequest, again = false): Promise<RegionResult> {
     const t0 = performance.now()
     // The loupe asks again as it pans and zooms: only the newest view matters.
     this.regionAbort?.abort()
@@ -2444,18 +3315,27 @@ class Session {
     // PIXL Enhance's preview (the steps' frame with a square enhanced) while it is shown.
     const stepsMaster = this.previewFrame() ?? (await this.workingMaster())
     const raw = this.isRaw
+    // Before the PIXL demosaic's master is made: the region developed from the RAW (E66).
+    const developing = stepsMaster ? null : await this.regionFromRaw()
     const src: ProxyFile = stepsMaster
       ? stepsMaster
       : this.hdrMaster
         ? this.hdrMaster
-        : raw
-          ? await this.rawMasterForView()
-          : {
+        : developing
+          ? {
               path: this.row.path,
-              input: this.info.input,
-              width: this.px.frameWidth,
-              height: this.px.frameHeight
+              input: 'Raw',
+              width: this.rawFrame?.width ?? this.px.frameWidth,
+              height: this.rawFrame?.height ?? this.px.frameHeight
             }
+          : raw
+            ? await this.rawMasterForView()
+            : {
+                path: this.row.path,
+                input: this.info.input,
+                width: this.px.frameWidth,
+                height: this.px.frameHeight
+              }
     const masterMs = Math.round(performance.now() - tMaster)
     // The source's own size: the frame its full-size render is of.
     const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
@@ -2475,16 +3355,23 @@ class Session {
     // Framed as the picture on screen is (straightened, cropped, warped, the
     // crop tool's whole frame): since engine 0.16 a region of it is the full
     // render's own pixels there, so 1:1 is sharp on any photo.
+    const maskFrames = await this.maskFrames(this.recipe)
     const compiled = compile(this.recipe, {
       isRaw: raw,
       asShot: this.info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(this.row)),
       sourceOrientation:
         raw || stepsMaster || this.hdrMaster ? 'Normal' : sourceOrientation(this.info, null),
       frameWidth: src.width,
       frameHeight: src.height,
       scale: zoom,
       seed: seedOf(this.row),
-      brushPaths: await brushPlanes(this.row.id, this.recipe, user),
+      brushPaths: await brushPlanes(this.row.id, this.recipe, user, {
+        isRaw: raw,
+        frames: maskFrames
+      }),
+      maskFrames,
+      luts: await lutsFor(this.recipe, paths.luts()),
       applyCrop: !this.view.cropMode,
       showTransform: !this.view.guides,
       // Tone mapped to SDR for the screen, as the picture is (see compileFor);
@@ -2507,11 +3394,23 @@ class Session {
     const out = frame ? '' : join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
-    const margin = await this.regionMargin(
-      compiled.grade,
-      await this.lensedSize(compiled.lens, width, height),
-      framed
-    )
+    // A mask refined over the whole frame (E62): the first tile renders the
+    // whole frame anyway (no margin short of it), so it keeps the refine's
+    // plane and the photo's measurements (`refineSlot`); every pan after it
+    // reads them, at the shift's reach, and is that render's pixels, cut.
+    const lensed = await this.lensedSize(compiled.lens, width, height)
+    const tileKey = refineKey(src, compiled)
+    // (Not while the RAW itself is developed for the region: its master comes soon.)
+    let held = developing ? undefined : this.refineSlot.use(tileKey)
+    let reach = await this.regionMargin(compiled.grade, lensed, framed, held)
+    if (held && reach.whole) {
+      // A refine the held planes have none for (a mask refined since): made again.
+      this.refineSlot.drop()
+      held = undefined
+      reach = await this.regionMargin(compiled.grade, lensed, framed)
+    }
+    const hold = reach.whole && !held && !developing
+    const margin = reach.pixels
     const request: ConvertRequest = {
       ...blankRequest(src.path, out, src.input, original),
       raw: null,
@@ -2535,18 +3434,70 @@ class Session {
       lens: compiled.lens,
       retouch: compiled.retouch,
       region: { x, y, width: w, height: h, margin },
+      hold_refines: hold,
       // A Full HDR tile is resized inside the master's float pass, which the
       // engine allows only as a linear resample.
       ...(hdr && zoom < 1 ? { linear_resample: true } : {})
     }
     const tConvert = performance.now()
-    const report = await this.owner.engine
-      .convert(request, {
-        signal,
-        frame,
-        ...(floatSdr ? { native: { sdrCompanion: TILE_COMPANION_EDGE } } : {})
-      })
-      .catch(named(compiled))
+    const native: NativeRefs = {
+      ...(floatSdr ? { sdrCompanion: TILE_COMPANION_EDGE } : {}),
+      ...(hold ? { keepHeld: this.refineSlot.id } : held ? { held: this.refineSlot.id } : {})
+    }
+    // Proofing: the tile is the proof's too, so 1:1 never shows the screen's
+    // pixels over a proof (an engine refusal of the profile leaves it unproofed).
+    const proof = hdr ? null : await this.proofTarget()
+    const plan = proof?.ok && !proof.warnOnly ? proof.plan : null
+    const convert = async (r: ConvertRequest): Promise<ConvertReport> => {
+      try {
+        const opts = { signal, frame, ...(Object.keys(native).length > 0 ? { native } : {}) }
+        const made = plan
+          ? await this.proofed(r, plan, opts)
+          : await this.owner.engine.convert(r, opts)
+        if (hold) this.refineSlot.kept(made, tileKey)
+        return made
+      } catch (err) {
+        // Held planes refused (a mask changed: "refined for another mask") or
+        // gone with their host: the tile renders the whole frame again, and keeps them.
+        if (!held || !(err instanceof EngineError) || err.cancelled) throw err
+        const v = dragVerdict(err)
+        if (v !== 'held' && v !== 'stale') throw err
+        this.refineSlot.drop()
+        log.info('1:1 held refines let go', err.field ?? err.message)
+        if (again || this.regionAbort !== abort) throw err
+        return Promise.reject(new HeldRefused())
+      }
+    }
+    let report: ConvertReport
+    try {
+      report = await (
+        developing
+          ? withScene(
+              developing,
+              (scene) => convert({ ...request, raw: rawMaster(colourOf(this.row), scene) }),
+              signal,
+              { camera: this.row.camera, iso: this.row.iso }
+            ).then((r) => r.value)
+          : convert(request)
+      ).catch(named(compiled))
+    } catch (err) {
+      if (err instanceof HeldRefused) return this.region(req, true)
+      throw err
+    }
+    // The develop's frame was taken from the proxies' (cells × their width):
+    // once the engine says its own, the region is made again on it. (Its
+    // report's frame is after the lens correction's crop and the user's
+    // turn: `sourceFrameOf` undoes both.)
+    const developed = developing ? sourceFrameOf(report, user) : null
+    if (
+      developed &&
+      (developed.width !== src.width || developed.height !== src.height) &&
+      !again &&
+      this.regionAbort === abort
+    ) {
+      this.rawFrame = developed
+      return this.region(req, true)
+    }
     // The margin fell short of what the grade read: its edges may not meet a neighbour's.
     if (report.region?.short_by)
       log.warn('region margin short', { margin, short_by: report.region.short_by })
@@ -2569,9 +3520,11 @@ class Session {
         ? 'working master (pixel steps)'
         : this.hdrMaster
           ? 'HDR master'
-          : raw
-            ? 'RAW master'
-            : 'the original',
+          : developing
+            ? 'the RAW, developed for the region (E66)'
+            : raw
+              ? 'RAW master'
+              : 'the original',
       masterMs,
       src,
       zoom: req.zoom,
@@ -2592,7 +3545,14 @@ class Session {
         encode_ms: report.encode_ms,
         region: report.region,
         frame_width: report.frame_width,
-        frame_height: report.frame_height
+        frame_height: report.frame_height,
+        // A region developed alone: its model windows against the whole frame's (E66).
+        ...(developing
+          ? {
+              tiles: report.raw?.demosaic_model?.tiles,
+              frame_tiles: report.raw?.demosaic_model?.frame_tiles
+            }
+          : {})
       }
     })
     if (this.regionAbort === abort) this.regionAbort = null
@@ -2602,7 +3562,9 @@ class Session {
       y: y / framed.height,
       width: w / framed.width,
       height: h / framed.height,
-      ms: Math.round(performance.now() - t0)
+      ms: Math.round(performance.now() - t0),
+      // As the proof shows it (a CMYK one, warned against, shows the screen's pixels).
+      ...(proof?.ok ? { proof: proof.key } : {})
     }
   }
 
@@ -2646,51 +3608,66 @@ class Session {
   }
 
   /** The last grade's region reach, by what it was asked for (one: tiles of one view share it). */
-  private reach: { key: string; pixels: number } | null = null
+  private reach: { key: string; pixels: number; whole: boolean } | null = null
 
   /**
    * A 1:1 tile's margin (host rule HR-0.20-1, Phase A §3.1): at least what
    * the engine says the grade reads around a pixel, asked again whenever the
    * grade changes. A smoothed op at radius 0.02 on a 4000 px short side
    * needs about 220 px, so 96 px tiles disagreed at their edges. An engine
-   * without `regionReach` keeps the fixed margin. No held measurement here
-   * (Phase A §4.4): a tile is of the full-resolution frame, which no drag's
-   * is, so it measures fresh (a cropped GPU drag passes its own: `dragReach`).
+   * without `regionReach` keeps the fixed margin. A drag's held measurement
+   * is never passed here (Phase A §4.4): a tile is of the full-resolution
+   * frame, which no drag's is. The 1:1 view's own held planes are (`held`,
+   * E62: a refine held reads only its shift). `whole`: nothing short of the
+   * whole frame covers what the grade reads (a mask refined over the whole
+   * frame, not held).
    */
   private async regionMargin(
     grade: Grade | null,
     /** The oriented frame after the lens correction: what the grade runs on. */
     frame: { width: number; height: number },
     /** The render's output at full size, before any resize. */
-    framed: { width: number; height: number }
-  ): Promise<number> {
-    const key = JSON.stringify([grade, frame.width, frame.height, framed.width, framed.height])
+    framed: { width: number; height: number },
+    held?: string
+  ): Promise<{ pixels: number; whole: boolean }> {
+    const key = JSON.stringify([
+      grade,
+      frame.width,
+      frame.height,
+      framed.width,
+      framed.height,
+      held ?? null
+    ])
     if (this.reach?.key !== key) {
       const whole = Math.max(frame.width, frame.height)
-      const pixels = await this.owner.engine
-        .regionReach({
-          grade,
-          sdr_grade: null,
-          frame_width: frame.width,
-          frame_height: frame.height,
-          output_width: framed.width,
-          output_height: framed.height
-        })
+      const r = await this.owner.engine
+        .regionReach(
+          {
+            grade,
+            sdr_grade: null,
+            frame_width: frame.width,
+            frame_height: frame.height,
+            output_width: framed.width,
+            output_height: framed.height
+          },
+          held
+        )
         .then(
           (r) => {
             // A mask snapped by a method that reads the whole frame (Edge
             // snap, the solver, Matting) has no reach short of all of it:
             // the tile is then the whole frame's render, cut (the owner,
-            // 2026-10-11: 1:1 shows the edge the export makes, at its cost).
+            // 2026-10-11: 1:1 shows the edge the export makes, at its cost),
+            // and keeps the refine's plane for the next (E62).
             if (r.pixels >= whole)
-              log.info('1:1 tiles render the whole frame', { reads: r.measured })
-            return Math.min(Math.ceil(r.pixels), whole)
+              log.info('1:1 tile renders the whole frame', { reads: r.measured })
+            return { pixels: Math.min(Math.ceil(r.pixels), whole), whole: r.pixels >= whole }
           },
-          () => 0
+          () => ({ pixels: 0, whole: false })
         )
-      this.reach = { key, pixels }
+      this.reach = { key, ...r }
     }
-    return Math.max(REGION_MARGIN, this.reach.pixels)
+    return { pixels: Math.max(REGION_MARGIN, this.reach.pixels), whole: this.reach.whole }
   }
 
   /** Per lens correction and frame size, the shrink its crop makes (1 when none). */
@@ -2743,9 +3720,10 @@ class Session {
   async sample(nx: number, ny: number): Promise<SampleResult> {
     const src = this.px.proxy
     const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
-    // The point is of the frame on screen: the lens-corrected one when there
-    // is a correction, which the sample is taken through too.
-    const lens = lensCorrection(this.recipe.lens)
+    // The point is of the frame on screen: the lens-corrected one when a
+    // correction is rendered (none with Optics switched off), which the
+    // sample is taken through too.
+    const lens = renderedLens(this.recipe, this.isRaw)
     const at = await this.correctedRegion(
       lens,
       width,
@@ -2980,6 +3958,7 @@ class Session {
         photoId: this.row.id,
         isRaw: this.isRaw,
         asShot: this.info.as_shot_white,
+        exposureOffset: exposureOffsetOf(colourOf(this.row)),
         seed: seedOf(this.row),
         master: set.master!,
         freeze: (recipe, layerId) =>
@@ -2989,6 +3968,7 @@ class Session {
               photoId: this.row.id,
               isRaw: this.isRaw,
               asShot: this.info.as_shot_white,
+              exposureOffset: exposureOffsetOf(colourOf(this.row)),
               seed: seedOf(this.row),
               master: set.master!
             },
@@ -3114,18 +4094,28 @@ class Session {
     this.enhancePreview = null
     if (this.screen) dropFiles(this.screen.made)
     this.screen = null
-    // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5).
+    // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5),
+    // the 1:1 view's held refines (up to 96 MB a refined mask at 24 MP), and
+    // its prepared mask planes.
     this.heldSlot.drop()
+    this.refineSlot.drop()
     this.owner.gpu.close(this.key)
+    this.owner.maskPlanes.releaseUnder(paths.photoCache(this.row.id) + sep)
     this.lookQueue?.close()
     for (const f of this.lookFiles.values()) void rm(f, { force: true }).catch(() => undefined)
     clearTimeout(this.settle)
     clearTimeout(this.letGo)
     this.abort?.abort()
     this.regionAbort?.abort()
+    // Its RAW develop stops, unless something else waits for it or it is nearly done.
+    this.developAbort.abort()
+    this.scopesAbort?.abort()
+    this.coverageAbort?.abort()
     // Corrected proxies for any other correction are no longer read.
     void pruneLensed(this.row, this.key, this.lensKey(this.recipe))
-    void sweepPhoto(this.dir, paths.photoCache(this.row.id))
+    // Its planes are looked for on disk again once the sweep is done.
+    const cache = paths.photoCache(this.row.id)
+    void sweepPhoto(this.dir, cache).finally(() => forgetPlanes(cache))
     const saved = (this.save ? this.persist() : Promise.resolve()).then(() => {
       // A thumbnail still waiting for a pause is made now.
       if (this.thumbTimer) this.thumbLater(true)
@@ -3171,6 +4161,8 @@ export class DevelopSessions {
 
   /** The GPU drag path's state for the interactive engine (Phase A §4.3). */
   readonly gpu: GpuDrag
+  /** Raster masks' planes the interactive engine keeps prepared (0.21.0, E37). */
+  readonly maskPlanes: MaskPlanes
 
   constructor(
     readonly library: Library,
@@ -3178,13 +4170,21 @@ export class DevelopSessions {
     readonly bgEngine: EngineClient
   ) {
     this.gpu = new GpuDrag(engine, library.index)
+    // The 8 GB M1 keeps a few (17.5 MB each at a 2560 px proxy); others more.
+    this.maskPlanes = new MaskPlanes(
+      engine,
+      (this.gpu.constrained ? 160 : 480) * 1024 * 1024,
+      interactiveThreads
+    )
+    engine.onSpawn(() => this.maskPlanes.clear())
     // The open RAW's full-size develop, said in the window while it runs.
     onMasterWork((e) => {
       for (const [key, s] of this.sessions)
         if (s.row.id === e.photoId) {
           this.send(IPC.develop.master, {
             key,
-            expectedMs: e.phase === 'start' ? e.expectedMs : null
+            phase: e.phase,
+            ...(e.progress ? { progress: e.progress } : {})
           } satisfies MasterEvent)
           if (e.phase !== 'end') continue
           // With a development kit, what developed it and how long it took (devkit.ts).
@@ -3294,6 +4294,11 @@ export class DevelopSessions {
       isHdr: graded.is_hdr,
       asShot: info.as_shot_white,
       rawColour: row.is_raw === 1 ? resolveRawColour(row.raw_colour, info) : null,
+      cameraProfile: cameraProfileOf(
+        row.is_raw === 1 ? resolveRawColour(row.raw_colour, info) : null,
+        info,
+        px
+      ),
       cameraColour:
         row.is_raw === 1 && info.camera_colour
           ? {
@@ -3312,8 +4317,14 @@ export class DevelopSessions {
       snapshots,
       seed: seedOf(row),
       developMark: mark,
-      rebuild: rebuildReasons(session.recipe, row.is_raw === 1, today, mark)
+      rebuild: rebuildReasons(session.recipe, row.is_raw === 1, today, mark),
+      proof: data.proof ?? null
     }
+  }
+
+  /** A proof's settings tried on the engine (`Session.proofCheck`), on the open photo's session. */
+  proofCheck(key: string, s: ProofSettings): Promise<ProofCheck> {
+    return this.get(key).proofCheck(s)
   }
 
   close(key: string): Promise<void> {
@@ -3392,6 +4403,16 @@ export class DevelopSessions {
     return this.get(key).autoTone()
   }
 
+  /** The settled picture's scopes from the engine; null for a photo since closed. */
+  scopes(req: ScopesRequest): Promise<ScopeBins | null> {
+    return this.sessions.get(req.key)?.scopes(req) ?? Promise.resolve(null)
+  }
+
+  /** The open photo's gamut coverage (Metrics); null for a photo since closed. */
+  gamutCoverage(key: string): Promise<GamutCoverage | null> {
+    return this.sessions.get(key)?.gamutCoverage() ?? Promise.resolve(null)
+  }
+
   autoWb(key: string): Promise<SampleResult['wb']> {
     return this.get(key).autoWb()
   }
@@ -3402,6 +4423,21 @@ export class DevelopSessions {
 
   measureCa(key: string): Promise<CaMeasurement> {
     return this.get(key).measureCa()
+  }
+
+  /** An open photo's recipe with its masks on its own lens (shared/lensframe.ts `rebaseNeed`). */
+  rebaseMasks(key: string, recipe: Recipe): Promise<Recipe> {
+    return this.get(key).rebaseMasks(recipe)
+  }
+
+  /** The loupe's grid between an open photo's masks' lens frame and the one rendered. */
+  maskGrid(key: string, masks: LensFrame, rendered: LensFrame): Promise<LensGrid | null> {
+    return this.get(key).maskGrid(masks, rendered)
+  }
+
+  /** A plane of an open photo re-warped from one lens frame onto another. */
+  planeOnFrame(key: string, png: string, from: LensFrame, to: LensFrame): Promise<string> {
+    return this.get(key).planeOnFrame(png, from, to)
   }
 
   /** What lens matching needs of an open photo: its lens, its camera and its frame. */
@@ -3483,6 +4519,23 @@ export class DevelopSessions {
 }
 
 export { RAW_DEVELOP }
+
+/** What the develop panel and the info panel say of a photo's camera profile (E21); null for none. */
+function cameraProfileOf(
+  colour: RawColour | null,
+  info: SourceInfo,
+  px: Proxies
+): DevelopSession['cameraProfile'] {
+  const profile = dcpOf(colour)
+  if (!profile) return null
+  return {
+    name: profileLabel(profile),
+    tables: px.profileTables ?? null,
+    toneCurve: (profile.tone_curve?.length ?? 0) > 0,
+    exposureOffset: exposureOffsetOf(colour),
+    matricesOnly: isLinearRaw(info)
+  }
+}
 
 /** Files a screen-sized picture made, off the disk (they are hundreds of MB at 5K in float). */
 function dropFiles(files: string[]): void {

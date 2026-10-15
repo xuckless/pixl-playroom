@@ -6,7 +6,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { MAX_PROBLEM_TEXT } from '../../../shared/crash'
 import type { AccountStatus } from '../../../shared/account'
-import type { GpuDragState, Prefs, UpdateState } from '../../../shared/ipc'
+import type { GpuDragState, Prefs, PreviewCacheState, UpdateState } from '../../../shared/ipc'
+import { DEFAULT_PREVIEW_CAP, PREVIEW_CAPS } from '../../../shared/previews'
 import { ACCOUNT_URL, BUY_URL, LICENCE_RULES, type LicenceStatus } from '../../../shared/licence'
 import { latestNotes } from '../../../shared/releasenotes'
 import {
@@ -24,7 +25,7 @@ import { api, errorText } from '../lib/api'
 import { openReport, takeReportFocus } from '../lib/report'
 import { chooseLanguage, rich, t, tk, tp, useLanguage } from '../lib/i18n'
 import { useLibrary } from '../state/library'
-import { useUi, COLOUR_TOOLS, FLAT_THEMES, THEMES, type ColourTools, type Theme } from '../state/ui'
+import { useUi, FLAT_THEMES, THEMES, type Theme } from '../state/ui'
 import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 import { openReleaseNotes } from '../state/whatsNew'
@@ -75,7 +76,7 @@ function ReportSection(): React.JSX.Element {
       <legend>{t('Report a problem')}</legend>
       <p className="muted small">
         {t(
-          "Found a bug? Say what you did, what happened and what you expected. It goes to the Playroom team only; add an email if you'd like a reply."
+          'Found a bug? Say what you did, what happened and what you expected. It goes to the Playroom team only; add an email if you’d like a reply.'
         )}
       </p>
       <textarea
@@ -107,7 +108,7 @@ function ReportSection(): React.JSX.Element {
           onChange={(e) => setIncludeLog(e.target.checked)}
         />
         {t(
-          "Include Playroom's recent log (it names the files it worked on; your home folder is hidden)"
+          'Include Playroom’s recent log (it names the files it worked on; your home folder is hidden)'
         )}
       </label>
       <div className="prefs-row">
@@ -120,7 +121,11 @@ function ReportSection(): React.JSX.Element {
           </span>
         )}
       </div>
-      {error && <p className="error small">{error}</p>}
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
     </fieldset>
   )
 }
@@ -149,7 +154,7 @@ function updateLine(s: UpdateState): string {
     case 'not-available':
       return t('Playroom is up to date.')
     case 'error':
-      return t("Couldn't check for updates: {{error}}", { error: s.error ?? t('unknown error') })
+      return t('Couldn’t check for updates: {{error}}', { error: s.error ?? t('unknown error') })
     default:
       return t('Playroom checks for updates at launch and every few hours.')
   }
@@ -218,7 +223,11 @@ function AccountSection(): React.JSX.Element | null {
           </button>
         )}
       </div>
-      {error && <p className="error small">{error}</p>}
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
     </fieldset>
   )
 }
@@ -317,7 +326,7 @@ function LicenceSection(): React.JSX.Element | null {
       {!status.enforced && (
         <p className="muted small">
           {t(
-            "Licences aren't required yet: every feature works either way. Once they are, an ended trial stops exporting only; editing keeps working."
+            'Licences aren’t required yet: every feature works either way. Once they are, an ended trial stops exporting only; editing keeps working.'
           )}
         </p>
       )}
@@ -363,7 +372,11 @@ function LicenceSection(): React.JSX.Element | null {
           )}
         </div>
       )}
-      {error && <p className="error small">{error}</p>}
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
     </fieldset>
   )
 }
@@ -555,6 +568,7 @@ export function PreferencesDialog(): React.JSX.Element {
             <SavingSections />
             <InterfaceSection />
             <PerformanceSection />
+            <StorageSection />
           </>
         )}
         {section === 'display' && <DisplaySection platform={prefs?.platform ?? null} />}
@@ -723,14 +737,94 @@ function PerformanceSection(): React.JSX.Element | null {
             ),
             expect: state.constrained
               ? t(
-                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, the Colour mixer and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. On this Mac only the open photo keeps its copy on the graphics chip, and Highlights, Shadows, Whites and Blacks drag without Keep texture until you let go. Turn it off if a drag looks different from the picture you let go on.'
+                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, HSL and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. On this Mac only the open photo keeps its copy on the graphics chip, and Highlights, Shadows, Whites and Blacks drag without Keep texture until you let go. Turn it off if a drag looks different from the picture you let go on.'
                 )
               : t(
-                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, the Colour mixer and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. The open photo keeps a copy on the graphics chip (about 130–250 MB). Turn it off if a drag looks different from the picture you let go on.'
+                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, HSL and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. The open photo keeps a copy on the graphics chip (about 130–250 MB). Turn it off if a drag looks different from the picture you let go on.'
                 )
           }}
         />
       </label>
+    </fieldset>
+  )
+}
+
+/** A size on disk, as people read it ("1.4 GB", "320 MB"). */
+function sizeLabel(bytes: number): string {
+  const gb = bytes / 1024 ** 3
+  const n = (v: number, digits: number): string =>
+    new Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(v)
+  return gb >= 1
+    ? t('{{size}} GB', { size: n(gb, 1) })
+    : t('{{size}} MB', { size: n(bytes / 1024 ** 2, 0) })
+}
+
+/**
+ * The Library's previews (the Loupe's, Compare's and Survey's pictures):
+ * how much room they take, the most they may, and emptying them. Past the
+ * cap the least recently shown go; they are made again when shown.
+ */
+function StorageSection(): React.JSX.Element {
+  const say = useLibrary((s) => s.say)
+  const [state, setState] = useState<PreviewCacheState | null>(null)
+  useEffect(() => {
+    void api.library.previewCache().then(setState, () => undefined)
+  }, [])
+  const cap = state?.cap ?? DEFAULT_PREVIEW_CAP
+  // A cap set some other way is offered too, in its place.
+  const caps = PREVIEW_CAPS.includes(cap)
+    ? PREVIEW_CAPS
+    : [...PREVIEW_CAPS, cap].sort((a, b) => a - b)
+  return (
+    <fieldset>
+      <legend>{t('Storage')}</legend>
+      <div className="pref-row">
+        <Select<string>
+          label={t('Library previews')}
+          value={String(cap)}
+          options={caps.map((c) => ({
+            value: String(c),
+            label: t('Up to {{size}}', { size: sizeLabel(c) })
+          }))}
+          onChange={(v) =>
+            void api.library
+              .setPreviewCap(Number(v))
+              .then(setState)
+              .catch((err) => say(errorText(err), 'error'))
+          }
+        />
+        <InfoTip
+          label={t('Library previews')}
+          tip={{
+            what: t(
+              'The large pictures the Loupe, Compare and Survey show, kept so a photo comes up at once the next time.'
+            ),
+            expect: t(
+              'Past the limit the ones shown longest ago go first, and are made again when shown. Your photos and their edits are never touched.'
+            )
+          }}
+        />
+      </div>
+      <div className="row between">
+        <span className="muted small t-num">
+          {state ? t('{{size}} in use', { size: sizeLabel(state.bytes) }) : '…'}
+        </span>
+        <button
+          className="sm"
+          disabled={!state || state.bytes === 0}
+          onClick={() =>
+            void api.library
+              .clearPreviews()
+              .then((s) => {
+                setState(s)
+                say(t('Library previews cleared'))
+              })
+              .catch((err) => say(errorText(err), 'error'))
+          }
+        >
+          {t('Clear previews')}
+        </button>
+      </div>
     </fieldset>
   )
 }
@@ -743,8 +837,6 @@ function InterfaceSection(): React.JSX.Element {
   const setCullSuggest = useUi((s) => s.setCullSuggest)
   const theme = useUi((s) => s.theme)
   const setTheme = useUi((s) => s.setTheme)
-  const colourTools = useUi((s) => s.colourTools)
-  const setColourTools = useUi((s) => s.setColourTools)
   const nodeView = useUi((s) => s.nodeView)
   const setNodeView = useUi((s) => s.setNodeView)
   return (
@@ -769,26 +861,7 @@ function InterfaceSection(): React.JSX.Element {
           }}
         />
       </div>
-      <div className="pref-row">
-        <Select<ColourTools>
-          label={t('Colour tools')}
-          value={colourTools}
-          options={COLOUR_TOOLS.map((x) => ({ value: x.value, label: t(x.label) }))}
-          onChange={setColourTools}
-        />
-        <InfoTip
-          label={t('Colour tools')}
-          tip={{
-            what: t(
-              'Which colour cards the develop panel shows: Lightroom’s (Colour, Colour mixer, Colour grading, Tone curve, Calibration) or DaVinci Resolve’s (Primaries with Lift, Gamma, Gain and Offset wheels, and more).'
-            ),
-            expect: t(
-              'Both act on the photo whichever shows: a photo edited with the other set keeps its look, and the panel says so.'
-            )
-          }}
-        />
-      </div>
-      <label className="check" hidden={colourTools !== 'resolve'}>
+      <label className="check">
         <input type="checkbox" checked={nodeView} onChange={(e) => setNodeView(e.target.checked)} />
         {t('Node view (advanced)')}
         <InfoTip
@@ -1025,7 +1098,7 @@ export function CrashConsentDialog(): React.JSX.Element {
       icon="settings"
       footer={
         <>
-          <button onClick={() => answer(false)}>{t("Don't send")}</button>
+          <button onClick={() => answer(false)}>{t('Don’t send')}</button>
           <button className="primary" onClick={() => answer(true)}>
             {t('Send crash reports')}
           </button>

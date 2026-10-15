@@ -220,29 +220,18 @@ test('the catalog is large and every collection is stocked', () => {
     )
 })
 
-test('the rebuilt looks set only what the Resolve colour tools show', async () => {
+test('every look PIXL ships sets only what the colour tools show', async () => {
   const { LOOKS } = await import('../src/shared/looks/catalog')
-  const { cardsFor } = await import('../src/shared/cards')
-  // The Curves card's Custom tab is the tone curve's own point curve.
-  const shown = [
-    ...cardsFor('resolve').flatMap((c) => c.fields.map((f) => f.join('.'))),
-    'toneCurve.master',
-    'toneCurve.red',
-    'toneCurve.green',
-    'toneCurve.blue'
-  ]
-  const rebuilt = LOOKS.filter(
-    (l) => ['essentials', 'creative', 'bw'].includes(l.meta.collection) && l.meta.version >= 2
-  )
-  assert.equal(rebuilt.length, 44)
-  for (const l of rebuilt)
-    for (const f of l.fields) {
-      const path = f.join('.')
-      // B&W is the treatment (the panel's head), shown with either set.
-      if (path === 'treatment') continue
-      assert.ok(
-        shown.some((s) => path === s || path.startsWith(`${s}.`)),
-        `${l.name}: ${path} is not shown with the Resolve tools`
-      )
-    }
+  const { CARDS } = await import('../src/shared/cards')
+  const shown = CARDS.filter((c) => !c.legacy).flatMap((c) => c.fields.map((f) => f.join('.')))
+  const visible = (path: string): boolean =>
+    // B&W is the treatment (Basic corrections' head).
+    path === 'treatment' || shown.some((s) => path === s || path.startsWith(`${s}.`))
+  for (const l of LOOKS) {
+    for (const f of l.fields) assert.ok(visible(f.join('.')), `${l.name}: ${f.join('.')}`)
+    // A smart look's masks too: never Lightroom's Colour grading wheels.
+    for (const m of l.smart?.masks ?? [])
+      for (const path of Object.keys(m.adjust ?? {}))
+        assert.ok(visible(path), `${l.name}, mask ${m.id}: ${path}`)
+  }
 })

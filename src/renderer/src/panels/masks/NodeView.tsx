@@ -1,6 +1,6 @@
 /**
  * DaVinci Resolve's node view of the photo's grade, in the masks pane
- * (Settings → Interface → Node view, with the Resolve colour tools): the
+ * (Settings → Interface → Node view): the
  * layers the engine runs, in order, as a serial chain of nodes. 01 is the
  * photo's own grade, then each qualifier, each mask, and the advanced
  * layers. A node's eye switches it off and on; a click puts its correction
@@ -66,8 +66,9 @@ function Node(p: NodeProps): React.JSX.Element {
       {p.onToggle && (
         <button
           className="icon sm ghost"
-          aria-label={p.enabled ? t('Switch off') : t('Switch on')}
-          title={p.enabled ? t('Switch off') : t('Switch on')}
+          aria-pressed={p.enabled}
+          aria-label={t('Show {{name}}', { name: p.name })}
+          title={p.enabled ? t('Turn off') : t('Turn on')}
           onClick={p.onToggle}
         >
           <Icon name={p.enabled ? 'eye' : 'eyeOff'} />

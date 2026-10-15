@@ -11,6 +11,7 @@ import type { MaskMode } from './engine-types'
 import type { AiDenoiseModel, BrushSource } from './recipe'
 import type { SmartReadiness } from './looks/smart'
 import type { Finders } from './concepts'
+import type { LensFrame } from './lensframe'
 import type { PromptGeometry, PromptVia } from './prompt'
 import {
   FACE_LANDMARKER,
@@ -128,6 +129,12 @@ export type AiResult =
       depth?: true
       /** A face part: a lasso of every face's outline (no plane; `ref` is empty). */
       polygon?: FaceFound
+      /**
+       * The lens frame it was found on (the lens the photo rendered with
+       * when the model ran: shared/lensframe.ts); unset, the one it renders
+       * with when applied.
+       */
+      lensFrame?: LensFrame
     }
 
 export type AiPhase = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
@@ -290,6 +297,31 @@ export function estimate(elapsedMs: number, expectedMs: number): number {
   if (expectedMs <= 0) return 0
   const t = Math.max(0, elapsedMs) / expectedMs
   return 0.95 * (1 - Math.exp(-2.2 * t))
+}
+
+/**
+ * A bar's fill from what the engine has counted (engine 0.21.0, E68: done
+ * of total), never going back: `total` grows as a call reaches each stage
+ * (a RAW denoise, then the demosaic), so `done / total` can step back, and
+ * the bar then waits where it was until the count passes it. Null while
+ * nothing has been counted (`shown` null, `total` 0): the bar sweeps.
+ */
+export function countedFill(
+  shown: number | null,
+  progress: { done: number; total: number }
+): number | null {
+  if (!(progress.total > 0)) return shown
+  const f = Math.min(1, Math.max(0, progress.done / progress.total))
+  return shown === null ? f : Math.max(shown, f)
+}
+
+/**
+ * About how long is left, from the time so far and the share done: null
+ * until a tenth is done (the first windows say little of the rest).
+ */
+export function timeLeftMs(elapsedMs: number, fill: number | null): number | null {
+  if (fill === null || fill < 0.1 || fill >= 1 || !(elapsedMs > 0)) return null
+  return (elapsedMs * (1 - fill)) / fill
 }
 
 /** Where each stage stands, for the dots under the title. */

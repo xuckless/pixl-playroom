@@ -42,22 +42,20 @@ import {
   type FaceOutline,
   type FacePart
 } from '../../shared/faceparts'
-import { lensCorrection } from '../../shared/lens'
+import { renderedLens } from '../../shared/edits'
+import { lensFrameOf } from '../../shared/lensframe'
 import type { PlaneShare } from '../../shared/naming'
 import { hardenPlane } from '../../shared/refine'
-import { partPlane, pasted, personBox, squareAround } from './parts'
+import { partPlane, personBox, regionOf, squareAround, type SegmentRegion } from './parts'
 import { planeRef } from '../planeref'
 import type { EngineClient, FaceReport } from '../engine/client'
 import type { Library } from '../library'
 import { encodeGreyPng, grey8 } from '../pngio'
 import type { PlaneStore } from '../planestore'
-import { unlink } from 'fs/promises'
-import { join } from 'path'
-import { paths } from '../paths'
 import { ensureProxies, viewProxies, type ProxyFile } from '../proxy'
 import { askOf } from './rawdevelop'
 import type { DevelopSessions } from '../render'
-import { BACKGROUND_THREADS, blankRequest } from '../source'
+import { BACKGROUND_THREADS } from '../source'
 import { READ_LIMITS } from '../../shared/limits'
 import type { SamResult } from '../../shared/engine-types'
 import log from 'electron-log/main'
@@ -102,6 +100,8 @@ const SUBJECT_MODELS = ['u2netp']
  * A segment request on a picture of the base frame (the proxy, upright:
  * what masks are placed on), its planes at the picture's own size unless
  * `longest` says smaller: the edge is followed there, not stretched later.
+ * With `region` (engine 0.21.0, OBS-6) the model is shown that rectangle
+ * of the frame alone, and its planes are still the frame's, 0 outside it.
  */
 function segmentRequest(
   path: string,
@@ -109,9 +109,11 @@ function segmentRequest(
   lens: LensCorrection | null,
   model: Record<string, unknown>,
   upsample: unknown,
-  longest: number | null = null
+  longest: number | null = null,
+  region: SegmentRegion | null = null
 ): Record<string, unknown> {
   return {
+    region,
     source: { Path: path },
     input,
     raw: null,
@@ -190,7 +192,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
    */
   async coverage(key: string, model: string, signal: AbortSignal): Promise<PlaneShare[] | null> {
     if (!(await this.models.installed(model))) return null
-    const { px, recipe } = await this.frame(key)
+    const { row, px, recipe } = await this.frame(key)
     const ref = await this.models.ref(model, 'Cpu')
     if (signal.aborted) throw new Cancelled()
     try {
@@ -198,7 +200,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         segmentRequest(
           px.proxy.path,
           px.proxy.input,
-          lensCorrection(recipe.lens),
+          renderedLens(recipe, row.is_raw === 1),
           ref,
           DEPTH_UPSAMPLE,
           SHARE_LONGEST
@@ -244,10 +246,15 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const expected = req.fine ? 10000 : 2500
     const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 200)
     let report: Awaited<ReturnType<EngineClient['segment']>>
-    const lens = lensCorrection(recipe.lens)
+    const lens = renderedLens(recipe, row.is_raw === 1)
+    // The frame it is found on: applied, the mask says so if the masks are on another.
+    const lensFrame = lensFrameOf(lens)
     if (isPartTarget(req.target)) {
       try {
-        return await this.part(ctx, req, req.target, row.id, px.proxy, lens, segmenter)
+        return {
+          ...(await this.part(ctx, req, req.target, px.proxy, lens, segmenter)),
+          lensFrame
+        }
       } finally {
         clearInterval(tick)
       }
@@ -289,6 +296,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         height: d.height,
         label,
         source: { kind: 'segment', target: req.target as 'sky' | 'vegetation' | 'water' },
+        lensFrame,
         ...(req.into ? { into: { ...req.into } } : {})
       }
     }
@@ -305,6 +313,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         height: d.height,
         label: t(SEGMENT_LABEL.depth),
         depth: true,
+        lensFrame,
         ...(req.into ? { into: { ...req.into } } : {})
       }
     }
@@ -337,6 +346,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         target: req.target as 'subject' | 'background',
         ...(req.fine ? { fine: true as const } : {})
       },
+      lensFrame,
       // Into the mask it was asked for (Add to the selected mask, a smart look's), else a new one.
       ...(req.into ? { into: { ...req.into } } : {})
     }
@@ -370,7 +380,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       segment: { min_score: number; max_instances: number; activation: string }
     }
     if (ctx.signal.aborted) throw new Cancelled()
-    const lens = lensCorrection(recipe.lens)
+    const lens = renderedLens(recipe, row.is_raw === 1)
     ctx.stage('analyse', 0, t('Finding “{{text}}”', { text }))
     // SAM 3: about 9 s for the photo, then a second a phrase (8 CPU threads,
     // the roster); EfficientSAM3 1.4 s and half a second.
@@ -449,6 +459,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       height: plane!.height,
       label: text.charAt(0).toUpperCase() + text.slice(1),
       source: { kind: 'phrase', text },
+      lensFrame: lensFrameOf(lens),
       ...(req.into ? { into: { ...req.into } } : {})
     }
   }
@@ -466,17 +477,16 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
   ): Promise<Extract<AiResult, { kind: 'mask' }>> {
     for (const id of [FACE_DETECTOR, FACE_LANDMARKER])
       if (!(await this.models.installed(id))) throw new ModelMissing(this.models.entry(id))
-    const { px, recipe } = await this.frame(req.key)
+    const { row, px, recipe } = await this.frame(req.key)
+    const lens = renderedLens(recipe, row.is_raw === 1)
     const detector = await this.models.ref(FACE_DETECTOR, 'Cpu')
     const landmarks = await this.models.ref(FACE_LANDMARKER, 'Cpu')
     if (ctx.signal.aborted) throw new Cancelled()
     const label = t(SEGMENT_LABEL[part])
     ctx.stage('analyse', 0, t('Finding faces'))
-    const W = px.proxy.width
-    const H = px.proxy.height
     const look = async (
       region: { x: number; y: number; width: number; height: number } | null
-    ): Promise<FaceReport['faces']> => {
+    ): Promise<FaceReport> => {
       try {
         const r = await this.engine.faces(
           {
@@ -486,7 +496,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
             gain_map: null,
             // The proxy is the base frame, upright, after the lens: what masks are placed on.
             orientation: 'Normal',
-            lens: lensCorrection(recipe.lens),
+            lens,
             region: region ? { ...region, margin: 0 } : null,
             detector,
             landmarks,
@@ -495,17 +505,21 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
           },
           { signal: ctx.signal }
         )
-        return r.faces
+        return r
       } catch (err) {
         if (ctx.signal.aborted) throw new Cancelled()
         throw err
       }
     }
     const whole = await look(null)
+    // Faces are told in the frame's pixels: the frame the lens leaves, which
+    // a correction that crops makes smaller than the proxy.
+    const W = whole.frame_width || px.proxy.width
+    const H = whole.frame_height || px.proxy.height
     ctx.progress(0.4)
     const tiles: { tile: ReturnType<typeof faceTiles>[number]; faces: FaceReport['faces'] }[] = []
-    for (const tile of faceTiles(W, H)) tiles.push({ tile, faces: await look(tile) })
-    const faces = mergeFaces(whole, tiles, W, H)
+    for (const tile of faceTiles(W, H)) tiles.push({ tile, faces: (await look(tile)).faces })
+    const faces = mergeFaces(whole.faces, tiles, W, H)
     const outlines: FaceOutline[] = leftToRight(
       faces
         .filter((f) => f.outlines)
@@ -530,14 +544,15 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       height: H,
       label,
       polygon: { part, faces: outlines, face: null },
+      lensFrame: lensFrameOf(lens),
       ...(req.into ? { into: { ...req.into } } : {})
     }
   }
 
   /**
    * A person's part: Selfie Multiclass on the photo, to find where the
-   * person is, then on a square around them, its planes laid back where the
-   * square came from. The part is kept where it beats the person's other
+   * person is, then shown a square around them (a region of the frame: its
+   * planes are the frame's, nothing outside the square). The part is kept where it beats the person's other
    * parts (a dark jumper read as some hair stays clothes) and hardened a
    * little: the model's edges are soft.
    */
@@ -545,19 +560,16 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     ctx: AiContext,
     req: SegmentRequest,
     target: PartTarget,
-    photoId: number,
     proxy: ProxyFile,
     lens: LensCorrection | null,
     segmenter: Record<string, unknown>
   ): Promise<Extract<AiResult, { kind: 'mask' }>> {
     const run = async (
-      path: string,
-      input: string,
-      withLens: LensCorrection | null
+      region: SegmentRegion | null
     ): Promise<{ name: string; data: Uint8Array; width: number; height: number }[]> => {
       try {
         const r = await this.engine.segment(
-          segmentRequest(path, input, withLens, segmenter, UPSAMPLE),
+          segmentRequest(proxy.path, proxy.input, lens, segmenter, UPSAMPLE, null, region),
           { signal: ctx.signal }
         )
         return r.planes.map((p) => ({ name: p.name, ...grey8(Buffer.from(p.png)) }))
@@ -567,38 +579,16 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       }
     }
     const label = t(SEGMENT_LABEL[target])
-    const whole = await run(proxy.path, proxy.input, lens)
+    const whole = await run(null)
     const { width: W, height: H } = whole[0]
     const box = personBox(whole, W, H)
     if (!box)
       throw new Error(t('No person found in this photo for {{label}}: try a brush', { label }))
     const sq = squareAround(box, W, H)
-    let planes = whole
-    // The person already fills the frame: the first answer is as good as it gets.
-    if (sq.side < 0.9 * Math.min(W, H)) {
-      const cropPath = join(paths.photoCache(photoId), `parts-${process.pid}-${Date.now()}.tiff`)
-      try {
-        await this.engine.convert({
-          ...blankRequest(proxy.path, cropPath, proxy.input),
-          lens,
-          pixel: { depth: proxy.float ? 'F32' : 'Sixteen', channels: 3 },
-          encode: { Tiff: { compression: 'None' } },
-          metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: 'Preserve',
-          framing: {
-            orientation: 'Normal',
-            rotate_degrees: 0,
-            rotate_resampler: 'Lanczos3',
-            crop: { x: sq.x / W, y: sq.y / H, width: sq.side / W, height: sq.side / H }
-          },
-          threads: BACKGROUND_THREADS
-        })
-        const near = await run(cropPath, 'Tiff', null)
-        planes = near.map((p) => ({ ...p, data: pasted(p, sq, W, H), width: W, height: H }))
-      } finally {
-        await unlink(cropPath).catch(() => undefined)
-      }
-    }
+    // The person already fills the frame: the first answer is as good as it
+    // gets. Else the model is shown the square alone (OBS-6: one request, no
+    // cropped copy), its planes the frame's with nothing outside the square.
+    const planes = sq.side < 0.9 * Math.min(W, H) ? await run(regionOf(sq)) : whole
     ctx.stage('refine', 0, t('Refining the edges'))
     const grey = partPlane(planes, PART_PLANES[target], W * H)
     let any = false

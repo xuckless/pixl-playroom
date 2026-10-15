@@ -18,6 +18,324 @@ export interface ReleaseNotes {
 }
 
 export const RELEASE_NOTES: ReleaseNotes[] = [
+  // Engine 0.21.0 (TODO.md Phase P): one set of colour tools on the engine's
+  // exact ops, film effects, cancellable RAW develops, the engine's scopes,
+  // masks that follow geometry, the security audit (branch feat/engine-0.21).
+  {
+    version: '0.6.0-beta',
+    headline: tk(
+      'One set of colour tools, film that glows, RAWs that stop when you walk away, and masks that finally stay where you put them.'
+    ),
+    sections: [
+      {
+        title: tk('One set of colour tools'),
+        items: [
+          tk(
+            'The Lightroom or Resolve switch is gone. There’s one set now, Playroom’s, and it does everything the Lightroom set did. Nobody has to pick a side at dinner any more.'
+          ),
+          tk(
+            'The tone curve moved into Curves, region sliders and all. HSL has Point colour back, and Add colour sits under the Primaries’ wheels.'
+          ),
+          tk(
+            'Lightroom’s Colour grading wheels only show on a photo that already uses them. They still work there; reset them and they bow out politely.'
+          ),
+          tk(
+            'Every built-in look was rebuilt on the new tools. They look the same (about ΔE 1 on average, which is squinting territory), and a few gained a gentler roll-off in the highlights.'
+          )
+        ]
+      },
+      {
+        title: tk('Colour, exactly'),
+        items: [
+          tk(
+            'Hue vs Lum and Sat vs Sat work. Curves you drew while they waited start to show, so a photo or two may look a little different the first time you open it. That’s them, finally doing their job.'
+          ),
+          tk(
+            'The Log wheels are the real thing now: graded in log, as Resolve’s are, with Low and High range where Resolve puts them. Edits that used them change, more than a little; they were an approximation, and the card said so.'
+          ),
+          tk(
+            'Temp and Tint in the Primaries sit beside the wheels, a gain on the graded colour that keeps greys as bright as they were, instead of a second white balance. On a black-and-white photo they tone it.'
+          ),
+          tk(
+            'Lum Mix, Resolve’s, beside Temp and Tint: raise it and the Y rings brighten or darken without touching the colour. It starts at 0, so nothing you made moves.'
+          ),
+          tk(
+            'The tone curve’s region sliders can no longer fold the tones back, however hard you pull them in opposite directions.'
+          ),
+          tk(
+            'Smoothing reaches Highlights, Shadows, Whites, Blacks and the Color Mixer again, now that the engine no longer paints white patches there. Edits with Smoothing on look a touch smoother in the shadows.'
+          ),
+          tk(
+            'Saved edits take the new maths, and edited photos’ thumbnails are made again once so the library agrees with them.'
+          )
+        ]
+      },
+      {
+        title: tk('Film, minus the chemicals'),
+        items: [
+          tk(
+            'Halation, in Effects: the warm red glow film gets around bright lights, with its own Threshold, Size and Hue.'
+          ),
+          tk(
+            'Bloom, right beside it: Diffusion softens the whole picture like a filter on the lens, Glow haloes just the lights.'
+          ),
+          tk(
+            'Grain gained a Colour slider and a Response: Film (the midtones, as before), Even, or Scanned negative, strongest in the shadows.'
+          ),
+          tk(
+            'HSL has a Density tab, for colours that feel thick and rich, as on slide film, rather than just louder.'
+          ),
+          tk(
+            'The looks use all of it: twenty halation and bloom looks are the real thing now, colour negatives have colour grain, slide looks are denser, and three false-colour looks swap their colours the whole way.'
+          )
+        ]
+      },
+      {
+        title: tk('RAWs, faster and more honest'),
+        items: [
+          tk(
+            'Leave a photo while its RAW develops and the develop stops. Unless it’s about 70% done: then it finishes quietly, so coming back is instant.'
+          ),
+          tk(
+            'The Developing RAW bar shows real progress and, once it knows, about how long is left. Enhance and AI Denoise show real progress too.'
+          ),
+          tk(
+            'Zoom to 100% on a fresh RAW and it’s sharp in a second or two. Panning at 100% over a mask snapped to edges is several times quicker.'
+          ),
+          tk(
+            'PIXL Enhance sees the detail in a RAW’s highlights around white instead of a flat plateau. And on a Mac the AI models start sooner: each is prepared for your chip once and kept.'
+          ),
+          tk(
+            'Most RAWs our demosaic developed in 0.5.0 are developed once more when you open them. AI steps made on the old develop are marked, and Rebuild offers to make them again.'
+          ),
+          tk(
+            'A RAW’s noise is never borrowed from another camera’s. If Playroom can’t tell, that photo takes the standard develop and says why.'
+          ),
+          tk(
+            'A heal with Edge snap on a flat patch, with no edge to snap to, now heals anyway and tells you so, instead of quietly doing nothing.'
+          )
+        ]
+      },
+      {
+        title: tk('Opening and browsing'),
+        items: [
+          tk(
+            'A photo shows up the moment you open it, from the camera’s own preview, and melts into Playroom’s develop when that’s ready. An edited photo shows its thumbnail instead; the camera has no idea what you did.'
+          ),
+          tk(
+            'Thumbnails are sharper and quicker, especially from Sony, Nikon and Fujifilm RAWs, whose full-size previews we now use.'
+          ),
+          tk('Large JPEGs open sooner.'),
+          tk(
+            'DNG camera profiles, in White balance: Adobe’s are found for you if you have Lightroom or the DNG Converter, and Import .dcp… takes your own. Only ones made for your camera are offered.'
+          ),
+          tk(
+            'A third vignette style, Colour priority: the corners brighten without washing out to white.'
+          ),
+          tk('About names the exact engine build, for the curious and for bug reports.')
+        ]
+      },
+      {
+        title: tk('Scopes, now with fewer opinions'),
+        items: [
+          tk(
+            'Let go of a slider and the scopes switch to the engine’s exact measurement of every pixel shown.'
+          ),
+          tk(
+            'Every scope agrees on what brightness means (BT.709, as Resolve has it), so they’ve stopped arguing with each other.'
+          ),
+          tk('Metrics → Gamut coverage shows real numbers for how far the photo’s colours reach.'),
+          tk(
+            'Gamut warning (Shift+J), beside Clipping, paints green where the photo holds colours your export can’t. Soft proofing, part one.'
+          )
+        ]
+      },
+      {
+        title: tk('Masks that stay put'),
+        items: [
+          tk(
+            'Masks no longer drift under Upright or Transform: the overlay, the brush and Auto Mask follow the warp exactly.'
+          ),
+          tk(
+            'No stale mask after a crop or a turn: you see the mask for the picture in front of you.'
+          ),
+          tk('Switch Crop & straighten or Geometry off and the masks stay where they belong.'),
+          tk(
+            'AI masks are found on the picture as you see it, so a click lands on what you clicked.'
+          ),
+          tk('Change the lens correction and the masks stay on their subject, in the export too.'),
+          tk(
+            'Strokes stay on their subject when you change the lens corrections or Upright, or switch Optics off, like every other mask. Painting into a mask a model found with Optics off lands where you paint, too.'
+          )
+        ]
+      },
+      {
+        title: tk('Brushes, sharper'),
+        items: [
+          tk(
+            'Brush strokes are vectors now, so a stroke is as crisp on a full-size export as it was on screen. Density says how strong a stroke is: scrubbing back and forth in one stroke adds nothing, a second stroke on top does. Flow has left the building. Brushes you painted before render as they always did.'
+          ),
+          tk(
+            'Paint into a mask that already does something and the adjustment appears under the brush as you go, not just the overlay.'
+          )
+        ]
+      },
+      {
+        title: tk('Safe and sound'),
+        items: [
+          tk(
+            'A shared project or sidecar can’t read or write anything outside Playroom’s cache, and can’t send Playroom to a network share or a folder you haven’t added. Double-click away.'
+          ),
+          tk(
+            'LUTs are found by name in Playroom’s LUT folder, so a project from another computer finds yours, and says when one is missing.'
+          ),
+          tk(
+            'Updates are checked against Pixl’s own signature before they download. No signature, no update.'
+          ),
+          tk('Release builds ship without the developer tools. Those were for us.'),
+          tk('Thumbnails that failed because of us, not your file, get another go.')
+        ]
+      },
+      {
+        title: tk('Library'),
+        items: [
+          tk(
+            '⌘Z works in the Library: ratings, flags, labels, pastes and auto white balance come back, and the Edit menu says what it is about to undo. A change to several photos has an Undo in its toast, and one to more than 500 asks first, in case ⌘A met a number key.'
+          ),
+          tk(
+            'Undoing a paste goes through each photo’s own History, so a photo you edited since keeps your edit, and the toast says how many did.'
+          ),
+          tk(
+            'Reject a photo while rejects are hidden and it stays where it is, dimmed and marked Hidden by filter, until you move on. The grid no longer shuffles under your cursor.'
+          ),
+          tk(
+            'The grid walks by row too: ↑ and ↓, Home and End, Page Up and Page Down, with ⇧ to stretch the selection.'
+          ),
+          tk(
+            'In Develop, the rating, flag and label keys touch only the photo you are looking at, whatever the filmstrip has selected.'
+          ),
+          tk(
+            '⌘C copies a photo’s settings in the Library as well, and ⌘V pastes them at once, with an Undo. ⇧⌘V lets you choose what to paste, and Sync names the photo it copies from.'
+          ),
+          tk(
+            'Quick develop sits beside Info in the Library (⇧I): put a look on the whole selection, with a preview of the photo in focus and an Amount, and nudge Exposure, Contrast, Temp, Tint and Vibrance a step at a time. Each row shows what you have changed so far.'
+          ),
+          tk(
+            '⌥↑ and ⌥↓ move the selection’s exposure a third of a stop (with ⇧, a whole stop), and ⌥← and ⌥→ its white balance, anywhere in the Library. A run of clicks or presses is one step in each photo’s History and one ⌘Z.'
+          ),
+          tk(
+            'Auto tone works on a selection too, each photo measured on its own, as Auto white balance already did.'
+          )
+        ]
+      },
+      {
+        title: tk('Culling'),
+        items: [
+          tk(
+            'The Library has four views: Grid (G), Loupe (E), Compare (C) and Survey (N). Space flips between the Grid and the Loupe, Esc comes back, D develops. E used to develop; it opens the Loupe now, and says so once.'
+          ),
+          tk(
+            'Z shows every pixel: the camera’s own full-size preview where there is one, else the part you are looking at, rendered on the spot. No trip to Develop. Checking focus is no longer guesswork.'
+          ),
+          tk(
+            'Compare puts the Select and a Candidate side by side, zoomed together (L lets them wander apart). ← and → bring the next Candidate, Tab swaps them, ↑ crowns the Candidate.'
+          ),
+          tk(
+            'Survey lays out up to twelve photos at once, and / drops one (⌘Z if you change your mind). N on a single photo shows its burst, or the shots that look nearly the same.'
+          ),
+          tk(
+            'Auto advance (⇧A, or the chip at the bottom) moves on after each rating, flag or label. It is off unless you want it, and Caps Lock flips it while it is down, as in Lightroom.'
+          ),
+          tk(
+            'The filters have a row of their own: stars, flags, labels, edited, and More… for the rest, each one a chip you can clear. It also admits that rejects are hidden, which they always were. ⇧\\ tucks it away.'
+          ),
+          tk(
+            'The Loupe’s pictures are kept so they come up at once, under a limit you choose in Settings, the ones you saw longest ago going first.'
+          )
+        ]
+      },
+      {
+        title: tk('Export, minus the wizard'),
+        items: [
+          tk(
+            'Export is one sheet now: presets on the left, settings on the right, a summary with a size estimate below. ⌘↵ exports. The wizard has retired to a farm upstate.'
+          ),
+          tk(
+            'Built-in presets: Web 2048, Social 1080, Print TIFF 16-bit and HDR AVIF PQ. Yours can be updated, renamed, duplicated and deleted.'
+          ),
+          tk(
+            'Exports run in the background, one after another, and show in the top bar. Each keeps a receipt with Show in Finder and Retry.'
+          ),
+          tk(
+            'Export with previous (⌘⌥⇧E) does it again with the last settings, and only asks if something would stop it.'
+          ),
+          tk(
+            'An export uses the photos as they were when you pressed Export, skips originals that are offline and names them, and a full disk gets one clear message instead of forty.'
+          )
+        ]
+      },
+      {
+        title: tk('Soft proofing'),
+        items: [
+          tk(
+            'Press S in Develop to see the photo as a printer, paper or colour space will make it. ⌥S sets the profile, intent, black point and paper; ⇧Y shows Screen and Proof side by side.'
+          ),
+          tk('While you proof, the gamut warning checks against the proof’s profile.'),
+          tk(
+            'Proof copies: one click makes a virtual copy named after the paper that opens proofed, and Photo › Make Proof Copy… does a whole selection.'
+          )
+        ]
+      },
+      {
+        title: tk('Snappier'),
+        items: [
+          tk(
+            'Zoomed to 100%, the sharp view keeps up while you drag, so you can watch sharpening and noise reduction happen.'
+          ),
+          tk(
+            'Sliders, the Looks browser and big folders feel lighter, and Playroom starts a little faster because it only loads your language. Sorry, the other five.'
+          )
+        ]
+      },
+      {
+        title: tk('Kinder to hands and eyes'),
+        items: [
+          tk(
+            'Every dropdown works from the keyboard, and every slider, wheel, curve point and number follows one rule: Shift for fine, Option-click or a double-click to reset, Esc to take back a drag.'
+          ),
+          tk(
+            'Colour wheels and curve points move with the arrow keys. On a curve, Enter adds a point and Delete removes it.'
+          ),
+          tk(
+            'Messages stay long enough to read, and View → Recent Messages… (⇧⌘M) keeps everything Playroom said this session, in case you blinked.'
+          ),
+          tk(
+            'Hints name your keys the way your keyboard does: Option on a Mac, Alt everywhere else.'
+          ),
+          tk(
+            'Playroom Signature’s buttons and sliders sit on a deep purple, so they stay easy to find next to a bright HDR photo.'
+          ),
+          tk(
+            'The scopes’ ◀ ▶ stay put whatever the scope is called, so you can click straight through them.'
+          ),
+          tk('This very window turns pages now: older releases are a click to the left.')
+        ]
+      }
+    ],
+    next: [
+      {
+        title: tk('Light above white, kept'),
+        text: tk('PIXL Enhance keeping the highlights it makes, not only the ones it reads.')
+      },
+      {
+        title: tk('Drags on the graphics chip'),
+        text: tk(
+          'The new colour tools and film effects on the graphics chip too, so slider drags fly again, once the engine can.'
+        )
+      },
+      { title: tk('And yet another cookie'), text: tk('Three for three. Respect. 🍪🍪🍪') }
+    ]
+  },
   // Engine 0.20.0 (PIXL's own models), the Resolve colour tools and
   // scopes, History and Versions, the themes (branch feat/engine-dev-demosaic).
   {
@@ -543,6 +861,16 @@ export function latestNotes(
   notes: ReleaseNotes[] = RELEASE_NOTES
 ): ReleaseNotes | null {
   return notes.find((n) => compareVersions(n.version, current) <= 0) ?? null
+}
+
+/**
+ * What's new's pages, newest first: every release's notes no newer than
+ * `newest` (the one it opens on), so the older ones are a page back.
+ */
+export function notesPages(newest: string, notes: ReleaseNotes[] = RELEASE_NOTES): ReleaseNotes[] {
+  return notes
+    .filter((n) => compareVersions(n.version, newest) <= 0)
+    .sort((a, b) => compareVersions(b.version, a.version))
 }
 
 /** A version as people read it: 0.2.0-beta → 0.2.0 beta, 0.2.0-beta.3 → 0.2.0 beta 3. */

@@ -10,7 +10,9 @@
  * export, the thumbnail and the 1:1 view agree. Pure, for tests.
  */
 import { BASIC_HEAD_FIELDS, CARDS, cardBase, type CardId } from './cards'
+import type { LensCorrection } from './engine-types'
 import { tk } from './i18n'
+import { lensCorrection } from './lens'
 import { activeSteps } from './pixels'
 import {
   changedFields,
@@ -86,6 +88,15 @@ export function effective(r: Recipe, isRaw: boolean): Recipe {
   return out
 }
 
+/**
+ * The lens correction the photo is rendered with: none while Optics is
+ * switched off. What a model must see the photo through, so a mask it finds
+ * is placed on the picture it is applied to.
+ */
+export function renderedLens(r: Recipe, isRaw: boolean): LensCorrection | null {
+  return lensCorrection(effective(r, isRaw).lens)
+}
+
 /** What each section is called (the cards' own titles, and the three that are not cards). */
 export const SECTION_TITLE: Record<EditSection, string> = {
   ...(Object.fromEntries(CARDS.map((c) => [c.id, c.title])) as Record<CardId, string>),
@@ -141,6 +152,9 @@ export const FIELD_LABELS: Record<string, string> = {
   'detail.noiseLuminance': tk('Noise reduction'),
   'effects.vignetteAmount': tk('Vignette'),
   'effects.grainAmount': tk('Grain'),
+  'effects.halation.amount': tk('Halation'),
+  'effects.bloom.amount': tk('Bloom'),
+  'density.amount': tk('Density'),
   profileAmount: tk('Amount'),
   'geometry.straighten': tk('Straighten'),
   'geometry.crop': tk('Crop')

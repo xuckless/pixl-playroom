@@ -7,12 +7,24 @@ import { create } from 'zustand'
 import { DEFAULT_ENHANCE, normaliseEnhance, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind, SpotRefineChoice } from '../../../shared/retouch'
 import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
-import { cardSpec, isCardId, isPanelId, panelOf, type PanelId } from '../../../shared/cards'
+import { isCardId, isPanelId, panelOf, type PanelId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
 import { DEFAULT_SCOPES, normaliseScopes, type ScopePrefs } from '../../../shared/scopes'
+import {
+  DEFAULT_PROOF,
+  normaliseProfile,
+  normaliseProof,
+  PROOF_SURROUNDS,
+  pushRecent,
+  RECENT_PROOFS,
+  type ProofProfile,
+  type ProofSettings,
+  type ProofSurround
+} from '../../../shared/proof'
 import { tk } from '../lib/i18n'
 import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
+import { noteRecent, RECENT_LOOKS } from '../../../shared/quickdevelop'
 
 export type CropGuide = 'thirds' | 'grid' | 'golden' | 'diagonal' | 'none'
 export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
@@ -24,6 +36,9 @@ export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
 ]
 
 export type Rail = 'presets' | 'edits' | 'history' | 'info'
+
+/** The Library's right-hand drawer: Info, or Quick develop. */
+export type LibraryTab = 'info' | 'quick'
 
 /**
  * The interface's look (Settings → Interface → Theme), for A/B testing. The
@@ -53,17 +68,6 @@ export const DEFAULT_THEME: Theme = 'calm'
 /** The themes with no glass to draw: flat by nature, whatever "Always flat" says. */
 export const FLAT_THEMES: readonly Theme[] = ['calm', 'studio', 'contrast']
 
-/**
- * Which colour tools the right column shows (Settings → Interface): the
- * Lightroom-style cards, or DaVinci Resolve's (Primaries, Log wheels, Curves,
- * Qualifier). One set shows at a time; both act on the photo.
- */
-export type ColourTools = 'lightroom' | 'resolve'
-export const COLOUR_TOOLS: { value: ColourTools; label: string }[] = [
-  { value: 'lightroom', label: tk('Lightroom') },
-  { value: 'resolve', label: tk('Resolve') }
-]
-
 /** What the right column can show: Basic corrections, another adjustment card, or Enhance. */
 export type Panel = PanelId | 'enhance'
 
@@ -84,15 +88,23 @@ export interface BrushSettings {
   size: number
   /** 0…100: how much of the radius fades (Lightroom's Feather). */
   softness: number
-  /** 0…100: how much one dab lays down; strokes build up. */
-  flow: number
-  /** 0…100: the most a stroke can reach, however often it passes. */
+  /**
+   * 0…100: a stroke's strength, the engine's per-stroke flow (0.21.0, E36):
+   * going back over it adds nothing; another stroke over it does.
+   */
   density: number
   /** Paint only where the colour matches the colour under the brush's centre. */
   autoMask: boolean
-  /** A pen's pressure scales size and flow. */
+  /** A pen's pressure scales size and strength. */
   pressure: boolean
 }
+/** Each brush as it comes: where a double-click (or Alt-click) on its bar's slider puts it back. */
+export const DEFAULT_BRUSHES: Record<BrushSlot, BrushSettings> = {
+  A: { size: 80, softness: 60, density: 100, autoMask: false, pressure: true },
+  B: { size: 28, softness: 30, density: 100, autoMask: false, pressure: true },
+  erase: { size: 80, softness: 60, density: 100, autoMask: false, pressure: true }
+}
+
 /** Lightroom's two brushes, A and B, and the eraser, each remembering its own settings. */
 export type BrushSlot = 'A' | 'B' | 'erase'
 
@@ -177,8 +189,6 @@ interface UiState {
   /** The scopes: the one in the right column, the expanded viewer's layout and options. */
   scopes: ScopePrefs
   setScopes(p: Partial<ScopePrefs>): void
-  colourTools: ColourTools
-  setColourTools(c: ColourTools): void
   /** Resolve's node view of the layers in the masks pane (advanced; off until asked for). */
   nodeView: boolean
   setNodeView(on: boolean): void
@@ -198,6 +208,31 @@ interface UiState {
   libraryInfo: boolean
   setLibrarySidebar(open: boolean): void
   setLibraryInfo(open: boolean): void
+  /**
+   * The Library's view of its photos at the next launch: the Grid or the
+   * Loupe (Compare and Survey start from a selection, so they open as the Grid).
+   */
+  libraryMode: 'grid' | 'loupe'
+  setLibraryMode(mode: string): void
+  /** A rating, flag or label moves on to the next photo (⇧A; Caps Lock flips it while held on). */
+  autoAdvance: boolean
+  setAutoAdvance(on: boolean): void
+  /** The Library's filter bar under its toolbar (⇧\). */
+  filterBar: boolean
+  setFilterBar(on: boolean): void
+  /** One-time hints already given (E's new meaning in the Library). */
+  told: string[]
+  /** True the first time a hint is asked for: it is given once. */
+  tell(id: string): boolean
+  /** The info drawer's tab: the photos' details, or Quick develop (⇧I). */
+  libraryTab: LibraryTab
+  setLibraryTab(tab: LibraryTab): void
+  /** Quick develop's More rows (Clarity, Saturation) shown. */
+  quickMore: boolean
+  setQuickMore(on: boolean): void
+  /** The looks applied lately in the Library, newest first (its look picker's Recent). */
+  recentLooks: string[]
+  noteRecentLook(id: string): void
   cropGuide: CropGuide
   maskOverlay: MaskOverlaySettings
   setMaskOverlay(p: Partial<MaskOverlaySettings>): void
@@ -230,6 +265,19 @@ interface UiState {
   /** The Library suggests rejects (dimmed, with the reason on hover): Pass 115. */
   cullSuggest: boolean
   setCullSuggest(on: boolean): void
+  /**
+   * Soft proofing's setup (shared/proof.ts): the profile, intent, black
+   * point and paper simulation, remembered for every photo (a proof copy
+   * opens with its own). Whether a photo is proofed is not kept: each opens
+   * unproofed.
+   */
+  proof: ProofSettings
+  setProofSettings(s: ProofSettings): void
+  /** The proof profiles chosen last, newest first (the picker's Recent). */
+  proofRecent: ProofProfile[]
+  /** What surrounds a proof in the loupe. */
+  proofSurround: ProofSurround
+  setProofSurround(s: ProofSurround): void
   setMasksWin(p: Partial<MasksWindow>): void
   /** AI denoise's model and strength for the next step (Detail → AI). */
   denoise: { model: AiDenoiseModel; strength: number }
@@ -318,6 +366,8 @@ const storage = createJSONStorage(() => ({
 function savedPanel(v: unknown): Panel | undefined {
   if (v === 'enhance') return v
   if (v === 'colour') return 'basic'
+  // Resolve's Curves became the one Curves card.
+  if (v === 'rcurves') return 'curve'
   if (isCardId(v)) return panelOf(v)
   return isPanelId(v) ? v : undefined
 }
@@ -329,16 +379,6 @@ export const useUi = create<UiState>()(
       setTheme: (theme) => set({ theme }),
       scopes: DEFAULT_SCOPES,
       setScopes: (p) => set((s) => ({ scopes: normaliseScopes({ ...s.scopes, ...p }) })),
-      colourTools: 'lightroom',
-      setColourTools: (colourTools) =>
-        set((s) => {
-          // The focused card stays in view: one of the set going away gives way to Basic.
-          const away =
-            s.focusCard === 'enhance' || s.focusCard === 'basic'
-              ? undefined
-              : cardSpec(s.focusCard).set
-          return { colourTools, ...(away && away !== colourTools ? { focusCard: 'basic' } : {}) }
-        }),
       nodeView: false,
       setNodeView: (nodeView) => set({ nodeView }),
       rebuildQuiet: [],
@@ -355,14 +395,28 @@ export const useUi = create<UiState>()(
       libraryInfo: false,
       setLibrarySidebar: (librarySidebar) => set({ librarySidebar }),
       setLibraryInfo: (libraryInfo) => set({ libraryInfo }),
+      libraryMode: 'grid',
+      setLibraryMode: (mode) => set({ libraryMode: mode === 'loupe' ? 'loupe' : 'grid' }),
+      autoAdvance: false,
+      setAutoAdvance: (autoAdvance) => set({ autoAdvance }),
+      filterBar: true,
+      setFilterBar: (filterBar) => set({ filterBar }),
+      told: [],
+      tell: (id) => {
+        if (get().told.includes(id)) return false
+        set((s) => ({ told: [...s.told, id] }))
+        return true
+      },
+      libraryTab: 'info',
+      setLibraryTab: (libraryTab) => set({ libraryTab }),
+      quickMore: false,
+      setQuickMore: (quickMore) => set({ quickMore }),
+      recentLooks: [],
+      noteRecentLook: (id) => set((s) => ({ recentLooks: noteRecent(s.recentLooks, id) })),
       cropGuide: 'thirds',
       maskOverlay: DEFAULT_MASK_OVERLAY,
       setMaskOverlay: (p) => set((s) => ({ maskOverlay: { ...s.maskOverlay, ...p } })),
-      brushes: {
-        A: { size: 80, softness: 60, flow: 60, density: 100, autoMask: false, pressure: true },
-        B: { size: 28, softness: 30, flow: 35, density: 100, autoMask: false, pressure: true },
-        erase: { size: 80, softness: 60, flow: 100, density: 100, autoMask: false, pressure: true }
-      },
+      brushes: DEFAULT_BRUSHES,
       brushSlot: 'A',
       setBrushSlot: (brushSlot) => set({ brushSlot }),
       heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100 },
@@ -372,6 +426,12 @@ export const useUi = create<UiState>()(
       setAlwaysFlat: (alwaysFlat) => set({ alwaysFlat }),
       cullSuggest: true,
       setCullSuggest: (cullSuggest) => set({ cullSuggest }),
+      proof: DEFAULT_PROOF,
+      setProofSettings: (proof) =>
+        set((s) => ({ proof, proofRecent: pushRecent(s.proofRecent, proof.profile) })),
+      proofRecent: [],
+      proofSurround: 'paper',
+      setProofSurround: (proofSurround) => set({ proofSurround }),
       setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
       enhance: DEFAULT_ENHANCE,
       setEnhance: (p) => set((s) => ({ enhance: { ...s.enhance, ...p } })),
@@ -419,7 +479,7 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 10,
+      version: 11,
       migrate: (persisted, version) => migrateUi(persisted, version),
       // Crop or Heal is never in hand when the app opens.
       partialize: (s) => {
@@ -437,7 +497,6 @@ export const useUi = create<UiState>()(
           // The retired Original, and anything unknown, is Signature.
           theme: THEMES.some((x) => x.value === p.theme) ? p.theme! : DEFAULT_THEME,
           scopes: normaliseScopes(p.scopes),
-          colourTools: p.colourTools === 'resolve' ? 'resolve' : 'lightroom',
           nodeView: p.nodeView === true,
           masksWin: { open: p.masksWin?.open === true },
           maskOverlay: withoutPins({ ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay }),
@@ -448,6 +507,23 @@ export const useUi = create<UiState>()(
             model: p.denoise ? aiDenoiseModel(p.denoise.model) : 'drunet-color'
           },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
+          proof: normaliseProof(p.proof),
+          proofRecent: Array.isArray(p.proofRecent)
+            ? p.proofRecent
+                .map(normaliseProfile)
+                .filter((x): x is ProofProfile => x !== null)
+                .slice(0, RECENT_PROOFS)
+            : [],
+          proofSurround: PROOF_SURROUNDS.some((x) => x.value === p.proofSurround)
+            ? p.proofSurround!
+            : 'paper',
+          libraryMode: p.libraryMode === 'loupe' ? 'loupe' : 'grid',
+          told: Array.isArray(p.told) ? p.told.filter((x) => typeof x === 'string') : [],
+          libraryTab: p.libraryTab === 'quick' ? 'quick' : 'info',
+          quickMore: p.quickMore === true,
+          recentLooks: Array.isArray(p.recentLooks)
+            ? p.recentLooks.filter((x): x is string => typeof x === 'string').slice(0, RECENT_LOOKS)
+            : [],
           cardsOpen:
             p.cardsOpen && typeof p.cardsOpen === 'object' ? p.cardsOpen : current.cardsOpen,
           focusCard: savedPanel(p.focusCard) ?? current.focusCard,

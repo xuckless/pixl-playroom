@@ -16,13 +16,23 @@ import { MASK_TOOL_GROUPS, startMaskTool } from '../panels/masks/model'
 import { useConfirm } from '../state/confirm'
 import { suggestedReasons, useCull } from '../state/cull'
 import { useDevelop } from '../state/develop'
-import { canShowHdr, useDisplay } from '../state/display'
+import { useExports } from '../state/exports'
+import { aboveWhite, canShowHdr, useDisplay } from '../state/display'
 import { selectionSet, useLibrary } from '../state/library'
 import { useUi } from '../state/ui'
+import { undoTitles, useLibraryUndo } from '../state/libraryUndo'
+import type { MetaPatch } from '../../../shared/ipc'
 import { api, errorText } from './api'
+import { nameOfKey } from './clipboard'
 import { t, tp, useLanguage } from './i18n'
 import { COMMANDS, currentBindings, IS_MAC, layoutKey, listening } from './commands'
 import { chordAccelerator } from './keys'
+import { isInteracting } from './interacting'
+import { changedBeyond } from './storechange'
+import { developBatch, metaItem } from './librarycontext'
+import { developToLoupe, goCompare, goGrid, goLoupe, goSurvey, shownKey } from './librarymodes'
+import { useLibZoom } from '../views/library/libzoom'
+import { comparePaneOf, type LibraryMode } from '../../../shared/cullnav'
 
 /** A menu item with what it does, before it is sent. */
 interface Item extends Omit<MenuNode, 'submenu'> {
@@ -113,30 +123,62 @@ function editing(): boolean {
 
 // ── the pieces both kinds of menu use ──
 
-function ratingMenu(): Item {
-  const now = focusedItem()?.rating
+/**
+ * A rating, flag or label item: its key's command, or, for a photo's own menu
+ * (`keys` given), that change on those photos, shown with the same key.
+ */
+function metaCmd(
+  id: string,
+  label: string,
+  patch: MetaPatch,
+  keys: string[] | undefined,
+  extra: Partial<Item>
+): Item {
+  if (!keys) return cmd(id, label, extra)
+  return act(`${id}:menu`, label, () => void lib().setMeta(patch, keys), {
+    key: id,
+    enabled: !modal() && keys.length > 0,
+    ...extra
+  })
+}
+
+/** The photo a menu's checks read: the first of `keys`, else the one the keys act on. */
+const menuItem = (keys?: string[]): LibraryItem | undefined =>
+  keys ? lib().items.find((i) => i.key === keys[0]) : metaItem()
+
+function ratingMenu(keys?: string[]): Item {
+  const now = menuItem(keys)?.rating
   return {
     label: t('Rating'),
     submenu: [0, 1, 2, 3, 4, 5].map((n) =>
-      cmd(`rate.${n}`, n === 0 ? t('None') : '★'.repeat(n), { checked: now === n, radio: true })
+      metaCmd(`rate.${n}`, n === 0 ? t('None') : '★'.repeat(n), { rating: n }, keys, {
+        checked: now === n,
+        radio: true
+      })
     )
   }
 }
 
-function flagMenu(): Item {
-  const now = focusedItem()?.flag ?? null
+function flagMenu(keys?: string[]): Item {
+  const now = menuItem(keys)?.flag ?? null
   return {
     label: t('Flag'),
     submenu: [
-      cmd('flag.pick', t('Pick|flag'), { checked: now === 'pick', radio: true }),
-      cmd('flag.reject', t('Reject'), { checked: now === 'reject', radio: true }),
-      cmd('flag.clear', t('None'), { checked: now === null, radio: true })
+      metaCmd('flag.pick', t('Pick|flag'), { flag: 'pick' }, keys, {
+        checked: now === 'pick',
+        radio: true
+      }),
+      metaCmd('flag.reject', t('Reject'), { flag: 'reject' }, keys, {
+        checked: now === 'reject',
+        radio: true
+      }),
+      metaCmd('flag.clear', t('None'), { flag: null }, keys, { checked: now === null, radio: true })
     ]
   }
 }
 
-function labelMenu(): Item {
-  const now = focusedItem()?.label ?? null
+function labelMenu(keys?: string[]): Item {
+  const now = menuItem(keys)?.label ?? null
   const label = {
     red: t('Red'),
     yellow: t('Yellow'),
@@ -146,15 +188,35 @@ function labelMenu(): Item {
   return {
     label: t('Colour Label'),
     submenu: (['red', 'yellow', 'green', 'blue'] as const).map((c) =>
-      cmd(`label.${c}`, label[c], { checked: now === c })
+      metaCmd(`label.${c}`, label[c], { label: now === c ? null : c }, keys, {
+        checked: now === c
+      })
     )
   }
+}
+
+function copySettings(): Item {
+  return inDevelop()
+    ? cmd('settings.copy', t('Copy Settings'))
+    : cmd('library.copy', t('Copy Settings'))
 }
 
 function pasteSettings(): Item {
   return inDevelop()
     ? cmd('settings.paste', t('Paste Settings'))
-    : cmd('library.paste', t('Paste Settings…'))
+    : cmd('library.paste', t('Paste Settings'))
+}
+
+/** ⇧⌘V, and Sync named after the photo it copies from (UX-05). */
+function pasteMoreItems(): Item[] {
+  const source = inDevelop() ? dev().session?.key : lib().focus
+  return [
+    cmd('settings.pasteSpecial', t('Choose Settings to Paste…')),
+    cmd(
+      'sync',
+      source ? t('Sync Settings from {{name}}…', { name: nameOfKey(source) }) : t('Sync Settings…')
+    )
+  ]
 }
 
 function makeCopy(): Item {
@@ -171,6 +233,18 @@ function makeCopy(): Item {
         .catch((err) => lib().say(errorText(err), 'error'))
     },
     { key: 'virtualCopy', enabled: !modal() && !!(inDevelop() ? dev().session : lib().focus) }
+  )
+}
+
+/** A proof copy of the open photo (Develop), or of each photo selected (Library). */
+function proofCopies(): Item {
+  if (inDevelop()) return cmd('proof.copy', t('Make Proof Copy'))
+  const n = lib().targets().length
+  return cmd(
+    'library.proofCopies',
+    n > 1
+      ? tp('Make {{count}} Proof Copy…', 'Make {{count}} Proof Copies…', n)
+      : t('Make Proof Copy…')
   )
 }
 
@@ -233,18 +307,36 @@ function revealItems(): Item[] {
 function compareItems(): Item[] {
   const d = dev()
   const display = useDisplay.getState().display
+  const hdrShown = ui().fullHdr && canShowHdr(display) && aboveWhite(d.session) && !d.proof
   return [
     cmd('view.before', t('Before'), { checked: d.compare === 'before' }),
     cmd('view.split', t('Before / After Split'), { checked: d.compare === 'split' }),
     cmd('view.clipping', t('Show Clipping'), { checked: d.clipping }),
+    // An SDR picture's (the engine measures none on Full HDR's).
+    cmd('view.gamut', t('Show Gamut Warning'), {
+      checked: d.gamut && !hdrShown,
+      enabled: available('view.gamut') && !hdrShown
+    }),
+    cmd('view.proof', t('Soft Proofing'), { checked: d.proof }),
+    cmd('view.proofSplit', t('Screen / Proof Split'), { checked: d.compare === 'proof' }),
+    cmd('view.proofSetup', t('Proof Setup…')),
+    // Off while proofing: paper has no light above white.
     act('view.fullHdr', t('Full HDR'), () => ui().setFullHdr(!ui().fullHdr), {
-      checked: ui().fullHdr && canShowHdr(display),
-      enabled: !modal() && canShowHdr(display)
+      checked: ui().fullHdr && canShowHdr(display) && !d.proof,
+      enabled: !modal() && canShowHdr(display) && !d.proof
     })
   ]
 }
 
 function zoomItems(): Item[] {
+  // The Library's Loupe and Compare (in the Grid, the thumbnails' size).
+  if (!inDevelop())
+    return [
+      cmd('library.zoomIn', t('Zoom In')),
+      cmd('library.zoomOut', t('Zoom Out')),
+      cmd('library.zoomFit', t('Fit in Window')),
+      cmd('loupe.zoom', t('Fit ↔ 1:1'))
+    ]
   return [
     cmd('zoom.in', t('Zoom In')),
     cmd('zoom.out', t('Zoom Out')),
@@ -290,30 +382,37 @@ function fileMenu(): Item[] {
         ? tp('Export {{count}} Photo…', 'Export {{count}} Photos…', lib().targets().length)
         : t('Export…')
     ),
+    exportPrevious(),
     sep,
     ...revealItems()
   ]
 }
 
 function editMenu(): Item[] {
+  // The Library's Undo names what it takes back ("Undo Paste settings").
+  const undoId = inDevelop() ? 'undo' : 'library.undo'
+  const redoId = inDevelop() ? 'redo' : 'library.redo'
+  const titles = inDevelop()
+    ? { undo: developBatch(false)?.title ?? null, redo: developBatch(true)?.title ?? null }
+    : undoTitles()
   return [
     act(
       'edit.undo',
-      t('Undo'),
+      titles.undo ? t('Undo {{what}}', { what: titles.undo }) : t('Undo'),
       () => {
         if (editing()) document.execCommand('undo')
-        else runCommand('undo')
+        else runCommand(undoId)
       },
-      { key: 'undo', enabled: true }
+      { key: undoId, enabled: true }
     ),
     act(
       'edit.redo',
-      t('Redo'),
+      titles.redo ? t('Redo {{what}}', { what: titles.redo }) : t('Redo'),
       () => {
         if (editing()) document.execCommand('redo')
-        else runCommand('redo')
+        else runCommand(redoId)
       },
-      { key: 'redo', enabled: true }
+      { key: redoId, enabled: true }
     ),
     sep,
     { role: 'cut', label: t('Cut') },
@@ -329,9 +428,9 @@ function editMenu(): Item[] {
       { key: 'library.selectAll', enabled: true }
     ),
     sep,
-    cmd('settings.copy', t('Copy Settings')),
+    copySettings(),
     pasteSettings(),
-    cmd('sync', t('Sync Settings…'))
+    ...pasteMoreItems()
   ]
 }
 
@@ -359,18 +458,39 @@ function photoMenu(): Item[] {
     ratingMenu(),
     flagMenu(),
     labelMenu(),
+    cmd('library.autoAdvance', t('Auto Advance'), { checked: ui().autoAdvance }),
     sep,
     makeCopy(),
+    proofCopies(),
     stackMenu(),
     collectionMenu(),
     sep,
-    cmd('autoTone', t('Auto Tone')),
+    cmd(inDevelop() ? 'autoTone' : 'library.autoTone', t('Auto Tone')),
     cmd('autoWbBatch', t('Auto White Balance')),
+    quickMenu(),
     ...(newerDevelop() ? [cmd('rebuild', t('Rebuild with the Latest Develop'))] : []),
     sep,
     cmd('cull.rejectAll', t('Reject Suggested Rejects')),
     cmd('cull.keep', t('Keep (Not a Reject)'))
   ]
+}
+
+/** Photo → Quick Develop: the Library's nudges on the selection (lib/quickdevelop.ts). */
+function quickMenu(): Item {
+  return {
+    label: t('Quick Develop'),
+    submenu: [
+      cmd('quick.exposureUp', t('Exposure +1/3')),
+      cmd('quick.exposureDown', t('Exposure −1/3')),
+      cmd('quick.exposureUpStop', t('Exposure +1')),
+      cmd('quick.exposureDownStop', t('Exposure −1')),
+      sep,
+      cmd('quick.warmer', t('Warmer')),
+      cmd('quick.cooler', t('Cooler')),
+      sep,
+      cmd('library.quickDevelop', t('Show Quick Develop'))
+    ]
+  }
 }
 
 /** Show Super resolution (it isn't one of the adjustment cards with a key). */
@@ -382,9 +502,7 @@ function developMenu(): Item[] {
   const tool = dev().tool
   const session = !!dev().session
   return [
-    ...panelsFor(useUi.getState().colourTools).map((id) =>
-      cmd(`card.${id}`, t(panelTitle(id, useUi.getState().colourTools)))
-    ),
+    ...panelsFor().map((id) => cmd(`card.${id}`, t(panelTitle(id)))),
     act('develop.enhance', t('Super resolution'), showEnhance, {
       enabled: !modal() && inDevelop() && session
     }),
@@ -429,31 +547,71 @@ function masksMenu(): Item[] {
   ]
 }
 
-function viewMenu(): Item[] {
+/** The Library's views and Develop, as radios (the toolbar's segment, and D). */
+function viewModes(): Item[] {
   const developing = inDevelop()
+  const mode = lib().mode
+  const radio = (m: LibraryMode, label: string, key: string, run: () => void): Item =>
+    act(`view.${m}`, label, run, {
+      key,
+      checked: !developing && mode === m,
+      radio: true,
+      // Compare and Survey start from the Library's photos.
+      enabled: !modal() && (!developing || m === 'grid' || m === 'loupe')
+    })
   return [
-    act('view.library', t('Library'), () => lib().setView('library'), {
-      key: 'develop.library',
-      checked: !developing,
-      radio: true
-    }),
+    radio('grid', t('Grid'), 'library.grid', goGrid),
+    radio('loupe', t('Loupe'), 'library.loupe', developing ? developToLoupe : goLoupe),
+    radio('compare', t('Compare'), 'library.compare', goCompare),
+    radio('survey', t('Survey'), 'library.survey', () => void goSurvey()),
     act('view.develop', t('Develop'), () => runCommand('library.develop'), {
       key: 'library.develop',
       checked: developing,
       radio: true,
-      enabled: !modal() && (developing || !!lib().focus)
-    }),
+      enabled: !modal() && (developing || !!shownKey())
+    })
+  ]
+}
+
+/** Compare's and Survey's own items, while they are up. */
+function cullItems(): Item[] {
+  if (inDevelop()) return []
+  const mode = lib().mode
+  if (mode === 'compare')
+    return [
+      cmd('compare.swap', t('Swap Select and Candidate')),
+      cmd('compare.promote', t('Make the Candidate the Select')),
+      cmd('compare.link', t('Link Zoom'), { checked: useLibZoom.getState().linked }),
+      sep
+    ]
+  if (mode === 'survey') return [cmd('survey.drop', t('Drop from Survey')), sep]
+  return []
+}
+
+function viewMenu(): Item[] {
+  const developing = inDevelop()
+  return [
+    ...viewModes(),
     sep,
+    ...cullItems(),
     ...compareItems(),
     sep,
     ...zoomItems(),
     sep,
     cmd('library.sidebar', t('Show Sources'), { checked: ui().librarySidebar }),
-    cmd('library.info', t('Show Info'), { checked: ui().libraryInfo }),
+    cmd('library.info', t('Show Info'), {
+      checked: ui().libraryInfo && ui().libraryTab === 'info'
+    }),
+    cmd('library.quickDevelop', t('Show Quick Develop'), {
+      checked: ui().libraryInfo && ui().libraryTab === 'quick'
+    }),
+    cmd('library.filterBar', t('Show Filter Bar'), { checked: ui().filterBar }),
     act('view.filmstrip', t('Show Filmstrip'), () => ui().setFilmstrip(!ui().filmstrip), {
       checked: ui().filmstrip,
       enabled: !modal() && developing
-    })
+    }),
+    sep,
+    cmd('view.messages', t('Recent Messages…'))
   ]
 }
 
@@ -526,14 +684,21 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
   e.preventDefault()
   e.stopPropagation()
   const l = lib()
-  if (!selectionSet(l.selection).has(key)) l.select(key, 'only')
+  const pane = l.view === 'library' && l.mode === 'compare' ? comparePaneOf(l.candidate, key) : null
+  // Compare's Candidate: its pane picked and the menu acting on it, the Select left as it is.
+  if (pane === 'candidate') useLibrary.setState({ active: 'candidate', selection: [key] })
+  else if (!selectionSet(l.selection).has(key)) l.select(key, 'only')
   else if (l.focus !== key) useLibrary.setState({ focus: key })
+  // In Compare any other photo clicked is the Select now: the menu acts on it.
+  if (pane === 'select' && l.active !== 'select') useLibrary.setState({ active: 'select' })
   const n = lib().targets().length
   const developing = inDevelop()
-  const item = focusedItem()
+  const item = lib().items.find((i) => i.key === key)
   const suggested = !!item && !!suggestedReasons(item, useCull.getState().reasons)
   const chosen = new Set(lib().targets())
   const stacked = lib().items.some((i) => chosen.has(i.key) && i.stack)
+  // Rated from its menu: the photo clicked in Develop's filmstrip, the selection in the Grid.
+  const rated = developing ? [key] : lib().targets()
   popup([
     developing
       ? act('photo.open', t('Open'), () => void dev().open(key), {
@@ -541,14 +706,24 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
         })
       : cmd('library.develop', t('Open in Develop')),
     sep,
-    ratingMenu(),
-    flagMenu(),
-    labelMenu(),
+    ratingMenu(rated),
+    flagMenu(rated),
+    labelMenu(rated),
     ...(suggested ? [cmd('cull.keep', t('Keep (Not a Reject)'))] : []),
     sep,
-    ...(developing && dev().session?.key === key ? [cmd('settings.copy', t('Copy Settings'))] : []),
+    ...(!developing || dev().session?.key === key ? [copySettings()] : []),
     pasteSettings(),
-    cmd('sync', t('Sync Settings…')),
+    ...pasteMoreItems(),
+    ...(developing
+      ? []
+      : [
+          cmd(
+            'library.autoTone',
+            n > 1
+              ? tp('Auto Tone ({{count}} Photo)', 'Auto Tone ({{count}} Photos)', n)
+              : t('Auto Tone')
+          )
+        ]),
     cmd(
       'autoWbBatch',
       n > 1
@@ -571,6 +746,7 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
       : []),
     sep,
     makeCopy(),
+    ...(developing ? [] : [proofCopies()]),
     ...(developing
       ? []
       : [
@@ -585,7 +761,36 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
       'export',
       n > 1 ? tp('Export {{count}} Photo…', 'Export {{count}} Photos…', n) : t('Export…')
     ),
+    exportPrevious(),
     ...revealItems()
+  ])
+}
+
+/** Export with previous, naming the preset it was ("Web 2048"); plain for settings of one's own. */
+function exportPrevious(): Item {
+  const label = useExports.getState().last?.label
+  return cmd(
+    'export.previous',
+    label ? t('Export with Previous ({{name}})', { name: label }) : t('Export with Previous')
+  )
+}
+
+/**
+ * An export preset's menu in the Export sheet: Rename and Delete for one of
+ * the person's own, Duplicate for any. The sheet is a dialog, which greys
+ * the app's menus: these are its own, so they stay on.
+ */
+export function exportPresetMenu(
+  e: ReactMouseEvent,
+  acts: { rename?: () => void; duplicate: () => void; remove?: () => void }
+): void {
+  e.preventDefault()
+  e.stopPropagation()
+  const on = { enabled: true }
+  popup([
+    ...(acts.rename ? [act('preset.rename', t('Rename…'), acts.rename, on)] : []),
+    act('preset.duplicate', t('Duplicate'), acts.duplicate, on),
+    ...(acts.remove ? [sep, act('preset.delete', t('Delete'), acts.remove, on)] : [])
   ])
 }
 
@@ -617,9 +822,9 @@ export function loupeContextMenu(e: ReactMouseEvent): void {
     flagMenu(),
     labelMenu(),
     sep,
-    cmd('settings.copy', t('Copy Settings')),
+    copySettings(),
     pasteSettings(),
-    cmd('sync', t('Sync Settings…')),
+    ...pasteMoreItems(),
     cmd('autoTone', t('Auto Tone')),
     sep,
     makeCopy(),
@@ -668,6 +873,23 @@ function editingType(type: string): boolean {
   return !['range', 'checkbox', 'radio', 'button', 'color', 'file'].includes(type)
 }
 
+/** What Develop's renders change, many times a second, and no menu item reads. */
+const RENDERS: ReadonlySet<keyof ReturnType<typeof useDevelop.getState>> = new Set([
+  'picture',
+  'pictures',
+  'before',
+  'mask',
+  'maskThumbs',
+  'keyMask',
+  'stats',
+  'hdrStats',
+  'report',
+  'rendering',
+  'headroomPlane',
+  'gamutPlane',
+  'noise'
+] as const)
+
 /**
  * Keep the bar in step with the app, answer the menus' choices, and give
  * the rest of the window its fallback right-click menu. Call once, after the
@@ -677,6 +899,12 @@ export function startMenuUpkeep(): () => void {
   let last = ''
   let timer: ReturnType<typeof setTimeout> | null = null
   const send = (): void => {
+    // A drag changes the recipe on every frame and no item with it: the bar
+    // is built once the hand is off the slider.
+    if (isInteracting()) {
+      timer = setTimeout(send, 200)
+      return
+    }
     timer = null
     const spec = menuBar()
     const json = JSON.stringify(spec)
@@ -692,11 +920,14 @@ export function startMenuUpkeep(): () => void {
   }
   const offs = [
     useLibrary.subscribe(soon),
-    useDevelop.subscribe(soon),
+    useLibZoom.subscribe((s, p) => s.linked !== p.linked && soon()),
+    useLibraryUndo.subscribe(soon),
+    useDevelop.subscribe((s, p) => changedBeyond(s, p, RENDERS) && soon()),
     useUi.subscribe(soon),
     useCull.subscribe(soon),
     useDisplay.subscribe(soon),
     useConfirm.subscribe(soon),
+    useExports.subscribe(soon),
     useLanguage.subscribe(soon),
     usePipeline.subscribe(soon),
     api.menu.onRun((id) => {

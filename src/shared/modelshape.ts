@@ -85,3 +85,84 @@ export function acceleratorTrouble(err: unknown): boolean {
     return false
   return /load-model|provider/i.test(String(e?.message))
 }
+
+/**
+ * A CoreML provider with its compile cache (engine 0.21.0, OBS-4): CoreML
+ * compiles the model once into `dir` and later loads find it, instead of a
+ * compile at every load. The engine checks the model file's SHA-256 (the
+ * roster's) at every load, so the cache is given only to a model of one
+ * file: a provider names one hash, and a model of two graphs (SAM 2.1's
+ * encoder and decoder, Face Mesh) would have the other refused. Any other
+ * provider, or no `dir`, as it is.
+ */
+export function withCompileCache(
+  provider: ExecutionProvider,
+  files: readonly { sha256: string }[],
+  dir: string | null
+): ExecutionProvider {
+  if (!dir || files.length !== 1 || typeof provider !== 'object' || !('CoreMl' in provider))
+    return provider
+  return { CoreMl: { ...provider.CoreMl, cache: { dir, sha256: files[0].sha256 } } }
+}
+
+/**
+ * Whether an error is the compile cache's own refusal (its folder, or a
+ * model file whose hash is not the roster's): the cache is left off, and the
+ * model still runs where it was to.
+ */
+export function cacheTrouble(err: unknown): boolean {
+  const e = err as { field?: unknown; message?: unknown } | null
+  const field = typeof e?.field === 'string' ? e.field : ''
+  return /CoreMl\.cache/.test(field) || /CoreMl\.cache\.(dir|sha256)/.test(String(e?.message))
+}
+
+/**
+ * The compile in CoreML's cache a load could not read, by its folder
+ * (`<sha256>-<runtime>`), or null for any other error. Two loads of one
+ * model compiling at once (a thumbnail and the develop) can have one read
+ * the other's half-written package ("A valid manifest does not exist at
+ * path …/coreml-cache/…"): that is the cache's trouble, not the graphics
+ * chip's, and never a reason to move a model to the processor.
+ */
+export function brokenCompile(err: unknown): string | null {
+  const m = /\/coreml-cache\/([^/\s]+)\//.exec(
+    String((err as { message?: unknown } | null)?.message)
+  )
+  return m && m[1] !== KEPT_FOR ? m[1] : null
+}
+
+/** The file in the compile cache saying what it was kept for. */
+export const KEPT_FOR = 'kept-for.json'
+
+/** What the compile cache was kept for: the roster's models, and the engine. */
+export interface CompilesKeptFor {
+  roster: string
+  engine: string | null
+}
+
+export function compilesKeptFor(
+  roster: readonly { id: string; version: string }[],
+  engine: string | null
+): CompilesKeptFor {
+  return {
+    roster: roster
+      .map((e) => `${e.id}@${e.version}`)
+      .sort()
+      .join(','),
+    engine
+  }
+}
+
+/**
+ * Whether the compiles go (the first time, a model of the roster or the
+ * engine moved on; an engine not known yet moves nothing), and what the
+ * cache is kept for from now.
+ */
+export function compilesMoved(
+  had: CompilesKeptFor | null,
+  now: CompilesKeptFor
+): { clear: boolean; keep: CompilesKeptFor } {
+  const clear =
+    !had || had.roster !== now.roster || (now.engine !== null && had.engine !== now.engine)
+  return { clear, keep: { roster: now.roster, engine: now.engine ?? had?.engine ?? null } }
+}

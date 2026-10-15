@@ -5,6 +5,12 @@
   background: #000;
   min-height: 0;
 }
+/* soft proofing: the photo surrounded as a print is seen (paper, grey or
+   black, set on the loupe itself: no theme's) */
+.loupe.proofing {
+  background: var(--proof-surround);
+  transition: background-color 0.3s ease;
+}
 .loupe.empty {
   display: flex;
   align-items: center;
@@ -117,7 +123,7 @@
   gap: 12px;
   height: 30px;
   padding: 0 12px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   letter-spacing: 0.08em;
   color: var(--text2);
   pointer-events: none;
@@ -152,16 +158,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* a RAW's full-size develop under way: its bar fills by the clock */
+/* a RAW's full-size develop under way: its bar fills by the engine's count, sweeps before it */
 .hud-track {
   width: 56px;
 }
 .hud-track i {
   transition: width 0.25s linear;
 }
+.hud-sub {
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
 /* the PIXL demosaic's state for the open RAW (a development kit's) */
 .pixl-chip {
-  font-size: 11px;
+  font-size: var(--fs-small);
   opacity: 0.85;
 }
 .pixl-dot {
@@ -187,6 +197,28 @@
   .pixl-chip.developing .pixl-dot {
     animation: none;
   }
+}
+/* the soft proof: what it is, on its way, or why it went off (Locate… is pressable) */
+.proof-chip.dim {
+  color: var(--muted);
+}
+.proof-chip.off {
+  color: var(--warn);
+}
+.hud .proof-chip button {
+  pointer-events: auto;
+  font-size: var(--fs-small);
+}
+/* its own badge, at the corner the render status leaves free */
+.proof-status {
+  right: 14px;
+  bottom: 14px;
+  max-width: calc(50% - 100px);
+}
+.proof-status .proof-chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .loupe-status {
   left: 14px;
@@ -272,7 +304,7 @@
   background: rgb(var(--shade-rgb) / 0.6);
   border: 1px solid rgb(var(--fg-rgb) / 0.12);
   backdrop-filter: blur(12px);
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   color: var(--text2);
   pointer-events: none;
   white-space: nowrap;
@@ -411,7 +443,7 @@
   padding: 7px 16px;
   border-color: color-mix(in srgb, var(--acc) 45%, transparent);
   color: #fff;
-  font-size: 15px;
+  font-size: var(--fs-large);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -450,7 +482,7 @@
   border: 1px solid var(--hair);
   cursor: pointer;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.12em;
   transition:
     transform 0.4s var(--spring),
@@ -467,6 +499,11 @@
 }
 .film.selected {
   border-color: var(--acc-a55);
+}
+/* Hidden by the filter but open: dimmed until the next photo opens. */
+.film.filtered-out img {
+  opacity: 0.3;
+  filter: grayscale(0.6);
 }
 .film.focus {
   border-color: var(--acc);
@@ -496,7 +533,7 @@
   left: 100%;
   top: 100%;
   margin: 2px 0 0 2px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   color: #fff;
   text-shadow: 0 0 3px #000;
@@ -507,7 +544,7 @@
 .split-tag {
   position: absolute;
   z-index: 4;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: rgb(var(--fg-rgb) / 0.85);
@@ -716,7 +753,7 @@
 }
 .rebuild-text span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-small);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -733,4 +770,34 @@
   inset: 0;
   pointer-events: none;
   z-index: 3;
+}
+
+/* the photo while it opens (views/loupe/FirstLook.tsx): fitted as the
+   picture is, fading out over the develop's first picture */
+.first-look {
+  position: absolute;
+  inset: 4px;
+  z-index: 5;
+  pointer-events: none;
+  transition: opacity 150ms var(--ease);
+}
+.first-look img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.first-look.leaving {
+  opacity: 0;
+}
+.first-look-chip {
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .first-look {
+    transition: none;
+  }
 }

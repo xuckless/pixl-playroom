@@ -1,9 +1,9 @@
-import { Icon, PathIcon } from '../components/icons'
+import { Icon } from '../components/icons'
 import { useKeyHint } from '../lib/commands'
 import { t } from '../lib/i18n'
 import { useDevelop } from '../state/develop'
 import { useUi } from '../state/ui'
-import { STRIP_ICONS, toggleDrawer, toggleMasks } from './tools'
+import { toggleDrawer, toggleMasks } from './tools'
 
 /**
  * Above the column: the canvas tools Lightroom keeps in its strip (Crop,
@@ -30,7 +30,7 @@ export function ToolStrip(): React.JSX.Element {
           title={label(t('Crop & straighten'), 'tool.crop')}
           onClick={() => toggleDrawer('crop')}
         >
-          <PathIcon d={STRIP_ICONS.crop} />
+          <Icon name="crop" />
           {t('Crop')}
         </button>
         <button
@@ -40,7 +40,7 @@ export function ToolStrip(): React.JSX.Element {
           title={label(t('Heal, clone and remove spots'), 'tool.heal')}
           onClick={() => toggleDrawer('heal')}
         >
-          <PathIcon d={STRIP_ICONS.heal} />
+          <Icon name="heal" />
           {t('Heal')}
         </button>
         <button

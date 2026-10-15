@@ -26,20 +26,26 @@ export interface InvariantPlace {
   op: GradeOpKind | null
   /** In the SDR rendition an HDR export writes beside its master. */
   sdr: boolean
+  /** A Qualifier card's own op (compile's `qualifierIndex`), since 0.21 in the base layer. */
+  qualifier?: boolean
 }
 
-/** Each op in the user's words. */
-const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
+/**
+ * Each op in the user's words: the card (or the sliders) it comes from, as
+ * the column names them. The engine's Qualifier op is Point colour (in HSL)
+ * or the Log wheels; a Qualifier card's own layer is named apart.
+ */
+export const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
   Primary: tk('Exposure, Contrast or Saturation'),
   Tone: tk('Highlights, Shadows, Whites or Blacks'),
   ChannelMixer: tk('Calibration'),
   WhiteBalance: tk('White balance'),
   Dehaze: tk('Dehaze'),
-  HslBands: tk('Color mixer'),
-  Qualifier: tk('Point color'),
-  ColorGrade: tk('Color grading'),
-  Curves: tk('Tone curve'),
-  ParametricCurve: tk('Tone curve'),
+  HslBands: tk('HSL'),
+  Qualifier: tk('Point colour or Log wheels'),
+  ColorGrade: tk('Colour grading'),
+  Curves: tk('Curves'),
+  ParametricCurve: tk('Curves'),
   Lut: tk('Profile'),
   Denoise: tk('Noise reduction'),
   Sharpen: tk('Sharpening'),
@@ -47,8 +53,14 @@ const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
   LocalContrast: tk('Texture or Clarity'),
   Vignette: tk('Vignette'),
   Grain: tk('Grain'),
-  AddColor: tk('Add color'),
-  Defringe: tk('Defringe')
+  AddColor: tk('Add colour'),
+  Defringe: tk('Defringe'),
+  LogWheels: tk('Log wheels'),
+  LumaPrimary: tk('Primaries'),
+  GainBalance: tk('Temp and Tint'),
+  Halation: tk('Halation'),
+  Bloom: tk('Bloom'),
+  Density: tk('Density')
 }
 
 /**
@@ -56,7 +68,13 @@ const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
  * whose sliders feed each op: the rows marked when it breaks.
  */
 const OP_FIELDS: Partial<Record<GradeOpKind, string[]>> = {
-  Primary: ['basic.exposure', 'basic.contrast', 'presence.saturation', 'presence.hue'],
+  Primary: [
+    'basic.exposure',
+    'basic.contrast',
+    'presence.saturation',
+    'presence.hue',
+    'primaries.'
+  ],
   Tone: ['basic.highlights', 'basic.shadows', 'basic.whites', 'basic.blacks'],
   ChannelMixer: [
     'calibration.redHue',
@@ -71,7 +89,10 @@ const OP_FIELDS: Partial<Record<GradeOpKind, string[]>> = {
   HslBands: ['hsl.', 'bwMix.'],
   ColorGrade: ['colorGrade.'],
   ParametricCurve: ['toneCurve.'],
-  Curves: ['toneCurve.'],
+  Curves: ['toneCurve.', 'curvesVs.'],
+  LogWheels: ['logWheels.'],
+  LumaPrimary: ['primaries.'],
+  GainBalance: ['primaries.temp', 'primaries.tint'],
   Lut: ['profileAmount'],
   Denoise: [
     'detail.noiseLuminance',
@@ -87,7 +108,10 @@ const OP_FIELDS: Partial<Record<GradeOpKind, string[]>> = {
   ],
   LocalContrast: ['presence.texture', 'presence.clarity'],
   Vignette: ['effects.vignette*'],
-  Grain: ['effects.grain*']
+  Grain: ['effects.grain*'],
+  Halation: ['effects.halation.'],
+  Bloom: ['effects.bloom.'],
+  Density: ['density.']
 }
 
 const PATH =
@@ -114,7 +138,8 @@ export function invariantPlace(
   text: string,
   grade: Grade | null,
   sdrGrade: Grade | null,
-  layerIndex: Record<string, number>
+  layerIndex: Record<string, number>,
+  qualifierIndex: Record<string, { layer: number; qualifier: number }> = {}
 ): InvariantPlace | null {
   const at = PATH.exec(text)
   if (!at) return null
@@ -133,19 +158,60 @@ export function invariantPlace(
     op = layer.stages[Number(at[3])]?.ops[Number(at[4])]
     if (op && at[5] !== undefined && 'Masked' in op) op = op.Masked.ops[Number(at[5])]
   }
-  return { layer: id, layerName: layer.name, op: op ? opKind(op) : null, sdr }
+  // A Qualifier op is a Qualifier card's when compile placed one there: its
+  // place among the layer's Qualifier ops, as `qualifierIndex` counts them.
+  let qualifier = false
+  if (!sdr && at[3] !== undefined && at[5] === undefined && op && 'Qualifier' in op) {
+    let n = 0
+    const stage = Number(at[3])
+    const opAt = Number(at[4])
+    layer.stages.forEach((st, si) =>
+      st.ops.forEach((o, oi) => {
+        if ('Qualifier' in o && (si < stage || (si === stage && oi < opAt))) n++
+      })
+    )
+    qualifier = Object.values(qualifierIndex).some((q) => q.layer === index && q.qualifier === n)
+  }
+  return {
+    layer: id,
+    layerName: layer.name,
+    op: op ? opKind(op) : null,
+    sdr,
+    ...(qualifier ? { qualifier } : {})
+  }
 }
+
+/** The name compile gives a Qualifier card's layer. */
+const QUALIFIER_LAYER = 'qualifier'
+
+/**
+ * Whether the layer is a Qualifier card's own: by its id where the compile
+ * knows it (resolve.ts qualifierLayerId, `q:` and the qualifier's), so a
+ * mask the user named "qualifier" stays a mask; by compile's name in the SDR
+ * grade, which has no ids.
+ */
+const isQualifierLayer = (place: InvariantPlace): boolean =>
+  place.qualifier === true ||
+  (place.layer !== null ? place.layer.startsWith('q:') : place.layerName === QUALIFIER_LAYER)
 
 /** What to tell the user. */
 export function describeInvariant(place: InvariantPlace | null, stage: string): string {
   if (!place)
     return t('The picture could not be rendered after {{stage}}. Undo the last change.', { stage })
+  const qualifier = isQualifierLayer(place)
   const where =
-    place.layer === 'base'
+    place.layer === 'base' || qualifier
       ? t('the photo’s settings')
       : t('“{{name}}”', { name: place.layerName ?? t('a layer') })
   const label = place.op ? OP_LABEL[place.op] : undefined
-  const what = place.op ? (label ? t(label) : place.op) : t('The layer’s blend')
+  // A Qualifier card's own layer: whatever it ran, the card.
+  const what = qualifier
+    ? t('Qualifier')
+    : place.op
+      ? label
+        ? t(label)
+        : place.op
+      : t('The layer’s blend')
   return t('{{what}} in {{where}} made pixels that are not numbers. Lower it, or undo.', {
     what,
     where

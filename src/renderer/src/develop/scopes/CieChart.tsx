@@ -5,10 +5,13 @@
  * the other gamuts over it (off until chosen).
  *
  * The photo's own colours are a density over it, binned from the preview's
- * pixels (shared/scopes.ts): Display P3 at preview resolution. The exact,
- * full-resolution version is engine request E76.
+ * pixels (shared/scopes.ts): Display P3 at preview resolution. The engine's
+ * own u′v′ density (E76) is read from the grade before the screen's gamut
+ * cuts it, for the Metrics tab's gamut coverage; the chart shows what the
+ * screen shows.
  */
 import { useEffect, useRef, useState } from 'react'
+import { Segmented } from '../../components/ui'
 import {
   PIXLRGB,
   REFERENCE_GAMUTS,
@@ -135,14 +138,15 @@ export function CieChart({
     <div className={compact ? 'cie compact' : 'cie'}>
       {!compact && (
         <div className="cie-side">
-          <div className="seg" role="group" aria-label={t('Chart contents')}>
-            <button className={sub === 'image' ? 'on' : ''} onClick={() => setSub('image')}>
-              {t('Image')}
-            </button>
-            <button className={sub === 'reference' ? 'on' : ''} onClick={() => setSub('reference')}>
-              {t('Reference')}
-            </button>
-          </div>
+          <Segmented
+            label={t('Chart contents')}
+            value={sub}
+            onChange={setSub}
+            options={[
+              { value: 'image', label: t('Image') },
+              { value: 'reference', label: t('Reference') }
+            ]}
+          />
           {sub === 'image' ? (
             <>
               <label className="check">

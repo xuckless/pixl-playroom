@@ -1,6 +1,6 @@
 import { MAX_QUALIFIERS, qualifierFromSample } from '../../../../shared/resolve'
 import { RebuildPrompt } from './RebuildPrompt'
-import { aboveWhite } from '../../state/display'
+import { aboveWhite, useHdrShown } from '../../state/display'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { loupeContextMenu } from '../../lib/menus'
 import { readable } from '../../lib/frames'
@@ -22,17 +22,19 @@ import {
   displaySize,
   displayToOriented,
   displayToBase,
+  displayToRendered,
   fitRect,
   normalisedIn,
   panBy,
+  loupeGeometry,
   scaleOf,
-  viewGeometry,
   zoomAt,
   zoomedRect,
   type Rect,
   type Viewport,
   type ZoomView
 } from '../../../../shared/view'
+import { sameLensFrame } from '../../../../shared/lensframe'
 import { api, errorText } from '../../lib/api'
 import { depthAt } from '../../lib/depth'
 import { touchInteracting } from '../../lib/interacting'
@@ -50,13 +52,15 @@ import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
 import { ClippingOverlay } from './ClippingOverlay'
 import { HeadroomOverlay } from './HeadroomOverlay'
+import { GamutOverlay } from './GamutOverlay'
 import { SpotsOverlay } from './SpotsOverlay'
 import { CropTool } from './CropTool'
 import { DecodedImage } from './DecodedImage'
 import { Guides } from './Guides'
 import { LassoEditor, PolygonLayer } from './LassoTool'
 import { ObjectsTool } from './ObjectsTool'
-import { LoupeHud } from './LoupeHud'
+import { LoupeHud, ProofHud } from './LoupeHud'
+import { FirstLook } from './FirstLook'
 import { GradientTools } from './GradientTools'
 import { LookPick } from './LookPick'
 import { AiScan } from '../../fx/AiScan'
@@ -67,6 +71,7 @@ import { useSize } from './useSize'
 import { loupeZoom, setLoupeElement, setPointer, setViewport, spaceHeld } from './zoom'
 import { Ambient } from '../../fx'
 import { t, tk } from '../../lib/i18n'
+import { surroundColour } from '../../../../shared/proof'
 
 /** How long the loupe must keep a size before the renderer is asked for that many pixels. */
 const EDGE_SETTLE_MS = 250
@@ -160,7 +165,9 @@ interface TatDrag {
 
 export function Loupe(): React.JSX.Element {
   const session = useDevelop((s) => s.session)
-  const recipe = useDevelop((s) => s.recipe)
+  // Whether there is one: the handlers read the recipe as they run, so a
+  // slider's tick does not draw the loupe again (its picture will).
+  const hasRecipe = useDevelop((s) => s.recipe !== null)
   const picture = useDevelop((s) => s.picture)
   const before = useDevelop((s) => s.before)
   const tool = useDevelop((s) => s.tool)
@@ -169,6 +176,18 @@ export function Loupe(): React.JSX.Element {
   // Every photo with light above white: a RAW or an HDR one (state/display `aboveWhite`).
   const headroom = useDevelop((s) => s.headroom && aboveWhite(s.session))
   const headroomPlane = useDevelop((s) => s.headroomPlane)
+  // The gamut warning is an SDR picture's: none while Full HDR shows the photo.
+  const hdrShown = useHdrShown()
+  const gamut = useDevelop((s) => s.gamut)
+  const gamutPlane = useDevelop((s) => s.gamutPlane)
+  // Soft proofing: the surround (paper, grey or black) and Screen | Proof's screen side.
+  const proofing = useDevelop((s) => s.proof)
+  const screenPic = useDevelop((s) => s.screen)
+  const surround = surroundColour(
+    useUi((s) => s.proofSurround),
+    useDevelop((s) => s.proofPaper),
+    useUi((s) => s.proof.simulate)
+  )
   const zoom = useDevelop((s) => s.zoom)
   const layerId = useDevelop((s) => s.layerId)
   const loading = useDevelop((s) => s.loading)
@@ -198,22 +217,29 @@ export function Loupe(): React.JSX.Element {
   // Visualise Spots, while the Heal tool is the one showing.
   const spots = useUi((s) => s.drawer === 'heal' && !!s.heal.visualise)
   const spotLevel = useUi((s) => s.heal.spotLevel ?? 50)
-  // On the geometry alone (a slider elsewhere keeps it), so what takes `g`
-  // stays memoised through a drag.
+  // On the geometry and the sections switched off alone (a slider elsewhere
+  // keeps them), so what takes `g` stays memoised through a drag. The
+  // picture as rendered: what `compile` reads, not the raw geometry.
   const geometry = useDevelop((s) => s.recipe?.geometry)
-  const g = useMemo(
-    () =>
-      session && geometry
-        ? viewGeometry(
-            { geometry },
+  const off = useDevelop((s) => s.recipe?.off)
+  // Masks on another lens than the one rendered: points go through its grid.
+  const maskGrid = useDevelop((s) => s.maskGrid)
+  const g = useMemo(() => {
+    const recipe = useDevelop.getState().recipe
+    return session && geometry && off && recipe
+      ? {
+          ...loupeGeometry(
+            recipe,
+            session.isRaw,
             session.frameWidth,
             session.frameHeight,
             tool === 'crop',
             tool === 'upright-guide'
-          )
-        : null,
-    [session, geometry, tool]
-  )
+          ),
+          lens: maskGrid
+        }
+      : null
+  }, [session, geometry, off, tool, maskGrid])
 
   // Where the picture sits in the loupe. In the crop tool the frame comes
   // from the geometry, which a render cannot change, so the crop box and the
@@ -328,6 +354,7 @@ export function Loupe(): React.JSX.Element {
   // drag moves what controls it from the recipe the press started with.
   const tat = useRef<TatDrag | null>(null)
   const startTat = async (e: React.PointerEvent<HTMLDivElement>): Promise<void> => {
+    const recipe = useDevelop.getState().recipe
     if (e.button !== 0 || !recipe || !picture || !vrect) return
     const box = e.currentTarget.getBoundingClientRect()
     const p = normalisedIn(e.clientX, e.clientY, {
@@ -357,6 +384,10 @@ export function Loupe(): React.JSX.Element {
       if (dev.hslTab === 'point') {
         tat.current = null
         return say(t('The targeted tool moves the H, S and L tabs, not Point'))
+      }
+      if (dev.hslTab === 'density') {
+        tat.current = null
+        return say(t('The targeted tool moves the H, S and L tabs, not Density'))
       }
       const s = hsvOf(...rgb)
       if (s.saturation < 0.05) {
@@ -399,6 +430,7 @@ export function Loupe(): React.JSX.Element {
 
   const pick = useCallback(
     async (e: React.MouseEvent<HTMLDivElement>) => {
+      const recipe = useDevelop.getState().recipe
       if (!session || !recipe || !g || !vrect) return
       const box = e.currentTarget.getBoundingClientRect()
       const p = normalisedIn(e.clientX, e.clientY, {
@@ -470,8 +502,17 @@ export function Loupe(): React.JSX.Element {
           [...(layer?.components ?? [])].reverse().find((x) => x.kind === 'depth')
         if (!layer || !comp || comp.kind !== 'depth')
           return useLibrary.getState().say(t('Select a Depth range first'), 'error')
-        // Where the click is on the base frame, where the depth map lives.
-        const b = displayToBase(g, p)
+        // Where the click is on the base frame, where the depth map lives: on
+        // the picture as rendered when it was found there, not on the masks'
+        // lens frame (Optics switched off since they were drawn).
+        const own = comp.lensFrame
+        const b =
+          own !== undefined &&
+          g.lens?.rendered !== undefined &&
+          sameLensFrame(own, g.lens.rendered) &&
+          !sameLensFrame(own, recipe.masks?.lensFrame)
+            ? displayToRendered(g, p)
+            : displayToBase(g, p)
         const at = await depthAt(comp, b.x, b.y)
         // Centred there, as wide as it was (a tenth of the photo's depth at least).
         const half = Math.max(5, Math.round(Math.abs(comp.far - comp.near) / 2))
@@ -522,7 +563,12 @@ export function Loupe(): React.JSX.Element {
         } else {
           const sel = qs.find((x) => x.id === dev.qualifierId) ?? qs[qs.length - 1]
           const keyed = qualifierFromSample(sel.id, sample)
-          Object.assign(sel, { keyHue: keyed.keyHue, keySat: keyed.keySat, keyLum: keyed.keyLum })
+          Object.assign(sel, {
+            keyHue: keyed.keyHue,
+            keySat: keyed.keySat,
+            keyLum: keyed.keyLum,
+            picked: keyed.picked
+          })
           scoped.replace(next, tk('Qualifier: re-sample'))
         }
         setTool('none')
@@ -550,12 +596,18 @@ export function Loupe(): React.JSX.Element {
         setTool('none')
       }
     },
-    [session, recipe, g, vrect, tool, picture, layerId, replace, setTool]
+    [session, g, vrect, tool, picture, layerId, replace, setTool]
   )
 
-  // Opening: the processing sphere covers the stage; the loupe waits under it.
-  if (loading) return <div className="loupe" />
-  if (!session || !recipe)
+  // Opening: the photo's first look (its thumbnail, an unedited RAW's
+  // embedded preview), or without one the processing sphere over the stage.
+  if (loading)
+    return (
+      <div className="loupe">
+        <FirstLook />
+      </div>
+    )
+  if (!session || !hasRecipe)
     return (
       <div className="loupe-idle">
         <Ambient intensity={0.8} />
@@ -568,14 +620,18 @@ export function Loupe(): React.JSX.Element {
     )
   const shown = compare === 'before' && before ? before : picture
   const rotate =
-    tool === 'crop' && recipe.geometry.straighten !== 0
-      ? `rotate(${recipe.geometry.straighten}deg)`
+    tool === 'crop' && geometry && geometry.straighten !== 0
+      ? `rotate(${geometry.straighten}deg)`
       : undefined
   const scale = viewport && zoom.scale !== 'fit' ? scaleOf(viewport, zoom) : null
+  // Split's other side: the before, or (Screen | Proof) the picture unproofed.
+  const other = compare === 'proof' ? screenPic : compare === 'split' ? before : null
+  const tags = compare === 'proof' ? [t('Screen|proof'), t('Proof')] : [t('Before'), t('After')]
   return (
     <div
       ref={boxRef}
-      className={`loupe tool-${tool}${scale ? ' zoomed' : ''}`}
+      className={`loupe tool-${tool}${scale ? ' zoomed' : ''}${proofing ? ' proofing' : ''}`}
+      style={proofing ? ({ '--proof-surround': surround } as React.CSSProperties) : undefined}
       onContextMenu={loupeContextMenu}
       onPointerDownCapture={(e) => {
         if (spaceHeld()) startPan(e)
@@ -635,12 +691,12 @@ export function Loupe(): React.JSX.Element {
             {scale && g && picture && compare === 'off' && (
               <SharpTile rect={vrect} box={size} g={g} scale={scale} previewWidth={picture.width} />
             )}
-            {compare === 'split' && before && (
+            {other && (
               <div
                 className="split-before"
                 style={{ clipPath: `inset(0 ${(1 - split) * 100}% 0 0)` }}
               >
-                <DecodedImage src={before.url} />
+                <DecodedImage src={other.url} />
               </div>
             )}
             <MaskOverlay g={g ?? null} w={vrect.w} h={vrect.h} />
@@ -656,12 +712,15 @@ export function Loupe(): React.JSX.Element {
             {headroom && headroomPlane && compare !== 'before' && (
               <HeadroomOverlay url={headroomPlane.url} />
             )}
+            {gamut && gamutPlane && !hdrShown && compare !== 'before' && (
+              <GamutOverlay url={gamutPlane.url} />
+            )}
           </div>
         )}
-        {compare === 'split' && vrect && (
+        {(compare === 'split' || compare === 'proof') && vrect && (
           <>
             <span className="split-tag" style={{ left: vrect.x + 14, top: vrect.y + 14 }}>
-              Before
+              {tags[0]}
             </span>
             <span
               className="split-tag"
@@ -671,11 +730,11 @@ export function Loupe(): React.JSX.Element {
                 transform: 'translateX(-100%)'
               }}
             >
-              After
+              {tags[1]}
             </span>
           </>
         )}
-        {compare === 'split' && vrect && (
+        {(compare === 'split' || compare === 'proof') && vrect && (
           <div
             className="split-handle"
             style={{ left: vrect.x + vrect.w * split, top: vrect.y, height: vrect.h }}
@@ -712,7 +771,9 @@ export function Loupe(): React.JSX.Element {
           <HealTool rect={vrect} g={g} />
         )}
       </div>
+      <FirstLook />
       <LoupeHud scale={scale} />
+      <ProofHud />
       <RebuildPrompt />
     </div>
   )

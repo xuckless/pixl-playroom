@@ -5,7 +5,7 @@ import { PIXL_ENHANCE } from '../shared/pixlenhance'
 import type { AiJobEvent } from '../shared/ai'
 import type { AiRunner } from './ai/jobs'
 import { t } from '../shared/i18n'
-import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
 import log from 'electron-log/main'
 import { rm } from 'fs/promises'
 import { join } from 'path'
@@ -13,7 +13,8 @@ import { MAIN_DIR } from './dirs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import dockIcon from '../../resources/icon-dock.png?asset'
-import { startCrashReporting } from './crash'
+import { noteEngineBuild, startCrashReporting } from './crash'
+import { developmentCommit } from '../shared/crash'
 import { onRenderScale, settleScale, watchDisplay } from './display'
 import { sweepEngineTemps, watchRest } from './rest'
 import { Namer } from './ai/namer'
@@ -41,6 +42,7 @@ import { BrainStore } from './ai/brain'
 import { ModelStore } from './ai/models'
 import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
+import { quitQuestion } from './exportqueue'
 import { openIndex } from './indexer/client'
 import { registerIpc } from './ipc'
 import { LensProfileStore } from './lensprofiles'
@@ -48,6 +50,8 @@ import { startLicence } from './licence'
 import { startAccount } from './account'
 import { startGate } from './gate'
 import { Library } from './library'
+import { Previews } from './previews'
+import { CameraProfiles } from './cameraprofiles'
 import { OriginalEmbedder } from './project/embed'
 import { buildMenu } from './menu'
 import { onLanguage, startLanguage } from './i18n'
@@ -61,6 +65,7 @@ import {
   takeHandOff
 } from './open'
 import { paths } from './paths'
+import { DEV_BUILD, HIDDEN } from './build'
 import { PlaneStore } from './planestore'
 import { pixels } from './workers/pool'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
@@ -69,17 +74,21 @@ import { forgetOtherCopies } from './othercopies'
 import { setupUpdater } from './updater'
 import { startPolicy } from './policy'
 import { noteInstall } from './whatsnew'
-import { IPC } from '../shared/ipc'
+import { IPC, type EngineStatus } from '../shared/ipc'
 
 log.initialize()
 log.transports.file.level = 'info'
+// Lines queue and are written off the main thread's back (a write a line,
+// four engine hosts' output among them, blocked the thread that relays a
+// drag). Set before the first line: the file keeps the mode it opens with.
+log.transports.file.sync = false
 
 registerSchemePrivileges()
 
 // userData is settled (index.ts) — consent lives there — so before anything else can crash:
 startCrashReporting()
 /** Automation: never show the window; render offscreen so it can still be captured. */
-const hidden = process.env['PLAYROOM_HIDDEN'] === '1'
+const hidden = HIDDEN
 
 // The display's scale was settled before this module loaded (index.ts): a
 // process that is starting again with it never gets here.
@@ -93,6 +102,8 @@ if (secondary) app.exit(0)
 
 /** Opens are sent here; undefined while every window is closed (macOS). */
 let mainWindow: BrowserWindow | undefined
+/** Exports, queued and running: quitting asks first while there are some. */
+let exporting: Exporter | undefined
 
 function focusWindow(): void {
   if (!mainWindow || hidden) return
@@ -196,6 +207,13 @@ function createWindow(): void {
   // Previews' pixels go straight from the interactive engine to this page,
   // on a channel each load of it gets afresh.
   win.webContents.on('did-finish-load', () => engine.sendPreviewsTo(win.webContents))
+  // Closing the last window quits, but on macOS: exports are asked about
+  // while the window is still there, or Keep exporting would leave them
+  // running with no window to come back to.
+  win.on('close', (e) => {
+    if (process.platform === 'darwin' || BrowserWindow.getAllWindows().length > 1) return
+    if (!mayQuit(win)) e.preventDefault()
+  })
   win.on('closed', () => {
     rendererGone()
     if (mainWindow === win) mainWindow = undefined
@@ -223,7 +241,7 @@ function createWindow(): void {
   })
   win.webContents.on('will-attach-webview', (event) => event.preventDefault())
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (DEV_BUILD && is.dev && process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     win.loadFile(join(MAIN_DIR, '../renderer/index.html'))
@@ -235,14 +253,23 @@ function createWindow(): void {
     .then((stored) => watchDisplayHdr(win, stored))
 }
 
-/** About Pixl Playroom: the app's version and the engine it runs on. */
-function setAbout(engineVersion?: string): void {
+/**
+ * About Pixl Playroom: the app's version and the engine it runs on, with the
+ * commit when the engine is a development build (engine 0.21, E69).
+ */
+function setAbout(engine?: Pick<EngineStatus, 'version' | 'build'>): void {
+  const commit = developmentCommit(engine?.build)
   app.setAboutPanelOptions({
     applicationName: 'Pixl Playroom',
     applicationVersion: app.getVersion(),
-    credits: engineVersion
-      ? t('Powered by PIXL Engine {{version}}', { version: engineVersion })
-      : t('Powered by PIXL Engine'),
+    credits: !engine?.version
+      ? t('Powered by PIXL Engine')
+      : commit
+        ? t('Powered by PIXL Engine {{version}} (development build, {{commit}})', {
+            version: engine.version,
+            commit
+          })
+        : t('Powered by PIXL Engine {{version}}', { version: engine.version }),
     copyright: 'Copyright © 2026 Syed Ali (PIXL Foundation)',
     iconPath: icon
   })
@@ -284,10 +311,16 @@ app.whenReady().then(() => {
       .then((n) => n > 0 && log.info(`pruned ${n} unused thumbnails`))
       .catch((err) => log.warn('pruning thumbnails failed', err))
   }, 20_000)
-  void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
-  onLanguage(() => setAbout(engine.getStatus().version))
+  void engine.whenStarted().then(() => {
+    setAbout(engine.getStatus())
+    noteEngineBuild(engine.getStatus())
+  })
+  onLanguage(() => setAbout(engine.getStatus()))
   const planes = new PlaneStore(index)
-  const library = new Library(index, bgEngine, planes)
+  // DNG camera profiles kept from earlier runs, known before any develop names one.
+  const profiles = new CameraProfiles(paths.cameraProfiles(), bgEngine)
+  profiles.load()
+  const library = new Library(index, bgEngine, planes, profiles)
   sessions = new DevelopSessions(library, engine, bgEngine)
   // A photo's new project gets its original carried inside it.
   const embedder = new OriginalEmbedder(index, library, bgEngine)
@@ -352,7 +385,14 @@ app.whenReady().then(() => {
   }, 20_000).unref()
   const lenses = new LensProfileStore()
   void lenses.start()
-  const exporter = new Exporter(library, sessions, bgEngine)
+  // A scripted run is never at the window: its exports never open a folder.
+  const exporter = new Exporter(
+    library,
+    sessions,
+    bgEngine,
+    () => hidden || BrowserWindow.getFocusedWindow() !== null
+  )
+  exporting = exporter
   const select = new SelectService(selectEngine, bgEngine, library, planes, models, () => sessions)
   // A stroke with Snap to edges is kept to the object SAM finds under it.
   setBrushSnapper({
@@ -433,12 +473,16 @@ app.whenReady().then(() => {
   )
   // Quitting: Gemma's server goes with Playroom, never left running.
   app.on('will-quit', () => {
+    // What is logged from here on lands before the process ends.
+    const file = log.transports.file.getFile() as { writeAsync?: boolean }
+    file.writeAsync = false
     namer.stop()
     cull.stop()
     brain.killNow()
   })
   process.on('exit', () => brain.killNow())
   registerIpc({
+    previews: new Previews(library, index, engine, bgEngine),
     namer,
     finder,
     cull,
@@ -488,12 +532,41 @@ app.on('window-all-closed', () => {
   }
 })
 
+/** Quitting while exporting was agreed to: closing the last window and the quit it leads to ask once. */
+let quitAgreed = false
+
+/**
+ * Whether quitting may go ahead: while exports are running or queued it is
+ * asked first (Quit / Keep exporting); never of a scripted run.
+ */
+function mayQuit(parent?: BrowserWindow): boolean {
+  if (quitAgreed) return true
+  const ask = exporting?.busy && !hidden ? quitQuestion(exporting.jobs()) : null
+  if (!ask) return true
+  const opts = {
+    type: 'question' as const,
+    buttons: [t('Quit'), t('Keep exporting')],
+    defaultId: 1,
+    cancelId: 1,
+    message: ask.message,
+    detail: ask.detail
+  }
+  const w = parent ?? BrowserWindow.getFocusedWindow() ?? mainWindow
+  const choice = w ? dialog.showMessageBoxSync(w, opts) : dialog.showMessageBoxSync(opts)
+  quitAgreed = choice === 0
+  return quitAgreed
+}
+
 /** The longest a quit waits for pending edits to reach their sidecars. */
 const QUIT_DRAIN_MS = 3000
 let drained = false
 
 app.on('before-quit', (e) => {
   if (drained) return
+  // Exports would stop part-way: asked first (closing the last window on
+  // macOS does not quit, and needs no asking; the export goes on).
+  if (!mayQuit()) return e.preventDefault()
+  exporting?.stopAll()
   // Pending edits go to the index host, and it closes the database, before
   // anything stops: once, and never for longer than QUIT_DRAIN_MS.
   e.preventDefault()

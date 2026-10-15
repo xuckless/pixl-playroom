@@ -71,7 +71,7 @@
   right: 0;
   bottom: 0;
   height: 18px;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -93,7 +93,7 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   text-align: center;
-  font-size: 11px;
+  font-size: var(--fs-small);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -101,7 +101,7 @@
 .metrics table {
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
-  font-size: 12.5px;
+  font-size: var(--fs-body);
 }
 .bh-table th,
 .bh-table td,
@@ -114,7 +114,7 @@
 }
 .bh-table thead th,
 .metrics thead th {
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
@@ -130,7 +130,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 6px 16px;
-  font-size: 12px;
+  font-size: var(--fs-body);
   font-variant-numeric: tabular-nums;
   color: var(--text2);
 }
@@ -152,7 +152,7 @@
   height: 360px;
 }
 .scopes-expanded .hue-foot {
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 
 /* CIE 1976 */
@@ -170,7 +170,7 @@
 }
 .cie-note {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--muted);
 }
@@ -203,7 +203,7 @@
   stroke: rgb(var(--fg-rgb) / 0.08);
 }
 .cie-axis {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   fill: rgba(235, 233, 243, 0.55);
 }
 .cie-locus {
@@ -251,7 +251,7 @@
 .metrics-card h4 {
   margin: 0 0 8px;
   font-family: var(--font);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -285,7 +285,7 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  font-size: 12.5px;
+  font-size: var(--fs-body);
   color: var(--text2);
 }
 .cvd-dots {
@@ -337,7 +337,7 @@
 }
 .swatch-hex {
   font-family: var(--mono, monospace);
-  font-size: 12.5px;
+  font-size: var(--fs-body);
   color: var(--text);
 }
 .palette-actions {
@@ -364,16 +364,34 @@
   margin-bottom: 6px;
 }
 .scope-head .scope-name {
+  display: grid;
+  flex: none;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
+  padding: 0 2px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--text);
   text-align: center;
-  flex: 0 1 auto;
-  padding: 0 2px;
+  white-space: nowrap;
+}
+/* Every name in one cell: the widest sets the width, the shown one shows. */
+.scope-head .scope-name > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.scope-head .scope-name > span.on {
+  visibility: visible;
+}
+/* while proofing the scopes read the proof (develop/Scopes.tsx ProofTag) */
+.scope-head .proof-tag {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--acc-a55);
+  border-radius: var(--r);
+  color: var(--acc);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 .scope-head .spacer {
   flex: 1;
@@ -382,11 +400,19 @@
   width: 14px;
   height: 14px;
 }
-.scope-head .seg.sm button,
-.scope-head .chip.sm {
-  height: 20px;
+/* The head's small controls, one height: the segment's frame and the chip alike. */
+.scope-head .seg.sm {
+  height: 22px;
+}
+.scope-head .seg.sm button {
+  height: auto;
   padding: 0 7px;
-  font-size: 11px;
+  font-size: var(--fs-small);
+}
+.scope-head .chip.sm {
+  height: 22px;
+  padding: 0 7px;
+  font-size: var(--fs-small);
 }
 .scope-plot {
   position: relative;
@@ -535,5 +561,5 @@
   grid-template-columns: 240px minmax(0, 1fr);
 }
 .se-place .scope-labels span {
-  font-size: 10px;
+  font-size: var(--fs-micro);
 }

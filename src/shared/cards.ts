@@ -1,11 +1,13 @@
 /**
- * The right column's cards: the adjustments in Lightroom Classic's order,
- * its Basic panel's White balance, Light and Presence shown together as
- * Basic corrections.
+ * The right column's cards: Playroom's colour tools, DaVinci Resolve's
+ * workflow (Curves, Primaries, Log wheels, the Qualifier) with Lightroom's
+ * Basic panel and HSL. White balance, Light and Presence show together as
+ * Basic corrections. (Lightroom's own set, once a choice in Settings, is
+ * retired: everything it did is here.)
  * Each card names the recipe fields it holds (paths, as `changedFields`
- * gives them), so whether it changed, putting it back, and (later) turning
- * it off all read from one list. In a mask the same paths are read in the
- * mask's settings (`scopedView`), against neutral ones.
+ * gives them), so whether it changed, putting it back, and turning it off
+ * all read from one list. In a mask the same paths are read in the mask's
+ * settings (`scopedView`), against neutral ones.
  */
 import { defaultRecipe, neutralSettings, sameValue, SETTINGS_KEYS, type Recipe } from './recipe'
 import { tk } from './i18n'
@@ -15,13 +17,12 @@ export const CARD_IDS = [
   'light',
   'presence',
   'curve',
-  'rcurves',
   'mixer',
-  'grading',
-  'calibration',
   'primaries',
   'logwheels',
   'qualifier',
+  'calibration',
+  'grading',
   'detail',
   'effects',
   'optics',
@@ -36,37 +37,29 @@ export interface CardSpec {
   fields: string[][]
   /** Whether a mask carries it (its fields are among a mask's settings). */
   inMask: boolean
-  /**
-   * The colour tools it belongs to (Settings → Interface → Colour tools):
-   * shown only with them; absent, with both. Hidden, it still acts.
-   */
-  set?: ColourToolSet
-  /** Its name among the Resolve tools, where that differs (the mixer is HSL there). */
-  resolveTitle?: string
   /** Shown as a part of Basic corrections, not as a panel of its own. */
   basic?: true
+  /**
+   * Lightroom's, kept for the photos edited with it: offered only where it
+   * holds edits (it still acts, and can be put back), never for new ones.
+   */
+  legacy?: true
 }
 
-/** Lightroom's colour cards, or DaVinci Resolve's. */
-export type ColourToolSet = 'lightroom' | 'resolve'
-
-/** Whether a card shows with `tools`. */
-export const cardShows = (card: CardSpec, tools: ColourToolSet): boolean =>
-  !card.set || card.set === tools
-
-/** The cards `tools` shows, in the order the column shows them. */
-export function cardsFor(tools: ColourToolSet): CardSpec[] {
-  return CARDS.filter((c) => cardShows(c, tools))
-}
-
-/** A card's name with `tools`. */
-export const cardTitle = (card: CardSpec, tools: ColourToolSet): string =>
-  tools === 'resolve' && card.resolveTitle ? card.resolveTitle : card.title
+/** Lightroom's Colour grading wheels: Primaries and Log wheels do what they did. */
+const GRADING_WHEELS: string[][] = [
+  ['colorGrade', 'shadows'],
+  ['colorGrade', 'midtones'],
+  ['colorGrade', 'highlights'],
+  ['colorGrade', 'global'],
+  ['colorGrade', 'blending'],
+  ['colorGrade', 'balance']
+]
 
 /**
- * In both sets the same order: Basic corrections (Treatment and Profile,
- * White balance, Light, Presence), the curves, the HSL, then the other
- * colour tools, then Detail, Effects, Optics and Geometry.
+ * In order: Basic corrections (Treatment and Profile, White balance, Light,
+ * Presence), Curves, HSL, then the other colour tools, then Detail,
+ * Effects, Optics and Geometry.
  */
 export const CARDS: CardSpec[] = [
   { id: 'wb', title: tk('White balance'), fields: [['wb']], inMask: true, basic: true },
@@ -80,57 +73,35 @@ export const CARDS: CardSpec[] = [
     inMask: true,
     basic: true
   },
-  { id: 'curve', title: tk('Tone curve'), fields: [['toneCurve']], inMask: true, set: 'lightroom' },
   {
-    id: 'rcurves',
-    // Its Custom tab is the tone curve itself (the Tone curve card's section).
+    id: 'curve',
+    // Custom (the tone curve: points, YRGB, its regions) and the vs curves.
     title: tk('Curves'),
-    fields: [['curvesVs']],
-    inMask: true,
-    set: 'resolve'
+    fields: [['toneCurve'], ['curvesVs']],
+    inMask: true
   },
   {
     id: 'mixer',
-    title: tk('Colour mixer'),
-    fields: [['hsl'], ['bwMix'], ['pointColors']],
-    inMask: true,
-    // Both sets: with Resolve's it is the compact HSL.
-    resolveTitle: tk('HSL')
-  },
-  {
-    id: 'grading',
-    title: tk('Colour grading'),
-    fields: [['colorGrade']],
-    inMask: true,
-    set: 'lightroom'
-  },
-  {
-    id: 'calibration',
-    title: tk('Calibration'),
-    fields: [['calibration']],
-    inMask: true,
-    set: 'lightroom'
+    title: tk('HSL'),
+    fields: [['hsl'], ['bwMix'], ['pointColors'], ['density']],
+    inMask: true
   },
   {
     id: 'primaries',
     title: tk('Primaries'),
-    fields: [['primaries']],
-    inMask: true,
-    set: 'resolve'
+    // Add colour (light of a colour laid on the scene) sits under the wheels.
+    fields: [['primaries'], ['colorGrade', 'add']],
+    inMask: true
   },
+  { id: 'logwheels', title: tk('Log wheels'), fields: [['logWheels']], inMask: true },
+  { id: 'qualifier', title: tk('Qualifier'), fields: [['qualifiers']], inMask: true },
+  { id: 'calibration', title: tk('Calibration'), fields: [['calibration']], inMask: true },
   {
-    id: 'logwheels',
-    title: tk('Log wheels'),
-    fields: [['logWheels']],
+    id: 'grading',
+    title: tk('Colour grading'),
+    fields: GRADING_WHEELS,
     inMask: true,
-    set: 'resolve'
-  },
-  {
-    id: 'qualifier',
-    title: tk('Qualifier'),
-    fields: [['qualifiers']],
-    inMask: true,
-    set: 'resolve'
+    legacy: true
   },
   { id: 'detail', title: tk('Detail'), fields: [['detail']], inMask: true },
   { id: 'effects', title: tk('Effects'), fields: [['effects']], inMask: true },
@@ -155,33 +126,24 @@ export const isPanelId = (v: unknown): v is PanelId => v === 'basic' || isCardId
 export const panelCards = (id: PanelId): CardSpec[] =>
   id === 'basic' ? CARDS.filter((c) => c.basic) : [cardSpec(id)]
 
-/** The panels `tools` offers, in order (in a mask, those a mask carries). */
-export function panelsFor(tools: ColourToolSet, inMask = false): PanelId[] {
+/**
+ * The panels offered, in order (in a mask, those a mask carries). A legacy
+ * card shows only where `held` says it holds edits.
+ */
+export function panelsFor(inMask = false, held?: (card: CardSpec) => boolean): PanelId[] {
   const out: PanelId[] = []
-  for (const c of cardsFor(tools)) {
+  for (const c of CARDS) {
     if (inMask && !c.inMask) continue
+    if (c.legacy && !held?.(c)) continue
     const p = panelOf(c.id)
     if (!out.includes(p)) out.push(p)
   }
   return out
 }
 
-/**
- * Lightroom's panels whose keys (⌘2, ⌘4) show a Resolve tool with Resolve's
- * set: the curves, and the grading wheels.
- */
-export const RESOLVE_TWIN: Partial<Record<PanelId, PanelId>> = {
-  curve: 'rcurves',
-  grading: 'primaries'
-}
-
-/** The panel whose key shows `id` (itself, or the Lightroom panel it stands in for). */
-export const keyedAs = (id: PanelId): PanelId =>
-  (Object.keys(RESOLVE_TWIN) as PanelId[]).find((k) => RESOLVE_TWIN[k] === id) ?? id
-
-/** A panel's name with `tools`. */
-export const panelTitle = (id: PanelId, tools: ColourToolSet): string =>
-  id === 'basic' ? BASIC_TITLE : cardTitle(cardSpec(id), tools)
+/** A panel's name. */
+export const panelTitle = (id: PanelId): string =>
+  id === 'basic' ? BASIC_TITLE : cardSpec(id).title
 
 export const cardSpec = (id: CardId): CardSpec => CARDS.find((c) => c.id === id) ?? CARDS[0]
 

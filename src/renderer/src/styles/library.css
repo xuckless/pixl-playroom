@@ -58,10 +58,11 @@
   display: flex;
   margin: 4px 2px 10px;
 }
-.size-range .icon-svg {
-  width: 14px;
-  height: 14px;
-  color: var(--muted);
+/* The toolbar's sliders, Develop's own, sized for the bar. */
+.library-bar .bar-range .slider {
+  width: 150px;
+  height: 26px;
+  margin: 0;
 }
 .library-bar .count {
   color: var(--text);
@@ -95,6 +96,9 @@
   color: var(--muted);
   text-align: center;
   margin-top: 60px;
+}
+.grid-empty button {
+  margin-left: 10px;
 }
 .thumb {
   position: relative;
@@ -135,6 +139,26 @@
 .thumb.rejected .thumb-img img {
   opacity: 0.35;
 }
+/* Hidden by the filter but kept while it has the focus: dimmed, in neutral grey. */
+.thumb.filtered-out .thumb-img img {
+  opacity: 0.3;
+  filter: grayscale(0.6);
+}
+.filtered-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  color: var(--text2);
+  background: rgb(var(--shade-rgb) / 0.6);
+  border: 1px solid rgb(var(--fg-rgb) / 0.22);
+  backdrop-filter: blur(6px);
+}
 /* A suggested reject (Pass 115): dimmed and grey; on hover its colour and reason come back. */
 .thumb.culled .thumb-img img {
   filter: grayscale(1) brightness(0.55);
@@ -155,7 +179,7 @@
   padding: 18px 10px 8px;
   background: linear-gradient(to top, rgb(var(--shade-rgb) / 0.82), rgb(var(--shade-rgb) / 0));
   color: #fff;
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   line-height: 1.35;
   opacity: 0;
   transform: translateY(4px);
@@ -182,7 +206,7 @@
 .cull-why .cull-acts button {
   height: 22px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 /* Suggested rejects shown: the line above the grid. */
 .cull-bar {
@@ -191,7 +215,7 @@
   gap: 10px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--hair);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
 }
 .cull-bar .grow {
@@ -217,7 +241,7 @@
 .thumb-wait {
   color: var(--muted);
   letter-spacing: 0.14em;
-  font-size: 11px;
+  font-size: var(--fs-small);
   animation: statusPulse 1.6s ease-in-out infinite;
 }
 .thumb-wait.unreadable {
@@ -237,7 +261,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   font-family: var(--font-body);
   color: var(--text2);
 }
@@ -299,7 +323,7 @@
   background: var(--s1);
   border-top: 1px solid transparent;
   border-image: var(--hl-x) 1;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--text2);
   flex: none;
 }
@@ -383,7 +407,7 @@
   padding: 0 4px;
   display: inline-grid;
   place-items: center;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--acc-ink);
   background: var(--acc);
   border-radius: 8px;
@@ -465,7 +489,7 @@
   border-radius: var(--r);
   color: var(--text2);
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: var(--fs-body);
   font-weight: 500;
   cursor: pointer;
   outline: none;
@@ -541,7 +565,7 @@
   flex: none;
   min-width: 18px;
   text-align: right;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--muted);
 }
 .src-row button.icon {
@@ -580,7 +604,7 @@
   margin: 4px 4px 6px;
   color: var(--muted);
   font-family: var(--font-body);
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   line-height: 1.5;
 }
 .src-empty {
@@ -598,7 +622,7 @@
   min-height: 36px;
   grid-template-columns: 84px minmax(0, 1fr);
 }
-.filter-pop select {
+.filter-pop .glass-select {
   width: 100%;
   max-width: none;
 }
@@ -612,7 +636,7 @@
 }
 .seg-star {
   margin-left: 2px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--acc);
 }
 .label-pick {
@@ -674,7 +698,7 @@
   width: 0;
 }
 .range-pair input[type='date'] {
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   padding: 0 6px;
 }
 .pop-foot {
@@ -712,7 +736,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-family: var(--font-body);
   color: var(--muted);
 }
@@ -765,7 +789,7 @@
   height: 22px;
   padding: 0 7px;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: #fff;
   background: rgb(var(--shade-rgb) / 0.6);
   border-color: rgb(var(--fg-rgb) / 0.22);
@@ -810,7 +834,11 @@
   border-color: color-mix(in srgb, var(--acc) 42%, transparent);
 }
 .thumb.in-stack .thumb-meta {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 5%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--acc) 16%, transparent),
+    color-mix(in srgb, var(--acc) 5%, transparent)
+  );
   border-top-color: color-mix(in srgb, var(--acc) 30%, transparent);
 }
 .thumb.in-stack:not(.stack-cover) .thumb-img {
@@ -831,7 +859,7 @@
   gap: 10px;
   padding: 10px 0 16px;
   color: var(--text2);
-  font-size: 12px;
+  font-size: var(--fs-body);
   font-family: var(--font-body);
   animation: rowIn 0.55s var(--spring) both;
 }
@@ -841,7 +869,12 @@
 .dupe-head .line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), var(--hair) 40%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    var(--hair) 40%,
+    transparent
+  );
 }
 .grid.loading {
   opacity: 0.55;
@@ -856,7 +889,7 @@
   gap: 14px;
   color: var(--text2);
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: var(--fs-title);
 }
 
 /* ── info drawer and the metadata editor ───────────────────────── */
@@ -907,7 +940,7 @@
   gap: 5px;
 }
 .meta-field > label {
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -920,7 +953,7 @@
 }
 .meta-field textarea {
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: var(--fs-body);
   line-height: 1.45;
   resize: vertical;
   min-height: 58px;
@@ -958,7 +991,7 @@
   height: 22px;
   padding: 0 1px 0 8px;
   font-family: var(--font-body);
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   color: var(--text);
   background: var(--acc-a10);
   border: 1px solid var(--acc-a35);
@@ -999,7 +1032,7 @@
   border: none;
   background: transparent;
   box-shadow: none;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .kw-offers {
   position: absolute;
@@ -1019,7 +1052,7 @@
 .kw-offer {
   padding: 6px 8px;
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
   border-radius: var(--r);
   cursor: pointer;
@@ -1055,7 +1088,11 @@
   margin: 4px 0 2px 4px;
   padding: 8px 0 8px 12px;
   border-left: 1px solid var(--acc-a35);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 5%, transparent), transparent 60%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 5%, transparent),
+    transparent 60%
+  );
   animation: rowIn 0.45s var(--spring) both;
 }
 .rule-group-head {
@@ -1064,9 +1101,9 @@
   gap: 8px;
   min-height: 32px;
   color: var(--text2);
-  font-size: 12.5px;
+  font-size: var(--fs-body);
 }
-.rule-group-head select {
+.rule-group-head .glass-select {
   width: 82px;
 }
 .rule-row {
@@ -1076,11 +1113,11 @@
   min-height: 32px;
   animation: rowIn 0.4s var(--spring) both;
 }
-.rule-row select.rule-field {
+.rule-row .glass-select.rule-field {
   width: 148px;
   flex: none;
 }
-.rule-row select.rule-op {
+.rule-row .glass-select.rule-op {
   width: 158px;
   flex: none;
 }
@@ -1090,7 +1127,7 @@
   gap: 7px;
   min-width: 0;
 }
-select.rule-value {
+.glass-select.rule-value {
   width: 180px;
 }
 .rule-row input.rule-text {
@@ -1104,20 +1141,20 @@ select.rule-value {
 .rule-row input.rule-date {
   width: 150px;
 }
-.rule-value .stars span {
-  font-size: 15px;
+.rule-value .stars button {
+  font-size: var(--fs-large);
 }
 .rule-and {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .rule-empty {
   margin: 2px 0 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .rule-preview {
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .rule-preview .big {
   font-size: 20px;
@@ -1125,21 +1162,53 @@ select.rule-value {
 
 /* As the window narrows the size slider goes first, then the key hints,
    then the action labels; the search and the sort stay whole. */
-@media (max-width: 1400px) {
-  .library-bar .size-range,
-  .library-bar .kbd {
-    display: none;
-  }
+/* The Library's bar takes the toolbars' fit levels (shell.css); its own
+   gap and buttons need the same at its level 2. */
+.library-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) {
+  gap: 6px;
 }
-@media (max-width: 1100px) {
-  .library-bar .lbl {
-    display: none;
-  }
+.library-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) .seg.lg button {
+  padding: 0 9px;
 }
-@media (max-width: 1500px) {
-  .library-bar.dupes .lbl {
-    display: none;
-  }
+.library-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) .lbl {
+  display: none;
+}
+/* The size slider is never dropped, only narrowed. */
+.library-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) .bar-range .slider {
+  width: 110px;
+}
+/* Tightest: the knob alone (its tooltip names it). */
+.library-bar:is([data-fit='3'], [data-fit='4']) .bar-range .slider {
+  width: 64px;
+}
+.library-bar:is([data-fit='3'], [data-fit='4']) .bar-range .sl-text {
+  display: none;
+}
+/* The search keeps a usable width until the last level, so the hints and
+   words go before it is squeezed. */
+.library-bar .search-field {
+  min-width: 180px;
+}
+.library-bar:is([data-fit='3'], [data-fit='4']) .search-field {
+  min-width: 110px;
+}
+/* Still short (beside the Info drawer): a second row, rather than
+   filters scrolled out of sight. */
+.filter-bar[data-fit='2'] {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 38px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  row-gap: 6px;
+}
+/* The filter bar, short of room: the stars and the dots say what they are
+   (their tooltips keep the words). */
+.filter-bar:is([data-fit='1'], [data-fit='2']) {
+  gap: 12px;
+}
+.filter-bar:is([data-fit='1'], [data-fit='2']) :is(.fb-stars, .fb-labels) .fb-label {
+  display: none;
 }
 .thumb .hdr-badge {
   position: absolute;
@@ -1177,4 +1246,524 @@ select.rule-value {
 .thumb:hover button.project-badge,
 .thumb button.project-badge:focus-visible {
   opacity: 1;
+}
+
+/* ── culling views: Loupe, Compare, Survey ─────────────────────── */
+.library-bar .mode-seg {
+  flex: none;
+}
+.lib-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--bg);
+}
+.compare-panes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+.lib-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  font-size: var(--fs-body);
+  color: var(--text2);
+}
+.lib-bar .on {
+  color: var(--acc);
+}
+.survey-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+}
+.lib-pane {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--hair);
+  overflow: hidden;
+  transition:
+    border-color 0.25s var(--ease),
+    box-shadow 0.3s var(--ease);
+}
+/* The Loupe's one photo needs no frame. */
+.loupe > .lib-pane {
+  border-color: transparent;
+}
+/* The pane or tile the keys act on: the accent; the other stays neutral. */
+.lib-pane.active {
+  border-color: var(--acc);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--acc) 35%, transparent),
+    0 12px 36px -18px var(--glow);
+}
+.lib-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+.lib-pane.zoomable .lib-canvas {
+  cursor: zoom-in;
+}
+.lib-pane.zoomed .lib-canvas {
+  cursor: grab;
+}
+.lib-pane.zoomed .lib-canvas:active {
+  cursor: grabbing;
+}
+.lib-canvas img.lib-pic {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  user-select: none;
+}
+.lib-canvas img.lib-pic.decoded-prev {
+  animation: decodedOut 140ms ease-out forwards;
+}
+.lib-canvas img.lib-pic-zoom {
+  position: absolute;
+  max-width: none;
+  display: block;
+  user-select: none;
+}
+.lib-canvas img.lib-pic-zoom.full,
+.lib-canvas img.lib-pic-zoom.tile {
+  animation: libFadeIn 0.25s var(--ease) both;
+}
+@keyframes libFadeIn {
+  from {
+    opacity: 0;
+  }
+}
+/* Rejected, or hidden by the filter but still shown: dimmed in grey, never the accent. */
+.lib-pane.rejected .lib-canvas img,
+.lib-pane.filtered-out .lib-canvas img {
+  opacity: 0.35;
+  filter: grayscale(0.6);
+}
+.lib-wait {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  letter-spacing: 0.14em;
+}
+.lib-tag {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  color: var(--text2);
+  border: 1px solid var(--hair2);
+  background: rgb(var(--shade-rgb) / 0.55);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+.lib-tag.on {
+  color: var(--acc);
+  border-color: color-mix(in srgb, var(--acc) 50%, transparent);
+}
+.lib-chips {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: flex;
+  gap: 6px;
+  pointer-events: none;
+}
+.lib-chips .badge {
+  background: rgb(var(--shade-rgb) / 0.55);
+  backdrop-filter: blur(6px);
+}
+.lib-chips button {
+  pointer-events: auto;
+  cursor: pointer;
+  height: auto;
+}
+.lib-sharpening {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  background: rgb(var(--shade-rgb) / 0.55);
+  backdrop-filter: blur(6px);
+}
+.lib-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: var(--fs-body);
+  color: var(--text2);
+  background: var(--s1);
+  border-top: 1px solid var(--hair);
+}
+.lib-foot.compact {
+  height: 26px;
+  font-size: var(--fs-small);
+}
+.lib-foot .lib-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.lib-foot .label-dot,
+.lib-foot .flag {
+  position: static;
+  flex: none;
+}
+.lib-empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.film.candidate {
+  border-color: var(--hair3);
+  box-shadow: 0 0 0 1px rgb(var(--fg-rgb) / 0.25);
+}
+
+/* ── the filter bar ────────────────────────────────────────────── */
+.filter-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 38px;
+  padding: 0 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  font-size: var(--fs-body);
+  color: var(--text2);
+  border-bottom: 1px solid var(--hair);
+  background: var(--bg);
+  scrollbar-width: none;
+}
+.filter-bar > * {
+  flex: none;
+}
+/* Each filter: a quiet name, then its control. */
+.fb-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fb-label {
+  margin-right: 2px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  letter-spacing: 0.04em;
+}
+.filter-bar .glass-select.sm {
+  height: 24px;
+  padding: 0 6px 0 8px;
+  font-size: var(--fs-body);
+}
+.fb-stars {
+  gap: 0;
+}
+.fb-stars button {
+  width: 17px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgb(var(--fg-rgb) / 0.22);
+  font-size: var(--fs-body);
+  line-height: 1;
+}
+.fb-stars button:hover:not(:disabled) {
+  color: rgb(var(--fg-rgb) / 0.5);
+  transform: none;
+  background: transparent;
+}
+.fb-stars button.on {
+  color: var(--star);
+  background: transparent;
+}
+/* A star lit is its own mark: no pressed underline. */
+.fb-stars button.on::after {
+  display: none;
+}
+.fb-labels .swatch {
+  width: 20px;
+  height: 20px;
+}
+.fb-suggested {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.fb-suggested .filter-count {
+  margin-left: 4px;
+}
+.fb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 2px 0 8px;
+  color: var(--text);
+  border: 1px solid var(--hair2);
+  background: rgb(var(--fg-rgb) / 0.03);
+  white-space: nowrap;
+}
+.fb-chip button.icon {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.fb-chip button.icon .icon-svg {
+  width: 11px;
+  height: 11px;
+}
+.search-field .search-badge {
+  flex: none;
+  border: none;
+  cursor: pointer;
+}
+.status-bar .key-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+}
+.status-bar .advance-chip {
+  height: 20px;
+  padding: 0 8px;
+  font-size: var(--fs-small);
+}
+.status-bar .advance-chip.on {
+  color: var(--acc);
+  border-color: color-mix(in srgb, var(--acc) 45%, transparent);
+}
+
+/* ── the drawer's tabs, and Quick develop (⇧I) ── */
+.rail-head .lib-info-tabs {
+  height: 26px;
+}
+.rail-head .lib-info-tabs button {
+  font-size: var(--fs-small);
+}
+.qd-develop {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.qd-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qd-note {
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+.qd-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.qd-group > .rail-group {
+  margin-bottom: 4px;
+}
+.qd-auto {
+  height: 22px;
+  padding: 0 8px;
+}
+.qd-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px 22px 64px 22px 22px;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 2px 0 6px;
+  border-radius: var(--r);
+  outline: none;
+}
+.qd-row:hover {
+  background: rgb(var(--fg-rgb) / 0.03);
+}
+.qd-row:focus-visible {
+  background: var(--acc-a10);
+  box-shadow: inset 0 0 0 1px var(--acc-a35);
+}
+.qd-name {
+  font-size: var(--fs-body);
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-change {
+  text-align: center;
+  font-size: var(--fs-body);
+  color: var(--muted);
+}
+.qd-row.changed .qd-change {
+  color: var(--acc);
+}
+.qd-step.icon {
+  width: 22px;
+  height: 22px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--muted);
+}
+.qd-more {
+  align-self: flex-start;
+  height: 22px;
+  margin-top: 2px;
+  padding: 0 6px;
+  color: var(--muted);
+}
+.qd-looks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qd-search.search-field {
+  flex: none;
+  width: 100%;
+  height: 30px;
+}
+.qd-look-list {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 2px 0;
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  background: var(--s1);
+}
+.qd-look-shelf {
+  padding: 6px 10px 2px;
+  color: var(--muted);
+}
+.qd-look {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text2);
+  font-size: var(--fs-body);
+  text-align: left;
+}
+.qd-look:hover:not(:disabled) {
+  background: rgb(var(--fg-rgb) / 0.04);
+  transform: none;
+}
+.qd-look.on {
+  color: var(--text);
+  background: var(--acc-a10);
+}
+.qd-look.applied .qd-look-name::after {
+  content: ' ✓';
+  color: var(--acc);
+}
+.qd-look-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-look-pick {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+.qd-preview {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--r);
+  background: var(--s1);
+}
+.qd-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.qd-preview .look-skeleton {
+  position: absolute;
+  inset: 0;
+}
+.qd-look-about {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--fs-body);
+}
+.qd-look-about strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-clip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qd-clip-line {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 4px 6px;
+  font-size: var(--fs-body);
+  text-align: left;
+}
+.qd-clip-line > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-changed {
+  color: var(--acc);
 }

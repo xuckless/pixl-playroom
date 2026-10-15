@@ -11,15 +11,26 @@ import type {
   KeywordNode,
   LibraryItem,
   LibrarySource,
+  MetaPatch,
   MetaTextPatch
 } from '../../../shared/ipc'
-import type { Recipe, RecipeGroup } from '../../../shared/recipe'
+import type { SettingsClipboard } from '../../../shared/clipboard'
+import { keepPinned, pinnedOnly, rangeKeys, type LibraryMode } from '../../../shared/cullnav'
+import {
+  CONFIRM_ABOVE,
+  patched,
+  type MetaEntry,
+  type MetaValues
+} from '../../../shared/libraryundo'
 import type { SmartGroup } from '../../../shared/smart'
 import { collapseStacks } from '../../../shared/stacks'
 import { api, errorText } from '../lib/api'
 import { t, tp } from '../lib/i18n'
-import { folderName, isUnder } from '../lib/sources'
+import { folderName, relistsOn } from '../lib/sources'
+import { cosmeticChanges, withChanged } from '../lib/visiblepatch'
 import { useBusy } from './busy'
+import { askConfirm } from './confirm'
+import { pushUndo, undoAction } from './libraryUndo'
 import { useUi } from './ui'
 import { suggestedReasons, useCull } from './cull'
 import type { CullReason } from '../../../shared/cullsuggest'
@@ -31,6 +42,19 @@ export interface ToastAction {
   label: string
   run: () => void
 }
+
+/** Something the app said (a toast), kept for View → Recent Messages. */
+export interface Message {
+  id: number
+  text: string
+  tone: 'info' | 'error'
+  /** When, in ms since the epoch. */
+  at: number
+}
+
+/** How many of the latest messages are kept. */
+const MESSAGES_KEPT = 50
+let messageSeq = 0
 
 /** A collection being made or changed in its dialog. */
 export interface CollectionDraft {
@@ -62,7 +86,26 @@ interface LibraryState {
   pinned: string[]
   selection: string[]
   focus: string | null
+  /** Where a ⇧-click or ⇧-arrow extends the selection from. */
+  anchor: string | null
+  /**
+   * A photo kept in the grid while it has the focus though the filter now
+   * hides it (rejected while rejects are hidden): it shows dimmed and tagged,
+   * and goes once the focus leaves it (shared/cullnav.ts).
+   */
+  sticky: string | null
   view: 'library' | 'develop'
+  /** The Library's view of its photos: Grid, Loupe, Compare or Survey (lib/librarymodes.ts). */
+  mode: LibraryMode
+  /** Compare's Candidate (its Select is the focus). */
+  candidate: string | null
+  /** Compare's pane the keys act on. */
+  active: 'select' | 'candidate'
+  /**
+   * What Survey shows: the selection (at most SURVEY_MAX of `total`), or a
+   * photo's burst, near shots or stack (`group`).
+   */
+  survey: { keys: string[]; total: number; group?: 'burst' | 'near' | 'stack' } | null
   filter: Filter
   sort: SortKey
   thumbSize: number
@@ -70,7 +113,10 @@ interface LibraryState {
   /** Photos opened on their own (File → Open Photo…), the latest first. */
   recentPhotos: string[]
   engine: EngineStatus | null
-  toast: { text: string; tone: 'info' | 'error'; action?: ToastAction } | null
+  /** The message shown now (components/Toasts.tsx times it out). */
+  toast: { id: number; text: string; tone: 'info' | 'error'; action?: ToastAction } | null
+  /** What was said this session, oldest first. */
+  messages: Message[]
   dialog:
     | null
     | 'export'
@@ -89,9 +135,14 @@ interface LibraryState {
     | 'update'
     /** Photo → Edit as SDR: the open gain-map photo's editing space. */
     | 'editing-space'
+    /** View → Recent Messages: what the app said this session. */
+    | 'messages'
+    /** ⇧⌘V: choose which of the clipboard's settings to paste. */
+    | 'paste'
   /** The collection the 'collection' dialog edits. */
   editing: CollectionDraft | null
-  clipboard: { recipe: Recipe; groups: RecipeGroup[]; source: string | null } | null
+  /** The settings ⌘C copied, named after their photo (lib/clipboard.ts). */
+  clipboard: SettingsClipboard | null
 
   /** Show a source; false when it could not be opened (the error is said). */
   openSource(src: LibrarySource): Promise<boolean>
@@ -99,7 +150,8 @@ interface LibraryState {
   chooseFolder(): Promise<void>
   refresh(): Promise<void>
   /** A folder's files changed (main says which). */
-  onChanged(folder: string): void
+  /** A folder changed: `items`, those whose facts did (patched in); without, list it again. */
+  onChanged(folder: string, items?: LibraryItem[]): void
   /** Collections, keywords or metadata changed: the sidebar reloads, a derived source re-lists. */
   onSourcesChanged(): Promise<void>
   loadSources(): Promise<void>
@@ -112,17 +164,29 @@ interface LibraryState {
   forgetPhoto(path: string): void
   patchItems(items: (LibraryItem | undefined)[]): void
   select(key: string, mode: 'only' | 'toggle' | 'range'): void
+  /** Move the focus to `key`; with `extend`, the selection runs from the anchor to it. */
+  moveTo(key: string, extend: boolean): void
   selectAll(): void
   setFocus(key: string | null): void
   setView(view: 'library' | 'develop'): void
+  /** Show the Library's photos this way (Compare's and Survey's photos are set by lib/librarymodes.ts). */
+  setMode(mode: LibraryMode): void
   setFilter(f: Partial<Filter>): void
   resetFilter(): void
   setSort(s: SortKey): void
   setThumbSize(n: number): void
+  /**
+   * Rate, flag or label `keys` (the targets when not given): shown at once,
+   * written behind, one entry on the Library's undo stack, a toast with Undo
+   * when it changed more than one photo, and a question first above
+   * CONFIRM_ABOVE photos.
+   */
   setMeta(
     patch: { rating?: number; flag?: Flag; label?: ColorLabel },
     keys?: string[]
   ): Promise<void>
+  /** Write metadata without an undo entry (the undo stack's own writes). */
+  writeMeta(patch: MetaPatch, keys: string[]): Promise<boolean>
   setMetadata(keys: string[], patch: MetaTextPatch): Promise<void>
   toggleStack(id: string, open?: boolean): void
   /** Stack the targets, the focused one on top. */
@@ -133,7 +197,7 @@ interface LibraryState {
   addToCollection(id: string, keys: string[]): Promise<void>
   removeFromCollection(id: string, keys: string[]): Promise<void>
   editCollection(draft: CollectionDraft | null): void
-  /** A toast; one with an action stays until it is used or replaced. */
+  /** A toast (and a line in Recent messages); one with an action stays until it is used or replaced. */
   say(text: string, tone?: 'info' | 'error', action?: ToastAction): void
   setDialog(d: LibraryState['dialog']): void
   setClipboard(c: LibraryState['clipboard']): void
@@ -146,6 +210,71 @@ const RECENT_PHOTOS = 10
 
 /** Bumped by every open: a listing that lands after a newer open is dropped. */
 let openSeq = 0
+
+/** Bumped by every metadata write: only the newest one's answer is shown. */
+let metaSeq = 0
+
+let ids = 0
+/** An id for an undo entry or a batch (it goes into history labels: letters, digits, dashes). */
+export function nextId(): string {
+  return `${Date.now().toString(36)}-${(++ids).toString(36)}`
+}
+
+/** How long the sidebar's counts and a collection's listing wait after a rating, flag or label. */
+const SOURCES_WAIT_MS = 300
+let sourcesTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * A smart collection may no longer hold (or may now hold) what changed: its
+ * count in the sidebar, and its listing when it is the one shown. Once,
+ * a moment after the last of a run of keys, not per key.
+ */
+function sourcesSoon(): void {
+  if (sourcesTimer) clearTimeout(sourcesTimer)
+  sourcesTimer = setTimeout(() => {
+    sourcesTimer = null
+    const l = useLibrary.getState()
+    if (l.collections.some((c) => c.kind === 'smart')) void l.loadSources()
+    if (l.source?.kind === 'collection') void l.refresh()
+  }, SOURCES_WAIT_MS)
+}
+
+/** Above CONFIRM_ABOVE photos, a change asks first. */
+export function confirmMany(count: number): Promise<boolean> {
+  return askConfirm({
+    title: tp('Change {{count}} photo?', 'Change all {{count}} photos?', count),
+    body: t('Every one of them changes. Undo takes it back.'),
+    confirm: t('Change all')
+  })
+}
+
+/** What a metadata change is, for the Edit menu's Undo. */
+function metaTitle(p: MetaPatch): string {
+  if (p.rating !== undefined) return t('Rating')
+  if (p.flag !== undefined) return t('Flag')
+  return t('Colour label')
+}
+
+/** What a metadata change did, for its toast. */
+function metaSaid(p: MetaPatch, n: number): string {
+  if (p.rating !== undefined)
+    return p.rating > 0
+      ? tp('Rated {{count}} photo', 'Rated {{count}} photos', n)
+      : tp('Cleared the rating of {{count}} photo', 'Cleared the ratings of {{count}} photos', n)
+  if (p.flag !== undefined)
+    return p.flag === 'pick'
+      ? tp('Flagged {{count}} photo as a pick', 'Flagged {{count}} photos as picks', n)
+      : p.flag === 'reject'
+        ? tp('Flagged {{count}} photo as a reject', 'Flagged {{count}} photos as rejects', n)
+        : tp('Removed the flag from {{count}} photo', 'Removed the flags from {{count}} photos', n)
+  return p.label
+    ? tp('Labelled {{count}} photo', 'Labelled {{count}} photos', n)
+    : tp(
+        'Removed the colour label from {{count}} photo',
+        'Removed the colour labels from {{count}} photos',
+        n
+      )
+}
 
 export const useLibrary = create<LibraryState>((set, get) => ({
   source: null,
@@ -160,7 +289,14 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   pinned: [],
   selection: [],
   focus: null,
+  anchor: null,
+  sticky: null,
   view: 'library',
+  // The Grid or the Loupe, as the last session left it.
+  mode: useUi.getState().libraryMode,
+  candidate: null,
+  active: 'select',
+  survey: null,
   filter: DEFAULT_FILTER,
   sort: 'name',
   thumbSize: 180,
@@ -168,6 +304,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   recentPhotos: [],
   engine: null,
   toast: null,
+  messages: [],
   dialog: null,
   editing: null,
   clipboard: null,
@@ -195,10 +332,14 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         items: listing.items,
         groups: listing.groups ?? null,
         opening: null,
-        view: 'library'
+        view: 'library',
+        // Compare's and Survey's photos were the last source's: the Loupe stays.
+        ...(s.mode === 'compare' || s.mode === 'survey'
+          ? { mode: 'grid' as const, candidate: null, active: 'select' as const, survey: null }
+          : {})
       }))
       const first = get().visible()[0]?.key ?? null
-      set({ selection: first ? [first] : [], focus: first })
+      set({ selection: first ? [first] : [], focus: first, anchor: first })
       // The duplicates are slow to find again: a relaunch goes back to the folder.
       if (src.kind !== 'duplicates') void api.app.setSetting('library.lastSource', src)
       if (folder) {
@@ -248,16 +389,12 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     }))
   },
 
-  onChanged(folder) {
+  onChanged(folder, items) {
     const src = get().source
     if (!src) return
-    const mine =
-      src.kind === 'folder'
-        ? src.path === folder || (src.deep === true && isUnder(folder, src.path))
-        : src.kind === 'duplicates'
-          ? src.folder === null || src.folder === folder
-          : true
-    if (mine) void get().refresh()
+    // Facts read in (EXIF, a sidecar): those items, wherever they show.
+    if (items) get().patchItems(items)
+    if (relistsOn(src, folder, !!items)) void get().refresh()
   },
 
   async onSourcesChanged() {
@@ -325,35 +462,44 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const byKey = new Map(items.filter((i): i is LibraryItem => !!i).map((i) => [i.key, i]))
     if (byKey.size === 0) return
     set((s) => {
-      const known = new Set(s.items.map((i) => i.key))
-      const merged = s.items.map((i) => byKey.get(i.key) ?? i)
+      const found = new Set<string>()
+      const merged = s.items.map((i) => {
+        const v = byKey.get(i.key)
+        if (!v) return i
+        found.add(i.key)
+        return v
+      })
       // Something new in the folder shown (a copy) joins it; a collection lists only its own.
       const src = s.source
       for (const [k, v] of byKey)
-        if (!known.has(k) && src?.kind === 'folder' && v.folder === src.path) merged.push(v)
+        if (!found.has(k) && src?.kind === 'folder' && v.folder === src.path) merged.push(v)
       return { items: merged }
     })
   },
 
   select(key, mode) {
-    const { selection, focus } = get()
-    if (mode === 'only') set({ selection: [key], focus: key })
+    const { selection, focus, anchor } = get()
+    if (mode === 'only') set({ selection: [key], focus: key, anchor: key })
     else if (mode === 'toggle') {
       set({
         selection: selection.includes(key)
           ? selection.filter((k) => k !== key)
           : [...selection, key],
-        focus: key
+        focus: key,
+        anchor: key
       })
     } else {
       const vis = get()
         .visible()
         .map((i) => i.key)
-      const a = vis.indexOf(focus ?? key)
-      const b = vis.indexOf(key)
-      const [lo, hi] = a < b ? [a, b] : [b, a]
-      set({ selection: vis.slice(Math.max(lo, 0), hi + 1), focus: key })
+      // From where the last plain or ⌘-click started, as Finder extends.
+      set({ selection: rangeKeys(vis, anchor ?? focus ?? key, key), focus: key })
     }
+  },
+
+  moveTo(key, extend) {
+    if (extend) get().select(key, 'range')
+    else get().setFocus(key)
   },
 
   selectAll() {
@@ -365,11 +511,22 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   },
 
   setFocus(key) {
-    set({ focus: key, selection: key ? [key] : [] })
+    set({ focus: key, selection: key ? [key] : [], anchor: key })
   },
 
   setView(view) {
     set({ view })
+  },
+
+  setMode(mode) {
+    set((s) => ({
+      mode,
+      // Leaving Compare or Survey: what they showed goes with them.
+      ...(mode !== 'compare' ? { candidate: null, active: 'select' as const } : {}),
+      ...(mode !== 'survey' ? { survey: null } : {}),
+      ...(s.view !== 'library' ? { view: 'library' as const } : {})
+    }))
+    useUi.getState().setLibraryMode(mode)
   },
 
   setFilter(f) {
@@ -391,14 +548,45 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   async setMeta(patch, keys) {
     const targets = keys ?? get().targets()
     if (targets.length === 0) return
+    if (targets.length > CONFIRM_ABOVE && !(await confirmMany(targets.length))) return
+    const byKey = new Map(get().items.map((i) => [i.key, i]))
+    const before: Record<string, MetaValues> = {}
+    for (const k of targets) {
+      const it = byKey.get(k)
+      if (it) before[k] = { rating: it.rating, flag: it.flag, label: it.label }
+    }
+    // The photo shown stays where it is though the filter may now hide it
+    // (the focus, or Compare's Candidate).
+    const { focus, candidate } = get()
+    if (focus && targets.includes(focus)) set({ sticky: focus })
+    else if (candidate && targets.length === 1 && targets[0] === candidate)
+      set({ sticky: candidate })
+    if (!(await get().writeMeta(patch, targets))) return
+    const entry: MetaEntry = { kind: 'meta', id: nextId(), title: metaTitle(patch), patch, before }
+    pushUndo(entry)
+    if (targets.length > 1) get().say(metaSaid(patch, targets.length), 'info', undoAction(entry))
+  },
+
+  async writeMeta(patch, keys) {
+    if (keys.length === 0) return true
+    // Shown at once: a fast cull (a few keys a second) never waits on a write.
+    const want = new Set(keys)
+    get().patchItems(
+      get()
+        .items.filter((i) => want.has(i.key))
+        .map((i) => ({ ...i, ...patched(i, patch) }))
+    )
+    const mine = ++metaSeq
     try {
-      get().patchItems(await api.library.setMeta(targets, patch))
-      // A smart collection may no longer hold (or may now hold) what changed:
-      // its count in the sidebar, and its listing when it is the one shown.
-      if (get().collections.some((c) => c.kind === 'smart')) void get().loadSources()
-      if (get().source?.kind === 'collection') void get().refresh()
+      const items = await api.library.setMeta(keys, patch)
+      // A later key's write is on its way: its answer is the one to show.
+      if (mine === metaSeq) get().patchItems(items)
+      sourcesSoon()
+      return true
     } catch (err) {
       get().say(errorText(err), 'error')
+      void get().refresh()
+      return false
     }
   },
 
@@ -524,14 +712,11 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   },
 
   say(text, tone = 'info', action) {
-    set({ toast: { text, tone, action } })
-    if (action) return
-    setTimeout(
-      () => {
-        if (get().toast?.text === text) set({ toast: null })
-      },
-      tone === 'error' ? 8000 : 3500
-    )
+    const id = ++messageSeq
+    set({
+      toast: { id, text, tone, action },
+      messages: [...get().messages, { id, text, tone, at: Date.now() }].slice(-MESSAGES_KEPT)
+    })
   },
 
   setDialog(dialog) {
@@ -543,8 +728,16 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   },
 
   visible() {
-    const { items, filter, sort, groups, expandedStacks } = get()
-    return visibleFor(items, filter, sort, groups, expandedStacks, useCull.getState().reasons)
+    const { items, filter, sort, groups, expandedStacks, sticky } = get()
+    return visibleFor(
+      items,
+      filter,
+      sort,
+      groups,
+      expandedStacks,
+      useCull.getState().reasons,
+      sticky
+    )
   },
 
   targets() {
@@ -567,6 +760,7 @@ let visibleMemo: {
   groups: LibraryState['groups']
   expanded: Set<string>
   cull: Record<string, CullReason[]>
+  pinned: string | null
   out: LibraryItem[]
 } | null = null
 
@@ -581,40 +775,49 @@ function visibleFor(
   sort: SortKey,
   groups: LibraryState['groups'],
   expanded: Set<string>,
-  cull: Record<string, CullReason[]>
+  cull: Record<string, CullReason[]>,
+  pinned: string | null
 ): LibraryItem[] {
   const m = visibleMemo
   // The suggestions only change what is shown while Suggested rejects is on.
   const cullKey = filter.suggested ? cull : null
-  if (
+  const same =
     m &&
-    m.items === items &&
     m.filter === filter &&
     m.sort === sort &&
     m.groups === groups &&
     m.expanded === expanded &&
+    m.pinned === pinned &&
     (filter.suggested ? m.cull === cull : true)
-  )
-    return m.out
+  if (same && m.items === items) return m.out
+  // Thumbnails or badges in, nothing else: the same order, their items swapped in.
+  const changed = same ? cosmeticChanges(m.items, items) : null
+  if (m && changed) {
+    const out = withChanged(m.out, changed)
+    visibleMemo = { ...m, items, out }
+    return out
+  }
   const shown = filter.suggested
     ? items.filter((i) => suggestedReasons(i, cullKey ?? {}) !== null)
     : items
-  const out = computeVisible(shown, filter, sort, groups, expanded)
-  visibleMemo = { items, filter, sort, groups, expanded, cull, out }
+  // The focused photo the filter now hides stays where it was (sticky hide).
+  const passed = keepPinned(items, applyFilter(shown, filter), pinned)
+  const out = arrange(passed, sort, groups, expanded)
+  visibleMemo = { items, filter, sort, groups, expanded, cull, pinned, out }
   return out
 }
 
 /** Names compared as `localeCompare` does, without building a collator per comparison. */
 const collator = new Intl.Collator()
 
-function computeVisible(
-  items: LibraryItem[],
-  filter: Filter,
+/** What the filters let through, sorted, the duplicates in their groups and stacks collapsed. */
+function arrange(
+  passed: LibraryItem[],
   sort: SortKey,
   groups: LibraryState['groups'],
   expandedStacks: Set<string>
 ): LibraryItem[] {
-  const shown = [...applyFilter(items, filter)]
+  const shown = [...passed]
   // The duplicates keep their groups' order, every member showing.
   if (groups) {
     const at = new Map<string, number>()
@@ -649,11 +852,43 @@ export function useVisible(): LibraryItem[] {
   const groups = useLibrary((s) => s.groups)
   const expanded = useLibrary((s) => s.expandedStacks)
   const cull = useCull((s) => s.reasons)
+  const sticky = useLibrary((s) => s.sticky)
   return useMemo(
-    () => visibleFor(items, filter, sort, groups, expanded, cull),
-    [items, filter, sort, groups, expanded, cull]
+    () => visibleFor(items, filter, sort, groups, expanded, cull, sticky),
+    [items, filter, sort, groups, expanded, cull, sticky]
   )
 }
+
+/**
+ * Whether a photo shows only because it is pinned: the filter hides it, and
+ * it stays (dimmed, tagged "Hidden by filter") until the focus leaves it.
+ */
+export function useHiddenByFilter(item: LibraryItem): boolean {
+  return useLibrary((s) => s.sticky === item.key && filteredOut(item, s.filter))
+}
+
+/** The filter (Suggested rejects with it) would not show this photo. */
+function filteredOut(item: LibraryItem, filter: Filter): boolean {
+  return (
+    applyFilter([item], filter).length === 0 ||
+    (filter.suggested === true && suggestedReasons(item, useCull.getState().reasons) === null)
+  )
+}
+
+/** How many photos the filter shows: the visible ones, less one kept only by sticky hide. */
+export function useShownCount(): number {
+  const visible = useVisible().length
+  const pinned = useLibrary((s) =>
+    pinnedOnly(s.items, s.sticky, (it) => !filteredOut(it, s.filter))
+  )
+  return visible - (pinned ? 1 : 0)
+}
+
+// The focus (or Compare's Candidate) left the pinned photo: the filter has its say again.
+useLibrary.subscribe((s) => {
+  if (s.sticky !== null && s.sticky !== s.focus && s.sticky !== s.candidate)
+    useLibrary.setState({ sticky: null })
+})
 
 /** The keys an action applies to: the selection, or the focused item. */
 export function useTargets(): string[] {

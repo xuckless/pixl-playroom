@@ -18,15 +18,20 @@ import type {
   CropRect,
   Curve,
   Curves,
+  Density,
   Framing,
   Grade,
   GradeLayer,
   GradeOp,
   GradeSpace,
+  GradeStage,
+  GrainResponse,
   HslBands,
   HslKey,
+  Inspect,
   LensCorrection,
   Mask,
+  MaskProbe,
   Retouch,
   Vignette,
   MaskComponent,
@@ -37,18 +42,24 @@ import type {
   Transform,
   WhitePoint
 } from './engine-types'
-import { addColorOp } from './addcolor'
-import { defringeOp, lensCorrection } from './lens'
+import { addColorOp, hsvToRgb } from './addcolor'
+import { pq } from './export'
+import { REFERENCE_WHITE } from './hdrdisplay'
+import { canvasOf, defringeOp, lensCorrection } from './lens'
+import { placeMasks, type MaskFrames } from './lensframe'
 import { compileRetouch } from './retouch'
 import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
 import { effectiveMode } from './masks'
 import { EDGE_SHIFT_SPAN, offsetPolygon } from './maskedge'
 import { gradientShape, rasterGradient } from './gradients'
+import { basePlaneId, brushRoute, engineStrokes, strokeRuns, type BrushRoute } from './strokes'
 import { engineEdge, engineRefine, engineShift } from './refine'
 import {
   HSL_BANDS,
   type CurvePointSetting,
+  type DensitySetting,
+  type GrainResponseKind,
   type LayerSettings,
   type LocalLayer,
   type MaskComponentSetting,
@@ -58,13 +69,14 @@ import {
   type ToneBaseKind
 } from './recipe'
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
+import { curvesVsV0, logWheelsV0, regionCurveV0 } from './colourv0'
 import { tk } from './i18n'
 import { effective } from './edits'
 import {
   curvesVsOp,
   logWheelsOps,
+  primariesBalance,
   primariesOp,
-  primariesWhite,
   qualifierCorrection,
   qualifierKey,
   qualifierLayerId,
@@ -72,14 +84,80 @@ import {
   type QualifierSetting,
   scaleCurvesVs,
   scaleLogWheels,
-  scalePrimaries,
-  type VsCurve
+  scalePrimaries
 } from './resolve'
 
-/** What a waiting vs curve says in the render's notes. */
-const VS_WAITING_NOTE: Partial<Record<VsCurve, string>> = {
-  hueLum: tk('Hue vs Lum waits for the engine (E71): kept, not applied yet'),
-  satSat: tk('Sat vs Sat waits for the engine (E72): kept, not applied yet')
+/** What the render says of a LUT profile not in Playroom's LUT folder (`CompileContext.luts`). */
+export const LUT_MISSING_NOTE = tk(
+  'The LUT this photo uses is not in Playroom’s LUT folder: import it again to see it'
+)
+/** What the render says of an Advanced layer that reads a file it may not. */
+export const CUSTOM_FILE_NOTE = tk(
+  'An Advanced layer that reads a file outside Playroom’s LUT folder is left out'
+)
+
+/** A `LutRef`'s file path, when it names one. */
+function lutPathOf(v: unknown): string | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const lut = (v as { lut?: unknown }).lut
+  if (!lut || typeof lut !== 'object' || !('Path' in lut)) return null
+  const p = (lut as { Path: unknown }).Path
+  return typeof p === 'string' ? p : ''
+}
+
+/** Every `Lut` op's file path in a custom layer's JSON, wherever it sits. */
+function customLutPaths(v: unknown, out: string[]): void {
+  if (Array.isArray(v)) for (const x of v) customLutPaths(x, out)
+  else if (v && typeof v === 'object')
+    for (const [k, x] of Object.entries(v)) {
+      const p = k === 'Lut' ? lutPathOf(x) : null
+      if (p) out.push(p)
+      else customLutPaths(x, out)
+    }
+}
+
+/**
+ * The LUT files a recipe names: its profile's, and every `Lut` op's `Path`
+ * in its custom layers. Main finds each in Playroom's LUT folder
+ * (`CompileContext.luts`).
+ */
+export function lutNamesOf(r: Recipe): string[] {
+  const out: string[] = []
+  if (r.profile.kind === 'lut' && r.profile.path) out.push(r.profile.path)
+  for (const c of r.custom ?? []) customLutPaths(c.layer, out)
+  return [...new Set(out)]
+}
+
+/**
+ * A custom layer with each `Lut` path swapped for the file main found
+ * (`luts`), or null when it reads a file it may not: a LUT not in Playroom's
+ * LUT folder, or a raster mask from a file (`{ Png: path }` and the like;
+ * Playroom's own masks reach the engine as its brush planes, never here).
+ */
+export function customFiles(v: unknown, luts: Record<string, string>): unknown | null {
+  let refused = false
+  const walk = (x: unknown, key: string | null): unknown => {
+    if (Array.isArray(x)) return x.map((e) => walk(e, null))
+    if (!x || typeof x !== 'object') return x
+    if (key === 'Lut') {
+      const p = lutPathOf(x)
+      if (p !== null) {
+        const file = Object.hasOwn(luts, p) ? luts[p] : undefined
+        if (!file) refused = true
+        return { ...(x as Record<string, unknown>), lut: { Path: file ?? '' } }
+      }
+    }
+    // A raster read from a file (`RasterRef`'s `Png`, `Tiff`, `Jxl`), wherever
+    // it sits: a mask's source, a depth map, an overlay, a flat field, or
+    // any op a later engine adds.
+    for (const k of ['Png', 'Tiff', 'Jxl'])
+      if (typeof (x as Record<string, unknown>)[k] === 'string') refused = true
+    const out: Record<string, unknown> = {}
+    for (const [k, e] of Object.entries(x)) out[k] = walk(e, k)
+    return out
+  }
+  const out = walk(v, null)
+  return refused ? null : out
 }
 
 // ── Spaces ───────────────────────────────────────────────────────────────────
@@ -87,6 +165,15 @@ const VS_WAITING_NOTE: Partial<Record<VsCurve, string>> = {
 /** Where the look runs: display-referred, the gamut modern cameras shoot. */
 export const LOOK_SPACE: GradeSpace = {
   Encoded: { space: 'DisplayP3', intent: 'RelativeColorimetric', black_point_compensation: false }
+}
+
+/**
+ * Where the Log wheels run (engine 0.21, E73): PixlLog, the working space's
+ * own primaries through the models' log curve (grey 0.405, white 0.669),
+ * a stage of their own in the look, only where they are set.
+ */
+export const LOG_GRADE_SPACE: GradeSpace = {
+  Encoded: { space: 'PixlLog', intent: 'RelativeColorimetric', black_point_compensation: false }
 }
 
 /** 18% grey in the look space (sRGB transfer, shared by Display P3). */
@@ -112,17 +199,6 @@ export const RAW_SCENE_STOPS = 2
 
 /** The smoothing's reach, a fraction of the shorter side: the engine's calibration point. */
 export const SMOOTHING_RADIUS = 0.02
-
-/**
- * Whether Tone (Highlights, Shadows, Whites, Blacks) takes the Smoothing
- * slider. Held off, the owner's stopgap of 2026-10-12 (E63, engine 0.19.2):
- * a smoothed Tone with Shadows or Blacks moved paints patches of pure white
- * over dark and mid tones (any amount, any Smoothing above 0, a floor before
- * or after it changes nothing), blue ones in Full HDR when they are raised,
- * and the colour ops after it turn its output into magenta and green blocks.
- * Unsmoothed it is clean. `tests/e63.test.ts` says when the engine's is.
- */
-export const TONE_SMOOTHING = false
 
 /** The Smoothing slider (0–100) as the engine's field, or none for a draft or at 0. */
 export function smoothingOf(value: number, ctx: CompileContext): AdjustmentSmoothing | null {
@@ -152,6 +228,12 @@ export interface CompileContext {
   /** A RAW's as-shot white, which makes its temperature slider absolute. */
   asShot: WhitePoint | null
   /**
+   * Stops added to a RAW's exposure under the photo's own: a camera
+   * profile's BaselineExposureOffset (engine 0.21, E21; `exposureOffsetOf`),
+   * which Adobe's renderer adds and the engine leaves to the host.
+   */
+  exposureOffset?: number
+  /**
    * The source's own orientation as the engine should apply it: a file's EXIF
    * orientation, `Normal` for a developed RAW (already upright) and for a
    * proxy (built upright).
@@ -167,9 +249,24 @@ export interface CompileContext {
   /**
    * The raster planes (painted brushes and drawn gradients), by component id,
    * as grey PNG paths already turned into the user-oriented frame (the main
-   * process writes them).
+   * process writes them), and re-warped onto the frame rendered when drawn
+   * under another lens (main/brushes.ts). A brush whose strokes go as they
+   * are has its plane, if any, under `basePlaneId(id)` (shared/strokes.ts).
    */
   brushPaths: Record<string, string>
+  /**
+   * The LUTs the recipe names (`lutNamesOf`), by the path it names each by,
+   * as main found them in Playroom's LUT folder (main/lutfile.ts). A recipe
+   * comes from files anyone may write, so a path it names is never opened
+   * itself: a LUT not here is missing, and the render says so.
+   */
+  luts?: Record<string, string>
+  /**
+   * Masks or spots drawn under another lens geometry than the one rendered
+   * (a lens edit, Optics switched off): what carries their points to the
+   * frame rendered (shared/lensframe.ts). Absent or null: they are on it.
+   */
+  maskFrames?: MaskFrames | null
   /** False while the crop tool is open: show the whole, unrotated frame. */
   applyCrop: boolean
   /**
@@ -203,6 +300,12 @@ export interface CompileContext {
    * 82 ms: the drag keeps that base (unless `dragWithoutBase`).
    */
   gpuDrag?: boolean
+  /**
+   * `'v0'`: engine 0.20's colour maths (shared/colourv0.ts), only for
+   * `scripts/look-delta.mjs --maths` to measure what 0.21's moved. Never a
+   * photo's; goes with colourv0.ts once the catalog is retuned.
+   */
+  colourForm?: 'v0'
 }
 
 /**
@@ -241,6 +344,12 @@ export interface Compiled {
   retouch: Retouch | null
   /** Engine layer index of each local layer, for `Inspect::LayerMask`. */
   layerIndex: Record<string, number>
+  /**
+   * Where each qualifier's op sits, by its key view's name
+   * (`qualifierLayerId`), for `Inspect::QualifierKey` (0.21.0, E77). A
+   * qualifier switched off, or keying nothing, has none.
+   */
+  qualifierIndex: Record<string, QualifierAddress>
   /** What the preview could not show at this scale, and why. */
   notes: string[]
   /** The user-oriented frame, full resolution. */
@@ -248,6 +357,39 @@ export interface Compiled {
   orientedHeight: number
   /** The crop the engine was given (after auto-fit for a straighten), normalised. */
   crop: CropRect | null
+}
+
+/** A qualifier's op: its layer, and which of that layer's Qualifier ops it is (evaluation order). */
+export interface QualifierAddress {
+  layer: number
+  qualifier: number
+}
+
+/**
+ * The plane a view names (`ViewState.maskLayer`): a mask's layer, or a
+ * qualifier's key (`qualifierLayerId`). Null when the compiled grade has
+ * no such thing (the mask is empty, the qualifier is off).
+ */
+export function maskProbe(
+  c: Pick<Compiled, 'layerIndex' | 'qualifierIndex'>,
+  id: string
+): MaskProbe | null {
+  const q = c.qualifierIndex[id]
+  if (q) return { QualifierKey: { layer: q.layer, qualifier: q.qualifier } }
+  const layer = c.layerIndex[id]
+  return layer === undefined ? null : { LayerMask: { layer } }
+}
+
+/** The engine layer a probe looks into. */
+export function probeLayer(p: MaskProbe): number {
+  if ('LayerMask' in p) return p.LayerMask.layer
+  if ('GroupMask' in p) return p.GroupMask.layer
+  return p.QualifierKey.layer
+}
+
+/** The probe as a standalone inspection (a plane in place of the picture). */
+export function probeInspect(p: MaskProbe): Inspect {
+  return 'QualifierKey' in p ? { QualifierKey: p.QualifierKey } : p
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -314,41 +456,45 @@ function curvesOp(c: Partial<Curves>): GradeOp {
       luma_vs_saturation: null,
       hue_vs_saturation: null,
       hue_vs_hue: null,
+      hue_vs_luma: null,
+      saturation_vs_saturation: null,
       refine_saturation: null,
       ...c
     }
   }
 }
 
+/** How far ±100 on a region slider moves its region: a quarter of the range. */
+export const REGION_REACH = 0.25
+
 /**
- * The parametric tone curve as control points: each region's slider bends the
- * curve by up to a quarter of the range with a smooth bump over its region
- * (Lightroom's Highlights/Lights/Darks/Shadows with movable splits).
+ * The tone curve's region sliders (Lightroom's Highlights, Lights, Darks and
+ * Shadows with movable splits) as the engine's parametric curve (engine
+ * 0.21, E19): ±100 moves a region's centre by a quarter of the range, held
+ * between its neighbours, so the curve stays monotone and pinned at black
+ * and white at every setting (strong opposite moves never fold the tones
+ * back). The identity outside 0…1: an HDR pipeline's highlights above white
+ * keep their room as they are. Null when no slider is moved.
  */
-export function parametricCurve(tc: Recipe['toneCurve']): CurvePointSetting[] | null {
+export function regionCurveOp(tc: Recipe['toneCurve']): GradeOp | null {
   const amounts = [tc.shadows, tc.darks, tc.lights, tc.highlights]
   if (amounts.every((a) => a === 0)) return null
-  const [s1, s2, s3] = tc.splits.map((s) => clamp(s, 5, 95) / 100)
-  const edges = [0, s1, s2, s3, 1]
-  const bump = (x: number, a: number, b: number): number => {
-    // A raised cosine over [a − w, b + w], flat-topped over [a, b].
-    const w = (b - a) * 0.5
-    if (x <= a - w || x >= b + w) return 0
-    if (x < a) return 0.5 - 0.5 * Math.cos((Math.PI * (x - (a - w))) / w)
-    if (x > b) return 0.5 + 0.5 * Math.cos((Math.PI * (x - b)) / w)
-    return 1
+  const a = (v: number): number => round4(clamp(v / 100, -1, 1))
+  // Strictly in order inside 0…1, as the engine takes them (a sidecar
+  // written elsewhere may hold any three).
+  const low = clamp(tc.splits[0], 5, 93)
+  const mid = clamp(tc.splits[1], low + 1, 94)
+  const high = clamp(tc.splits[2], mid + 1, 95)
+  return {
+    ParametricCurve: {
+      shadows: a(tc.shadows),
+      darks: a(tc.darks),
+      lights: a(tc.lights),
+      highlights: a(tc.highlights),
+      splits: { low: round4(low / 100), mid: round4(mid / 100), high: round4(high / 100) },
+      reach: { Range: REGION_REACH }
+    }
   }
-  const pts: CurvePointSetting[] = []
-  for (let i = 0; i <= 16; i++) {
-    const x = i / 16
-    let y = x
-    for (let r = 0; r < 4; r++) y += (amounts[r] / 100) * 0.25 * bump(x, edges[r], edges[r + 1])
-    // Pin the ends: a region slider bends the curve, it does not move black or white.
-    if (i === 0) y = 0
-    if (i === 16) y = 1
-    pts.push({ x, y: clamp(y, 0, 1) })
-  }
-  return pts
 }
 
 /** The profile looks, as control points on encoded values (Standard's is Monochrome's now). */
@@ -578,6 +724,21 @@ export function orientedFrame(
   return { user, width: swap ? frameHeight : frameWidth, height: swap ? frameWidth : frameHeight }
 }
 
+/**
+ * The source's own frame size, from what a render of it reported: the
+ * frame before its lens correction (`canvasOf`), turned back from the
+ * user's orientation (`user`, as `orientedFrame` gives it), which the
+ * report's frame is turned by. What `orientedFrame` was given, when it was
+ * given the source's true size (a RAW's develop, E66: `render.ts` learns it so).
+ */
+export function sourceFrameOf(
+  report: Parameters<typeof canvasOf>[0],
+  user: Orientation
+): { width: number; height: number } {
+  const c = canvasOf(report)
+  return swapsAxes(user) ? { width: c.height, height: c.width } : c
+}
+
 /** The least a fitted crop keeps across, as a fraction of the canvas: never nothing, which the engine refuses. */
 const MIN_FIT = 0.05
 
@@ -793,7 +954,11 @@ export function smoothnessFeather(smoothness: number): number {
 /**
  * A custom layer as written before 0.16, brought up to it: every `Lut`
  * states what a value past its table gets (0.15 clamped it, so `Clamp`),
- * wherever it sits (a stage, a `Masked` op). Everything else passes as it is.
+ * wherever it sits (a stage, a `Masked` op). Engine 0.21's required fields
+ * too, as `migrateLook` adds them on load, for a layer that never went
+ * through it: a `ParametricCurve` without a reach gets `'HalfGap'` and a
+ * `Grain` without a response and colour grain gets 0.20's (the same bytes).
+ * Everything else passes as it is.
  */
 export function withLutDomains(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(withLutDomains)
@@ -805,6 +970,14 @@ export function withLutDomains(v: unknown): unknown {
     } else if (k === 'Denoise' && x && typeof x === 'object' && !Array.isArray(x)) {
       // Saved before engine 0.18, which requires a reach: the one Playroom sends everywhere.
       out[k] = { reach: DENOISE_REACH, ...(x as Record<string, unknown>) }
+    } else if (k === 'ParametricCurve' && x && typeof x === 'object' && !Array.isArray(x)) {
+      out[k] = { reach: 'HalfGap', ...(x as Record<string, unknown>) }
+    } else if (k === 'Grain' && x && typeof x === 'object' && !Array.isArray(x)) {
+      out[k] = {
+        response: 'Midtones',
+        chroma: { amount: 0, size: 1 },
+        ...(x as Record<string, unknown>)
+      }
     } else out[k] = withLutDomains(x)
   }
   return out
@@ -874,8 +1047,10 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
     primaries: scalePrimaries(s.primaries, k),
     curvesVs: scaleCurvesVs(s.curvesVs, k),
     logWheels: scaleLogWheels(s.logWheels, k),
-    // Scaled where they compile, as their own layers (`qualifierLayer`).
-    qualifiers: s.qualifiers,
+    // The key stays; what it lets through scales.
+    qualifiers: s.qualifiers.map((q) => scaleQualifier(q, k)),
+    // How much, not which colours: the bands' weights stay.
+    density: { ...s.density, amount: m(s.density.amount) },
     colorGrade: {
       ...cg,
       shadows: wheel(cg.shadows),
@@ -894,6 +1069,8 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
       ...s.effects,
       vignetteAmount: m(s.effects.vignetteAmount),
       grainAmount: m(s.effects.grainAmount),
+      grainColour: m(s.effects.grainColour),
+      // Halation and bloom are the photo's own: a mask's are never compiled.
       wash: { ...s.effects.wash, amount: m(s.effects.wash.amount) }
     },
     calibration: Object.fromEntries(
@@ -902,6 +1079,10 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
   }
 }
 
+/**
+ * A component as the engine's: one, or a brush's pieces (its plane, then
+ * each run of strokes: shared/strokes.ts), or none when it can't be drawn.
+ */
 function maskComponent(
   c: MaskComponentSetting,
   user: Orientation,
@@ -909,8 +1090,22 @@ function maskComponent(
   /** The frame as the user turned it: what a lasso's offset is measured on. */
   frame: { width: number; height: number },
   /** A drag frame: a refine that reads the whole frame stands aside (refine.ts `refineFor`). */
-  draft = false
-): MaskComponent | null {
+  draft = false,
+  /** A brush's way to the engine (`brushRoute`). */
+  route: BrushRoute = 'plane'
+): MaskComponent[] {
+  const one = maskShape(c, user, brushPaths, frame, draft, route)
+  return Array.isArray(one) ? one : one ? [one] : []
+}
+
+function maskShape(
+  c: MaskComponentSetting,
+  user: Orientation,
+  brushPaths: Record<string, string>,
+  frame: { width: number; height: number },
+  draft: boolean,
+  route: BrushRoute
+): MaskComponent | MaskComponent[] | null {
   const smooth = c.kind === 'range' ? smoothnessFeather(c.smoothness ?? 0) : 0
   const base = {
     mode: c.mode,
@@ -939,10 +1134,34 @@ function maskComponent(
       return shape ? { ...base, shape } : null
     }
     case 'brush': {
-      // A painted plane: written to disk by the main process.
-      const path = brushPaths[c.id]
-      if (!path) return null
-      return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
+      // One plane, written to disk by the main process: an older brush's, a
+      // model's, or a brush whose strokes can't go as they are, painted in.
+      if (route === 'plane') {
+        const path = brushPaths[c.id]
+        if (!path) return null
+        return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
+      }
+      // Its strokes as the engine's (E36): the plane under them first, then
+      // each run, painting in the brush's mode and erasing as a Subtract.
+      const pieces: MaskComponent[] = []
+      if (c.png || c.ref) {
+        const path = brushPaths[basePlaneId(c.id)]
+        if (!path) return null
+        pieces.push({
+          ...base,
+          shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } }
+        })
+      }
+      for (const run of strokeRuns(c.strokes ?? [])) {
+        const strokes = engineStrokes(run.strokes, user)
+        if (strokes.strokes.length === 0) continue
+        pieces.push({
+          ...base,
+          mode: run.erase ? 'Subtract' : base.mode,
+          shape: { Strokes: strokes }
+        })
+      }
+      return pieces
     }
     case 'polygon': {
       if (c.points.length < 3) return null
@@ -1024,12 +1243,23 @@ export function layerMask(
   frame: { width: number; height: number } = { width: 1, height: 1 },
   draft = false
 ): Mask | null {
-  // The first component always adds (as the masks panel shows it).
-  const drawn = l.components
-    .map((c, i) =>
-      maskComponent({ ...c, mode: effectiveMode(i, c.mode) }, user, brushPaths, frame, draft)
+  // The first component always adds (as the masks panel shows it). A brush
+  // whose eraser must take from it alone leads, where a union lets it.
+  const lead: MaskComponent[] = []
+  const rest: MaskComponent[] = []
+  l.components.forEach((c, i) => {
+    const route = c.kind === 'brush' ? brushRoute(l.components, i) : 'plane'
+    const made = maskComponent(
+      { ...c, mode: effectiveMode(i, c.mode) },
+      user,
+      brushPaths,
+      frame,
+      draft,
+      route
     )
-    .filter((c): c is MaskComponent => c !== null)
+    ;(route === 'lead' ? lead : rest).push(...made)
+  })
+  const drawn = [...lead, ...rest]
   // One that could not be drawn (a brush whose plane is missing, a lasso of
   // one point) leaves a Subtract or Intersect first: taken from nothing it
   // selects nothing, and the engine refuses one first, so it goes. (Made an
@@ -1074,23 +1304,19 @@ function stage(space: GradeSpace, ops: GradeOp[]): { space: GradeSpace; ops: Gra
 }
 
 /**
- * Negatives floored at 0, nothing else touched (a 1D identity over 0…64).
- * Before engine 0.19.2 it led the look stage and preceded every smoothed op
- * (E53: smoothed ops blobbed on out-of-gamut colours). 0.19.2 fixed that in
- * the engine, and the floor also took colour that Full HDR's gamut step
- * should compress (Phase A §2), so Playroom no longer writes it. Kept to
- * recognise one in a grade made before.
+ * The look's stages: display-referred (`LOOK_SPACE`), but the Log wheels in
+ * a log stage of their own (`LOG_GRADE_SPACE`) where they fall, the look
+ * picking up after them. A photo without them keeps its one look stage.
  */
-const P3_FLOOR = 'LUT_1D_SIZE 2\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 64 64 64\n0 0 0\n64 64 64\n'
-
-/** Whether an op is the old look stage's floor (`P3_FLOOR`). */
-export function isP3Floor(op: GradeOp): boolean {
-  return 'Lut' in op && 'Cube' in op.Lut.lut && op.Lut.lut.Cube === P3_FLOOR
-}
-
-/** The look stage (display-referred, `LOOK_SPACE`). */
-function lookStage(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
-  return stage(LOOK_SPACE, ops)
+function lookStages(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
+  const out: { space: GradeSpace; ops: GradeOp[] }[] = []
+  for (const op of ops) {
+    const space = 'LogWheels' in op ? LOG_GRADE_SPACE : LOOK_SPACE
+    const last = out[out.length - 1]
+    if (last && last.space === space) last.ops.push(op)
+    else out.push({ space, ops: [op] })
+  }
+  return out
 }
 
 function sharpenOp(
@@ -1274,13 +1500,14 @@ function settingsStages(
    * (toning, sharpening, effects) go here, to run after the masks, so a
    * mask's colour changes feed the mix rather than colour the grey.
    */
-  finish?: GradeOp[]
-): { space: GradeSpace; ops: GradeOp[] }[] {
+  finish?: GradeStage[]
+): GradeStage[] {
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
   const hdr = ctx.hdr === true
-  // One value for every op that takes it (Vibrance, Dehaze, Point colour,
-  // Color grading; HSL waits for E53, Tone for E63); null in a draft.
+  const v0 = ctx.colourForm === 'v0'
+  // One value for every op that takes it (Tone, the Color Mixer, Vibrance,
+  // Dehaze, Point colour, Color grading); null in a draft.
   const smoothing = smoothingOf(r.presence.smoothing, ctx)
   const d = r.detail
   const denoise =
@@ -1303,23 +1530,22 @@ function settingsStages(
   const wb = base ? baseWhite(r, ctx) : layerWhite(r.wb)
   if (wb)
     linear.push({ WhiteBalance: { temperature_kelvin: round4(wb.kelvin), tint: round4(wb.tint) } })
-  // Resolve's Temp and Tint, on top of the white balance (until E75 puts them with the primaries).
-  const rw = primariesWhite(r.primaries)
-  if (rw) {
-    const w = opFromRelative(rw.temperature, rw.tint)
+  if (v0 && (r.primaries.temp !== 0 || r.primaries.tint !== 0)) {
+    const w = opFromRelative(r.primaries.temp, r.primaries.tint)
     linear.push({ WhiteBalance: { temperature_kelvin: round4(w.kelvin), tint: round4(w.tint) } })
   }
   const mix = calibrationMatrix(r.calibration)
   if (mix) linear.push({ ChannelMixer: { red: mix[0], green: mix[1], blue: mix[2] } })
-  if (r.basic.exposure !== 0)
-    linear.push({ Primary: primary({ exposure: round4(r.basic.exposure), contrast_pivot: 0.18 }) })
+  const exposure = r.basic.exposure + (base && ctx.isRaw ? (ctx.exposureOffset ?? 0) : 0)
+  if (exposure !== 0)
+    linear.push({ Primary: primary({ exposure: round4(exposure), contrast_pivot: 0.18 }) })
   // An SDR picture's highlights are rolled onto white; an HDR one has room
   // above white for them (and a shoulder there would flatten it). A RAW's
   // Scene master (engine 0.18) is over white before any exposure, by up to
   // RAW_SCENE_STOPS: its shoulder is always there and reaches that far.
   const room = base && ctx.isRaw ? RAW_SCENE_STOPS : 0
-  if (base && !ctx.hdr && (r.basic.exposure > 0 || room > 0)) {
-    const stops = round4(Math.max(0, r.basic.exposure) + room)
+  if (base && !ctx.hdr && (exposure > 0 || room > 0)) {
+    const stops = round4(Math.max(0, exposure) + room)
     linear.push({
       Lut: { lut: { Cube: shoulderCube(stops) }, amount: 1, out_of_domain: 'Clamp' }
     })
@@ -1361,9 +1587,18 @@ function settingsStages(
       // channels' ratios kept); an SDR one clamps, as it always has.
       if (base?.profile.kind !== 'lut') break
       if (base.profileAmount > 0) {
+        // Only the file main found in Playroom's LUT folder, never the path
+        // the recipe names (it came from a file anyone may write).
+        const file = Object.hasOwn(ctx.luts ?? {}, base.profile.path)
+          ? ctx.luts?.[base.profile.path]
+          : undefined
+        if (!file) {
+          notes.push(LUT_MISSING_NOTE)
+          break
+        }
         look.push({
           Lut: {
-            lut: { Path: base.profile.path },
+            lut: { Path: file },
             amount: clamp(base.profileAmount / 100, 0, 1),
             out_of_domain: hdr ? 'ScaleHeadroom' : 'Clamp'
           }
@@ -1381,7 +1616,7 @@ function settingsStages(
         shadows: clamp(b.shadows / 100, -1, 1),
         whites: clamp(b.whites / 100, -1, 1),
         blacks: clamp(b.blacks / 100, -1, 1),
-        smoothing: TONE_SMOOTHING ? smoothing : null,
+        smoothing: v0 ? null : smoothing,
         // Only when one is set, so a request is 0.19's where none is.
         ...((tb) => (tb ? { base: tb } : {}))(toneBaseFor(ctx))
       }
@@ -1409,8 +1644,10 @@ function settingsStages(
       LocalContrast: { amount: clamp(p.clarity / 100, -1, 1), radius: 0.012, midtones: 0.8 }
     })
   }
-  const para = parametricCurve(r.toneCurve)
-  if (para) look.push(curvesOp({ master: tonal(para, hdr) }))
+  const region = v0 ? null : regionCurveOp(r.toneCurve)
+  if (region) look.push(region)
+  const regionV0 = v0 ? regionCurveV0(r.toneCurve) : null
+  if (regionV0) look.push(curvesOp({ master: tonal(regionV0, hdr) }))
   const tc = r.toneCurve
   const pc: Partial<Curves> = {}
   if (!isIdentityCurve(tc.master)) pc.master = tonal(tc.master, hdr)
@@ -1423,12 +1660,13 @@ function settingsStages(
     pc.refine_saturation = round4(clamp(tc.refineSaturation / 100, 0, 1))
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
-  const tail = bw && finish ? finish : look
-  // Unsmoothed until E53 (engine 0.18): a smoothed HslBands specks deep
-  // shadows cyan and, under a mask's smoothed Tone past white, blotches red
-  // and blue. The owner's stopgap, 2026-10-08: the other ops keep Smoothing.
-  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, null)
+  const tail: GradeOp[] = bw && finish ? [] : look
+  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, v0 ? null : smoothing)
   if (hsl) tail.push(hsl)
+  // Density with the bands, before saturation: denser colour, then how much
+  // of it. A black-and-white photo has no colour to make dense.
+  const density = bw ? null : densityOp(r.density)
+  if (density) tail.push(density)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
     tail.push(...pointColorOps(r.pointColors, keyScale, smoothing))
@@ -1447,14 +1685,30 @@ function settingsStages(
   const cg = colorGradeOp(r.colorGrade, smoothing)
   if (cg) tail.push(cg)
   // Resolve's primaries, after Lightroom's grading (shared/resolve.ts); on a
-  // B&W photo after its mono conversion, so Lift and Gain tints tone it.
-  const prim = primariesOp(r.primaries)
-  if (prim) tail.push(prim)
-  tail.push(...logWheelsOps(r.logWheels))
-  // Resolve's vs curves; the two the engine lacks wait, said in the notes.
-  const vs = curvesVsOp(r.curvesVs)
-  if (vs.op && !bw) tail.push(vs.op)
-  for (const w of vs.waiting) notes.push(VS_WAITING_NOTE[w] ?? '')
+  // B&W photo after its mono conversion, so Lift and Gain tints (and Temp
+  // and Tint, the gain balance just before them) tone it.
+  const balance = v0 ? null : primariesBalance(r.primaries)
+  if (balance) tail.push(balance)
+  tail.push(...primariesOp(v0 ? { ...r.primaries, lumMix: 0 } : r.primaries))
+  // Resolve's Log wheels, in log (`lookStages` gives them their stage);
+  // Contrast and Pivot stay display-referred, in the Primary before them.
+  tail.push(...(v0 ? logWheelsV0(r.logWheels) : logWheelsOps(r.logWheels)))
+  // Resolve's vs curves need colour: a black-and-white photo's are kept, not
+  // applied (its Curves card says so and points to the B&W mix). A mask's
+  // run before the mono conversion, so they feed the mix.
+  const vs = v0 ? curvesVsV0(r.curvesVs) : curvesVsOp(r.curvesVs)
+  if (vs && !bw) tail.push(vs)
+  // Resolve's qualifiers, in place (0.21.0, E77): after the primaries and
+  // the curves, before the effects, so grain never gets into a key. A
+  // black-and-white photo with masks keys its colours before the masks and
+  // the conversion, as its qualifiers' own layers did before 0.21.
+  ;(bw && finish ? look : tail).push(
+    ...qualifierOps(
+      r.qualifiers ?? [],
+      { width: oriented.width, height: oriented.height, scale: ctx.scale },
+      smoothing
+    )
+  )
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)
     tail.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })
@@ -1469,6 +1723,8 @@ function settingsStages(
   )
   if (sharpen) tail.push(sharpen)
   const e = r.effects
+  // Vignette, wash and grain lie over the glows (`effectStages`).
+  const fx: GradeOp[] = []
   if (e.vignetteAmount !== 0) {
     const v = vignettePlacement(
       crop,
@@ -1478,7 +1734,7 @@ function settingsStages(
       uprightTransform(geometry.upright, oriented.width, oriented.height)
     )
     const turned = within45(v.half, v.rotation, oriented.width, oriented.height)
-    tail.push({
+    fx.push({
       Vignette: {
         amount: clamp(e.vignetteAmount / 100, -1, 1),
         midpoint: clamp(e.vignetteMidpoint / 100, 0, 1),
@@ -1496,18 +1752,177 @@ function settingsStages(
   }
   // The wash sits on the finished look; only grain goes over it.
   const wash = addColorOp(e.wash, 'wash')
-  if (wash) tail.push(wash)
-  if (e.grainAmount > 0) {
-    tail.push({
+  if (wash) fx.push(wash)
+  // A colour grain on a black-and-white photo would colour it.
+  const colour = bw ? 0 : round4(clamp(e.grainColour / 100, 0, 1))
+  if (e.grainAmount > 0 || colour > 0) {
+    fx.push({
       Grain: {
         amount: clamp(e.grainAmount / 100, 0, 1),
         size: round4(0.0004 + (clamp(e.grainSize, 0, 100) / 100) * 0.004),
         roughness: clamp(e.grainRoughness / 100, 0, 1),
-        seed: ctx.seed
+        seed: ctx.seed,
+        response: GRAIN_RESPONSE[e.grainResponse] ?? 'Midtones',
+        // No colour is 0.20's grain, byte for byte.
+        chroma: colour > 0 ? { amount: colour, size: GRAIN_COLOUR_SIZE } : { amount: 0, size: 1 }
       }
     })
   }
-  return [...stage('LinearWorking', linear), ...lookStage(look)]
+  const glow = base ? glowOps(e, bw, hdr) : []
+  const finished = effectStages(tail, glow, fx)
+  if (bw && finish) {
+    finish.push(...finished)
+    return [...stage('LinearWorking', linear), ...lookStages(look)]
+  }
+  return [...stage('LinearWorking', linear), ...finished]
+}
+
+/**
+ * The look's last stages: its ops, then halation and bloom in linear light
+ * (a glow is light, so a highlight twice as bright glows twice as much, and
+ * one above white in Full HDR glows from all of it), then the vignette, wash
+ * and grain over them, as on a print. Without a glow, one stage, as before.
+ */
+function effectStages(look: GradeOp[], glow: GradeOp[], fx: GradeOp[]): GradeStage[] {
+  if (glow.length === 0) return lookStages([...look, ...fx])
+  return [...lookStages(look), ...stage('LinearWorking', glow), ...lookStages(fx)]
+}
+
+// ── Film effects (engine 0.21: E41–E44) ──────────────────────────────────────
+
+/** What Halation's Amount 100 sends: in linear light a full-strength glow already reddens a bright sky. */
+export const HALATION_MAX = 0.5
+/** What Bloom's Amount 100 sends: half the picture mixed with its blur is a heavy diffusion filter. */
+export const BLOOM_MAX = 0.5
+/** Halation's knee above its threshold, as shown. */
+export const HALATION_SOFTNESS = 0.1
+/** Glow's knee above its threshold, as shown. */
+export const BLOOM_SOFTNESS = 0.15
+/** A colour grain's cells, times the grey grain's: dye clouds are coarser than silver. */
+export const GRAIN_COLOUR_SIZE = 2
+
+/** The grain's tone responses as the engine's (`GrainResponse`). */
+export const GRAIN_RESPONSE: Record<GrainResponseKind, GrainResponse> = {
+  film: 'Midtones',
+  flat: {
+    Curve: {
+      points: [
+        { x: 0, y: 1 },
+        { x: 1, y: 1 }
+      ]
+    }
+  },
+  negative: {
+    Curve: {
+      points: [
+        { x: 0, y: 1.6 },
+        { x: 0.5, y: 1 },
+        { x: 1, y: 0.3 }
+      ]
+    }
+  }
+}
+
+/**
+ * A glow's Size (0…100) as the engine's radius, a fraction of the shorter
+ * side, on a log scale: 0.001 · 100^(size/100), so 50 is 1% and 100 is 10%.
+ */
+export function glowRadius(size: number): number {
+  return round4(0.001 * Math.pow(100, clamp(size, 0, 100) / 100))
+}
+
+/** sRGB's (and Display P3's) transfer, decoded and carried on above 1. */
+function decodeShown(v: number): number {
+  return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+}
+
+/** The master's peak on the effects' tone scale (the engine's `EFFECTS_PEAK_NITS`). */
+const EFFECTS_PEAK_NITS = 1000
+
+/**
+ * A brightness as shown (a code value, 0…1, 1 is white) on the scale a
+ * linear stage's effects read their tone on: linear luminance in SDR; with
+ * headroom, PQ's scale up to the master's 1000 cd/m² with white at 203 (the
+ * engine's `ToneScale`). So a threshold means the same brightness in both.
+ */
+export function effectsTone(shown: number, hdr: boolean): number {
+  const y = decodeShown(Math.max(0, shown))
+  return hdr ? clamp(pq(y * REFERENCE_WHITE) / pq(EFFECTS_PEAK_NITS), 0, 1) : clamp(y, 0, 1)
+}
+
+/** A knee from a threshold as shown, `soft` above it, on the effects' tone. */
+function knee(
+  threshold: number,
+  soft: number,
+  hdr: boolean
+): { threshold: number; softness: number } {
+  const t = clamp(threshold, 0, 1)
+  const lo = effectsTone(t, hdr)
+  return {
+    threshold: round4(lo),
+    softness: round4(clamp(Math.max(0.005, effectsTone(t + soft, hdr) - lo), 0, 1))
+  }
+}
+
+const rgb = (c: [number, number, number]): Rgb => ({
+  r: round4(c[0]),
+  g: round4(c[1]),
+  b: round4(c[2])
+})
+
+/** Bloom's warmth (−100…100) as its colour, white at 0, in linear sRGB. */
+export function bloomColour(warmth: number): Rgb {
+  const w = clamp(warmth, -100, 100) / 100
+  const to: [number, number, number] = w >= 0 ? [1, 0.88, 0.7] : [0.8, 0.9, 1]
+  const k = Math.abs(w)
+  return rgb([1 + (to[0] - 1) * k, 1 + (to[1] - 1) * k, 1 + (to[2] - 1) * k])
+}
+
+/**
+ * Halation and bloom, the photo's own, in a linear stage: none at Amount 0.
+ * On a black-and-white photo their colour is a grey of the same brightness
+ * (a coloured glow would tint it).
+ */
+function glowOps(e: Recipe['effects'], bw: boolean, hdr: boolean): GradeOp[] {
+  const ops: GradeOp[] = []
+  const h = e.halation
+  if (h.amount > 0) {
+    const c = hsvToRgb(clamp(h.hue, 0, 45), 1)
+    const grey = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    ops.push({
+      Halation: {
+        amount: round4((clamp(h.amount, 0, 100) / 100) * HALATION_MAX),
+        ...knee(h.threshold / 100, HALATION_SOFTNESS, hdr),
+        radius: glowRadius(h.size),
+        color: rgb(bw ? [grey, grey, grey] : c),
+        space: 'LinearSrgb'
+      }
+    })
+  }
+  const b = e.bloom
+  if (b.amount > 0) {
+    ops.push({
+      Bloom: {
+        amount: round4((clamp(b.amount, 0, 100) / 100) * BLOOM_MAX),
+        radius: glowRadius(b.size),
+        source:
+          b.style === 'glow' ? { Highlights: knee(b.threshold / 100, BLOOM_SOFTNESS, hdr) } : 'All',
+        color: bw ? rgb([1, 1, 1]) : bloomColour(b.warmth),
+        space: 'LinearSrgb'
+      }
+    })
+  }
+  return ops
+}
+
+/** HSL's Density tab as the engine's op, or none when it does nothing. */
+export function densityOp(d: DensitySetting): GradeOp | null {
+  const amount = round4(clamp(d.amount / 100, -1, 1))
+  if (amount === 0 || HSL_BANDS.every((b) => d.bands[b] === 0)) return null
+  const bands = Object.fromEntries(
+    HSL_BANDS.map((b) => [b, round4(clamp(d.bands[b] / 100, -1, 1))])
+  ) as unknown as Density['bands']
+  return { Density: { amount, bands } }
 }
 
 /**
@@ -1517,6 +1932,15 @@ function settingsStages(
  */
 function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vignette['style'] {
   const exposure = { Exposure: { highlights: clamp(e.vignetteHighlights / 100, 0, 1) } }
+  if (e.vignetteStyle === 'colour') {
+    // Engine 0.21 (E24): darkening is highlight priority's at 0; lightening
+    // stops each pixel at white, which a picture with headroom has none of.
+    if (!hdr || e.vignetteAmount <= 0) return 'ColorPriority'
+    notes.push(
+      tk('Colour priority lightening needs an SDR picture; this HDR photo keeps highlight priority')
+    )
+    return { Exposure: { highlights: 0 } }
+  }
   if (e.vignetteStyle !== 'paint') return exposure
   if (hdr) {
     notes.push(tk('Paint overlay needs an SDR picture; this HDR photo keeps highlight priority'))
@@ -1525,53 +1949,73 @@ function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vig
   return 'PaintOverlay'
 }
 
+/** Each qualifier's op, by its key view's name: what `qualifierIndex` is found by. */
+const qualifierOf = new WeakMap<GradeOp, string>()
+
+/**
+ * Resolve's qualifiers as the engine's own ops (0.21.0, E77): each keys the
+ * picture where it sits, its blur the key's (up to 1% of the shorter side,
+ * as a range mask's smoothness) and lets its correction through. One
+ * switched off, or keying nothing, is left out. An untouched one is still
+ * there, its correction the identity, so its key can be looked at.
+ */
+export function qualifierOps(
+  qs: QualifierSetting[],
+  keyScale: KeyScale,
+  smoothing: AdjustmentSmoothing | null
+): GradeOp[] {
+  const ops: GradeOp[] = []
+  for (const q of qs) {
+    const key = q.enabled ? qualifierKey(q) : null
+    if (!key) continue
+    const op: GradeOp = {
+      Qualifier: {
+        key: { ...key, blur_radius: smoothnessRadius(q.blur, keyScale), invert: q.invert },
+        correction: qualifierCorrection(q) ?? primary({}),
+        smoothing
+      }
+    }
+    qualifierOf.set(op, qualifierLayerId(q.id))
+    ops.push(op)
+  }
+  return ops
+}
+
+/**
+ * Where each qualifier's op landed: the n-th `Qualifier` of its layer, in
+ * evaluation order (a `Masked` group's own in their place), as
+ * `Inspect::QualifierKey` counts them. The point colours' and anything else
+ * keyed so count too; only Resolve's qualifiers are named.
+ */
+function qualifierAddresses(layers: GradeLayer[]): Record<string, QualifierAddress> {
+  const out: Record<string, QualifierAddress> = {}
+  layers.forEach((l, layer) => {
+    let n = 0
+    const visit = (ops: GradeOp[]): void => {
+      for (const op of ops) {
+        if ('Qualifier' in op) {
+          const id = qualifierOf.get(op)
+          if (id) out[id] = { layer, qualifier: n }
+          n++
+        } else if ('Masked' in op) visit(op.Masked.ops)
+      }
+    }
+    for (const st of l.stages) visit(st.ops)
+  })
+  return out
+}
+
 /**
  * Compile a recipe. `grade` is null when nothing moves a pixel, so an
  * untouched photo takes the engine's fast path.
  */
-/**
- * A qualifier as its own engine layer: its key a Range mask (inside `within`,
- * a mask layer's own mask, when it is a mask's), its correction in the look
- * stage. Null when no band of its key is on.
- */
-function qualifierLayer(
-  q: QualifierSetting,
-  within: Mask | null,
-  opacity: number
-): GradeLayer | null {
-  const key = qualifierKey(q)
-  if (!key) return null
-  const inverted = within?.invert === true
-  const range: Mask['components'][number] = {
-    shape: { Range: key },
-    // Inside an inverted mask: NOT(mask ∪ NOT key) is the key where the mask is not.
-    mode: within && !inverted ? 'Intersect' : 'Add',
-    opacity: 1,
-    invert: inverted,
-    feather: { radius: round4(smoothnessFeather(q.blur)), edge: 'Zero' },
-    refine: null,
-    smooth: 0,
-    contrast: 0,
-    shift: 0
-  }
-  return {
-    name: 'qualifier',
-    enabled: q.enabled,
-    opacity,
-    mask: {
-      components: [...(within?.components ?? []), range],
-      invert: within ? inverted !== q.invert : q.invert,
-      space: LOOK_SPACE,
-      edge: within?.edge ?? null
-    },
-    blend: { mode: 'Normal', space: 'LinearWorking' },
-    stages: lookStage([{ Primary: qualifierCorrection(q) ?? primary({}) }])
-  }
-}
-
 export function compile(recipe: Recipe, given: CompileContext): Compiled {
-  // What is rendered: sections switched off at the photo's defaults, steps switched off left out.
-  const r = effective(recipe, given.isRaw)
+  // What is rendered: sections switched off at the photo's defaults, steps
+  // switched off left out, and every mask and spot on the lens rendered.
+  // (Engine request E85: the engine placing masks drawn on the source frame
+  // itself would make this mapping its own.)
+  const shown = effective(recipe, given.isRaw)
+  const r = given.maskFrames ? placeMasks(shown, given.maskFrames, 'render') : shown
   // The photo's Tone base reaches its masks' Tone too.
   const ctx: CompileContext = { ...given, toneBase: r.toneBase ?? 'none' }
   const notes: string[] = []
@@ -1584,7 +2028,7 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
   const masked = r.layers.some(
     (l) => layerMask(l, oriented.user, ctx.brushPaths, oriented) !== null
   )
-  const finish: GradeOp[] | undefined = bw && masked ? [] : undefined
+  const finish: GradeStage[] | undefined = bw && masked ? [] : undefined
   const base = settingsStages(r, r, r.geometry, ctx, crop, oriented, notes, finish)
   if (base.length > 0) {
     layers.push({
@@ -1595,14 +2039,6 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
       blend: { mode: 'Normal', space: 'LinearWorking' },
       stages: base
     })
-  }
-  // Resolve's qualifiers: each its own layer after the photo's grade, its key
-  // a Range mask, so the key view (Inspect::LayerMask) is the engine's key.
-  for (const q of r.qualifiers) {
-    const layer = qualifierLayer(q, null, 1)
-    if (!layer) continue
-    layerIndex[qualifierLayerId(q.id)] = layers.length
-    layers.push(layer)
   }
   for (const l of r.layers) {
     const mask = layerMask(l, oriented.user, ctx.brushPaths, oriented, ctx.smoothing === false)
@@ -1628,15 +2064,6 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
       blend: blendFor(l.blend, ctx.hdr === true),
       stages
     })
-    // A mask's own qualifiers: each keys only inside the mask (Resolve's
-    // qualifier within a window), right after the mask's own layer.
-    for (const q of l.settings.qualifiers ?? []) {
-      const scaled = scaleQualifier(q, clamp(l.amount ?? 100, 0, 200) / 100)
-      const ql = qualifierLayer(scaled, mask, clamp(l.opacity / 100, 0, 1))
-      if (!ql) continue
-      layerIndex[qualifierLayerId(q.id)] = layers.length
-      layers.push({ ...ql, enabled: l.enabled && q.enabled })
-    }
   }
   if (finish && finish.length > 0) {
     layers.push({
@@ -1645,13 +2072,18 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
       opacity: 1,
       mask: null,
       blend: { mode: 'Normal', space: 'LinearWorking' },
-      stages: lookStage(finish)
+      stages: finish
     })
   }
   for (const c of r.custom) {
     if (!c.layer || typeof c.layer !== 'object') continue
+    const layer = customFiles(withLutDomains(c.layer), ctx.luts ?? {})
+    if (!layer) {
+      if (!notes.includes(CUSTOM_FILE_NOTE)) notes.push(CUSTOM_FILE_NOTE)
+      continue
+    }
     layers.push({
-      ...(withLutDomains(c.layer) as GradeLayer),
+      ...(layer as GradeLayer),
       enabled: c.enabled && (c.layer as GradeLayer).enabled !== false
     })
   }
@@ -1702,6 +2134,7 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
     lens: lensCorrection(r.lens),
     retouch: compileRetouch(r.retouch, oriented.user, ctx.frameWidth, ctx.frameHeight),
     layerIndex,
+    qualifierIndex: qualifierAddresses(layers),
     notes,
     orientedWidth: oriented.width,
     orientedHeight: oriented.height,

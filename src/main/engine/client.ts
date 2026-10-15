@@ -19,6 +19,8 @@ import type {
   EngineMethod,
   GpuOp,
   GpuResult,
+  PlaneOp,
+  PlaneResult,
   GradeSpace,
   HostToMain,
   ImageStats,
@@ -27,9 +29,13 @@ import type {
   Framing,
   MaskBounds,
   NativeRefs,
+  Progress,
+  RawNoiseReport,
+  RawNoiseRequest,
   ReachReport,
   ReachRequest,
   Rgb,
+  DcpProfile,
   SamOp,
   SamResult,
   SegmentReport,
@@ -78,11 +84,12 @@ export class EngineError extends Error {
   nameInvariant(
     grade: Grade | null,
     sdrGrade: Grade | null,
-    layerIndex: Record<string, number>
+    layerIndex: Record<string, number>,
+    qualifierIndex: Record<string, { layer: number; qualifier: number }> = {}
   ): this {
     if (this.code !== 'Invariant') return this
     const { stage, text } = invariantDetail(this.detail)
-    this.invariant = invariantPlace(text, grade, sdrGrade, layerIndex)
+    this.invariant = invariantPlace(text, grade, sdrGrade, layerIndex, qualifierIndex)
     this.message = describeInvariant(this.invariant, stage)
     return this
   }
@@ -98,7 +105,8 @@ export class EngineError extends Error {
 interface Pending {
   resolve: (v: unknown) => void
   reject: (e: Error) => void
-  method: EngineMethod | 'sam' | 'gpu'
+  method: EngineMethod | 'sam' | 'gpu' | 'planes'
+  onProgress?: (p: Progress) => void
 }
 
 /** A call that can be stopped: the engine returns `Cancelled` at its next stage boundary. */
@@ -111,6 +119,13 @@ export interface CallOptions {
    * a GPU drag's frame, held measurements to pass or keep (`NativeRefs`).
    */
   native?: NativeRefs
+  /**
+   * How far the call has counted (engine 0.21.0, E68: a model's windows, a
+   * RAW develop's bands), told while it runs, at most ten times a second.
+   * `total` 0: nothing counted yet; it can grow between stages. Never
+   * after the call settles. An engine without tokens never tells.
+   */
+  onProgress?: (p: Progress) => void
 }
 
 /** True for an error that only says the call was stopped. */
@@ -132,6 +147,23 @@ export function lowerPriority(pid: number | undefined): void {
   } catch {
     // Not permitted here: nothing lost but the courtesy.
   }
+}
+
+/**
+ * A host ended at once (SIGKILL): Electron's own `kill()` is SIGTERM, which
+ * a CoreML compile in progress was seen to ignore. Where the signal can't be
+ * sent, Electron's kill.
+ */
+function killNow(child: UtilityProcess): void {
+  if (child.pid !== undefined) {
+    try {
+      process.kill(child.pid, 'SIGKILL')
+      return
+    } catch {
+      // Gone already, or not ours to signal: Electron's own kill below.
+    }
+  }
+  child.kill()
 }
 
 /** What `faces` reports, as Playroom reads it. */
@@ -231,7 +263,9 @@ export class EngineClient {
   /**
    * Kill the host mid-call (a cancelled job): what it was doing fails as
    * Cancelled, and a fresh host starts. Not a crash: it does not count
-   * towards giving up.
+   * towards giving up. SIGKILL, not Electron's SIGTERM: a CoreML compile
+   * under way ignores SIGTERM, and nothing else stops it (engine 0.21.0,
+   * OBS-5).
    */
   restart(): void {
     const child = this.child
@@ -241,7 +275,7 @@ export class EngineClient {
       this.inflight.delete(id)
       p.reject(new EngineError({ message: `${p.method}: cancelled`, code: 'Cancelled' }))
     }
-    child.kill()
+    killNow(child)
     this.ended()
     if (!this.stopped) this.spawn()
   }
@@ -254,6 +288,14 @@ export class EngineClient {
    */
   holdFor(other: EngineClient): void {
     this.yieldTo = other
+  }
+
+  /** Calls waiting behind the interactive engine's work just now (`holdFor`). */
+  private holding = 0
+
+  /** Whether any call waits behind the interactive engine's work (an export says it is paused). */
+  get heldBack(): boolean {
+    return this.holding > 0
   }
 
   /**
@@ -330,16 +372,18 @@ export class EngineClient {
     return this.call('probe', [path]) as Promise<SourceInfo>
   }
   convert(request: ConvertRequest, opts: CallOptions = {}): Promise<ConvertReport> {
-    return this.call(
-      'convert',
-      [request],
-      opts.signal,
-      opts.frame,
-      opts.native
-    ) as Promise<ConvertReport>
+    return this.call('convert', [request], opts) as Promise<ConvertReport>
   }
   analyze(request: AnalyzeRequest, opts: CallOptions = {}): Promise<ImageStats> {
-    return this.call('analyze', [request], opts.signal) as Promise<ImageStats>
+    return this.call('analyze', [request], { signal: opts.signal }) as Promise<ImageStats>
+  }
+  /**
+   * A RAW mosaic's noise per plane, read as the PIXL demosaic's develop
+   * reads it, developing nothing (engine 0.21.0, E65). An engine without it
+   * answers an unknown method.
+   */
+  rawNoise(request: RawNoiseRequest, opts: CallOptions = {}): Promise<RawNoiseReport> {
+    return this.call('rawNoise', [request], { signal: opts.signal }) as Promise<RawNoiseReport>
   }
   /**
    * The margin a region of this grade needs (0.19.2, host rule HR-0.20-1).
@@ -349,7 +393,7 @@ export class EngineClient {
   regionReach(request: ReachRequest, held?: string): Promise<ReachReport> {
     // With held measurements (§4.4), Dehaze and Denoise leave `measured`.
     const native = held ? { held } : undefined
-    return this.call('regionReach', [request], undefined, undefined, native) as Promise<ReachReport>
+    return this.call('regionReach', [request], { native }) as Promise<ReachReport>
   }
   /** What a lens correction does to a `width × height` frame, without pixels. */
   lensFrame(lens: LensCorrection, width: number, height: number): Promise<LensReport> {
@@ -377,21 +421,23 @@ export class EngineClient {
    * Buffer. A signal stops the model mid-run (0.16).
    */
   segment(request: Record<string, unknown>, opts: CallOptions = {}): Promise<SegmentReport> {
-    return this.call('segment', [request], opts.signal) as Promise<SegmentReport>
+    return this.call('segment', [request], { signal: opts.signal }) as Promise<SegmentReport>
   }
   /**
    * Faces and their parts (engine 0.19, `faces`): YuNet's boxes, and with a
    * landmarker each face's outlines as polygons (fractions of the frame).
    */
   faces(request: Record<string, unknown>, opts: CallOptions = {}): Promise<FaceReport> {
-    return this.call('faces', [request], opts.signal) as Promise<FaceReport>
+    return this.call('faces', [request], { signal: opts.signal }) as Promise<FaceReport>
   }
   /** Time models on providers (`benchmark`). */
   benchmark(
     request: Record<string, unknown>,
     opts: CallOptions = {}
   ): Promise<Record<string, unknown>> {
-    return this.call('benchmark', [request], opts.signal) as Promise<Record<string, unknown>>
+    return this.call('benchmark', [request], { signal: opts.signal }) as Promise<
+      Record<string, unknown>
+    >
   }
   /**
    * One of SAM 2.1's calls (`SamOp`): its sessions, embeddings and logits
@@ -415,6 +461,15 @@ export class EngineClient {
     ) as Promise<GpuResult>
   }
 
+  /**
+   * One of the prepared mask planes' calls (`PlaneOp`, 0.21.0, E37): the
+   * planes stay in the host, named by id, and a render names them in its
+   * `native.planes`.
+   */
+  planes(call: PlaneOp): Promise<PlaneResult> {
+    return this.post('planes', (id) => ({ kind: 'planes', id, call })) as Promise<PlaneResult>
+  }
+
   /** Where a heal or clone should copy from (see `retouch/suggest.rs`). */
   suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.call('suggestHealSource', [request]) as Promise<Record<string, unknown>>
@@ -422,6 +477,13 @@ export class EngineClient {
   /** Measure a photo's lateral chromatic aberration (see `lateral_ca.rs`). */
   suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.call('suggestLateralCa', [request]) as Promise<Record<string, unknown>>
+  }
+  /**
+   * A `.dcp` file's bytes as `CameraColour.Dcp` states it (engine 0.21, E21);
+   * refused (`InvalidRequest`, field `bytes`) when it is not a camera profile.
+   */
+  readCameraProfile(bytes: Uint8Array): Promise<DcpProfile> {
+    return this.call('readCameraProfile', [bytes]) as Promise<DcpProfile>
   }
   /** The white that makes a linear sample neutral, as the `WhiteBalance` op names it. */
   whiteBalanceFromPixel(rgb: Rgb, space: GradeSpace): Promise<WhiteBalance> {
@@ -488,6 +550,7 @@ export class EngineClient {
               runtime: msg.runtime,
               prompt: msg.prompt,
               gpu: msg.gpu === true,
+              build: msg.build,
               restarts: this.status.restarts
             }
           : {
@@ -498,6 +561,10 @@ export class EngineClient {
             }
       log.info(`engine ${this.name}`, this.status)
       for (const w of this.readyWaiters.splice(0)) w()
+      return
+    }
+    if (msg.kind === 'progress') {
+      this.inflight.get(msg.id)?.onProgress?.({ done: msg.done, total: msg.total })
       return
     }
     if (msg.kind === 'response') {
@@ -519,13 +586,8 @@ export class EngineClient {
    * (`holdFor`), and a cancellable one behind cancelled calls still letting
    * go: two renders never fight over the cores.
    */
-  private call(
-    method: EngineMethod,
-    args: unknown[],
-    signal?: AbortSignal,
-    frame?: string,
-    native?: NativeRefs
-  ): Promise<unknown> {
+  private call(method: EngineMethod, args: unknown[], opts: CallOptions = {}): Promise<unknown> {
+    const { signal, frame, native, onProgress } = opts
     const hold = this.yieldTo && this.yieldTo.running.size > 0
     const drain = signal !== undefined && this.draining.size > 0
     const message = (id: number, cancellable: boolean): MainToHost => ({
@@ -535,20 +597,29 @@ export class EngineClient {
       args,
       cancellable,
       ...(frame ? { frame } : {}),
-      ...(native ? { native } : {})
+      ...(native ? { native } : {}),
+      ...(onProgress ? { progress: true } : {})
     })
-    if (!hold && !drain) return this.post(method, message, signal)
+    if (!hold && !drain) return this.post(method, message, signal, onProgress)
     return (async () => {
-      if (hold) await this.yieldTo!.quiet(HOLD_MAX_MS)
+      if (hold) {
+        this.holding++
+        try {
+          await this.yieldTo!.quiet(HOLD_MAX_MS)
+        } finally {
+          this.holding--
+        }
+      }
       if (drain) await this.drained(DRAIN_MAX_MS)
-      return this.post(method, message, signal)
+      return this.post(method, message, signal, onProgress)
     })()
   }
 
   private post(
-    method: EngineMethod | 'sam' | 'gpu',
+    method: EngineMethod | 'sam' | 'gpu' | 'planes',
     message: (id: number, cancellable: boolean) => MainToHost,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onProgress?: (p: Progress) => void
   ): Promise<unknown> {
     const cancelled = (): EngineError =>
       new EngineError({ message: `${method}: cancelled`, code: 'Cancelled' })
@@ -556,7 +627,7 @@ export class EngineClient {
     // Held back from the launch (or put to sleep): started by the first call that wants it.
     if (!this.spawned && !this.stopped) {
       this.start()
-      return this.whenStarted().then(() => this.post(method, message, signal))
+      return this.whenStarted().then(() => this.post(method, message, signal, onProgress))
     }
     const child = this.child
     if (!child) {
@@ -582,7 +653,7 @@ export class EngineClient {
           signal?.removeEventListener('abort', onAbort)
           settle(v)
         }
-      this.inflight.set(id, { resolve: done(resolve), reject: done(reject), method })
+      this.inflight.set(id, { resolve: done(resolve), reject: done(reject), method, onProgress })
       signal?.addEventListener('abort', onAbort, { once: true })
       this.running.add(id)
       child.postMessage(message(id, signal !== undefined))

@@ -1,5 +1,3 @@
-import { useEffect, useState } from 'react'
-import { estimate } from '../../../../shared/ai'
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { Spinner } from '../../fx'
 import { useDevelop } from '../../state/develop'
@@ -7,8 +5,18 @@ import { t, tk } from '../../lib/i18n'
 import { useHudNote } from './hudNote'
 import { isNamed } from '../../../../shared/versions'
 import { stepLabel } from '../../lib/stepLabel'
+import { duration } from '../modelCopy'
 import { useMastering, usePixlDemosaic } from './mastering'
 import type { PixlDemosaicState } from '../../../../shared/ipc'
+import {
+  intentShort,
+  profileName,
+  proofChip,
+  proofKey,
+  type ProofChip as ProofChipState
+} from '../../../../shared/proof'
+import { useUi } from '../../state/ui'
+import { issueText, locateProfile } from '../../lib/proofing'
 
 const PIXL_HINT: Record<PixlDemosaicState, string> = {
   developing: tk('PIXL demosaic: developing this RAW at full size'),
@@ -30,27 +38,92 @@ function PixlChip({ state }: { state: PixlDemosaicState }): React.JSX.Element {
   )
 }
 
-/** A RAW's full-size develop under way: how far by the clock (it takes seconds, and says nothing). */
+/**
+ * The soft proof, said: what it is (profile, intent, paper and ink), that
+ * it is on its way, that a drag shows the screen's picture until let go, or
+ * why proofing went off (with Locate… for a profile not found).
+ */
+function ProofChip({ chip }: { chip: NonNullable<ProofChipState> }): React.JSX.Element {
+  const settings = useUi((s) => s.proof)
+  const issue = useDevelop((s) => s.proofIssue)
+  const name = profileName(settings.profile)
+  if (chip === 'missing' || chip === 'unusable')
+    return (
+      <span className="hud-item proof-chip off" title={issue ? issueText(issue) : undefined}>
+        {chip === 'missing'
+          ? t('Proof off · {{name}} not found', { name: issue?.name ?? name })
+          : t('Proof off · {{name}} can’t be used', { name: issue?.name ?? name })}
+        <button type="button" className="link" onClick={() => void locateProfile()}>
+          {t('Locate…')}
+        </button>
+      </span>
+    )
+  if (chip === 'proofing') return <span className="hud-item proof-chip">{t('Proofing…')}</span>
+  if (chip === 'drag')
+    return <span className="hud-item proof-chip dim">{t('Proof when you let go')}</span>
+  if (chip === 'warn')
+    return (
+      <span className="hud-item proof-chip" title={t('Warning only: preview needs a newer engine')}>
+        {t('Gamut only · {{name}}', { name })}
+      </span>
+    )
+  return (
+    <span className="hud-item proof-chip">
+      {[
+        t('Proof'),
+        name,
+        intentShort(settings.intent),
+        ...(settings.simulate ? [t('paper and ink')] : [])
+      ].join(' · ')}
+    </span>
+  )
+}
+
+/**
+ * The soft proof's own badge, at the loupe's other corner (clear of the
+ * render status and the filmstrip's chip). Only the chip is followed, not
+ * every frame of a drag.
+ */
+export function ProofHud(): React.JSX.Element | null {
+  const want = useUi((s) => proofKey(s.proof))
+  const chip = useDevelop((s) =>
+    proofChip({ on: s.proof, issue: s.proofIssue, want, picture: s.picture })
+  )
+  if (!chip) return null
+  return (
+    <LiquidGlass className="hud proof-status" radius={2} bezel={8}>
+      <ProofChip chip={chip} />
+    </LiquidGlass>
+  )
+}
+
+/**
+ * A RAW's full-size develop under way: how far by the engine's own count
+ * (the model's windows done), a sweep until it counts anything, and about
+ * how long is left once a tenth is done ("about 4 seconds").
+ */
 function Developing({
-  since,
-  expectedMs
+  fill,
+  left
 }: {
-  since: number
-  expectedMs: number
+  fill: number | null
+  left: number | null
 }): React.JSX.Element {
-  const [progress, setProgress] = useState(0)
-  useEffect(() => {
-    const tick = (): void => setProgress(estimate(Date.now() - since, expectedMs))
-    tick()
-    const timer = setInterval(tick, 250)
-    return () => clearInterval(timer)
-  }, [since, expectedMs])
+  const percent = fill === null ? null : Math.round(fill * 100)
   return (
     <span className="hud-item">
-      <span className="activity-track hud-track" aria-hidden>
-        <i style={{ width: `${Math.round(progress * 100)}%` }} />
+      <span
+        className={`activity-track hud-track${percent === null ? ' sweep' : ''}`}
+        role="progressbar"
+        aria-label={t('Developing RAW')}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        {...(percent !== null ? { 'aria-valuenow': percent } : {})}
+      >
+        <i style={percent === null ? undefined : { width: `${percent}%` }} />
       </span>
       {t('Developing RAW')}
+      {left !== null && <span className="hud-sub t-num">{duration(left)}</span>}
     </span>
   )
 }
@@ -106,7 +179,7 @@ export function LoupeHud({ scale }: { scale: number | null }): React.JSX.Element
         </span>
       )}
       {pixl && <PixlChip state={pixl} />}
-      {developing && <Developing since={mastering.since} expectedMs={mastering.expectedMs} />}
+      {developing && <Developing fill={mastering.fill} left={mastering.leftMs} />}
       {comparingVersion && (
         <span className="hud-item accent">{t('Comparing with {{name}}', { name: versus })}</span>
       )}

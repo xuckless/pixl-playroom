@@ -54,20 +54,11 @@ test('the person’s box, and the square the model reads around it', async () =>
   assert.equal(edge.y, 0)
 })
 
-test('a plane made on the square goes back where the square was', async () => {
-  const { pasted } = await import('../src/main/ai/parts')
-  const sq = { x: 10, y: 5, side: 4 }
-  const p = plane('hair', 4, 4, (x, y) => (x === 0 && y === 0 ? 255 : x === 3 && y === 3 ? 7 : 0))
-  const out = pasted(p, sq, 20, 12)
-  assert.equal(out[5 * 20 + 10], 255)
-  assert.equal(out[8 * 20 + 13], 7)
-  assert.equal(
-    out.reduce((n, v) => n + (v > 0 ? 1 : 0), 0),
-    2
-  )
-  // A crop a pixel larger than the square, from rounding: scaled onto it.
-  const big = plane('hair', 5, 5, () => 9)
-  assert.equal(pasted(big, sq, 20, 12)[8 * 20 + 13], 9)
+test('the square is shown to the model as a region of the frame, in one request', async () => {
+  const { regionOf, squareAround } = await import('../src/main/ai/parts')
+  // Engine 0.21.0 (OBS-6): frame pixels, margin 0; the planes come back the frame's size.
+  const sq = squareAround({ x0: 90, y0: 50, x1: 149, y1: 189 }, 300, 200)
+  assert.deepEqual(regionOf(sq), { x: sq.x, y: sq.y, width: 161, height: 161, margin: 0 })
 })
 
 test('a part is kept where it beats the person’s other parts', async () => {

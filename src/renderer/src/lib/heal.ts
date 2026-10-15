@@ -28,6 +28,21 @@ import { useUi } from '../state/ui'
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v))
 
+/**
+ * What the loupe says of a stroke whose edge refine selected nothing (a flat
+ * area: engine 0.21.0, E60), which main healed plain instead (the owner,
+ * 2026-10-14). Null for any other.
+ */
+const FOUND_NOTHING: Record<SpotRefine, string> = {
+  edgeSnap: tk('Edge snap found no edge here, so the spot was healed plain'),
+  matting: tk('Matting found nothing to follow here, so the spot was healed plain')
+}
+
+export function foundNothingNote(step: PixelStep | null): string | null {
+  const r = step?.params.refineFoundNothing
+  return r === 'edgeSnap' || r === 'matting' ? t(FOUND_NOTHING[r]) : null
+}
+
 /** Where a heal or clone copies from until the engine answers: beside it, 2.5 radii right (or left). */
 function besideOf(points: P[], radius: number): P {
   const s = useDevelop.getState().session
@@ -196,6 +211,8 @@ async function land(key: string, spot: RetouchSpot, layerId: string | null): Pro
     if (step) r.pixels.push(step)
   })
   dev.commit(step?.label ?? `${SPOT_LABEL[spot.kind]}: nothing to change`)
+  const note = foundNothingNote(step)
+  if (note) useLibrary.getState().say(note)
 }
 
 /**
@@ -228,6 +245,8 @@ export async function bakeLiveSpots(): Promise<void> {
       r.pixels.push(...made)
     })
     d.commit(tp('Bake {{count}} spot', 'Bake {{count}} spots', spots.length))
+    const note = made.map(foundNothingNote).find((n) => n !== null)
+    if (note) useLibrary.getState().say(note)
   }))
   landingWork(job)
   await job

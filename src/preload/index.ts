@@ -1,6 +1,10 @@
 import type { Pipeline } from '../shared/rebuild'
+import type { QuickDelta } from '../shared/quickdevelop'
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { NoiseEstimate, PreviewFrame, Transform } from '../shared/engine-types'
+import type { ScopeBins } from '../shared/scopes'
+import type { GamutCoverage } from '../shared/scopemetrics'
+import type { FoundProfile, ProofSettings } from '../shared/proof'
 import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint, RetouchSpot, SpotRefine } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
@@ -11,21 +15,34 @@ import type { RawColour } from '../shared/rawcolour'
 import type { InvariantPlace } from '../shared/invariant'
 import type { DisplayHdr, DisplayHdrSetting } from '../shared/hdrdisplay'
 import type { LensProfile } from '../shared/lens'
+import type { LensFrame, LensGrid } from '../shared/lensframe'
 import {
   IPC,
   type AppError,
   type BrainStatus,
   type AutoWbResult,
   type BasicSetting,
+  type BatchResult,
+  type BatchTag,
+  type BatchUndoResult,
   type CaMeasurement,
   type ModelInfo,
   type ProviderInfo,
   type Collection,
   type CrashConsent,
   type ErrorReport,
+  type CameraProfileAdded,
+  type CameraProfileChoices,
   type DevelopSession,
+  type FirstLookPicture,
+  type FocusPicture,
+  type FocusTile,
+  type LibraryPreview,
+  type PreviewCacheState,
+  type ShotGroup,
   type EngineStatus,
   type GpuDragState,
+  type ExportFacts,
   type ExportPreset,
   type ExportProgress,
   type FolderListing,
@@ -48,7 +65,10 @@ import {
   type Preset,
   type ExportPreview,
   type Prefs,
+  type ProofBrowsed,
+  type ProofCheck,
   type RegionRequest,
+  type ScopesRequest,
   type RegionResult,
   type EnhancePreview,
   type MasterEvent,
@@ -71,6 +91,7 @@ import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
 import type { AiSwitches, HeavyBenchmark, HeavyModel, PixlCpuAnswer } from '../shared/heavy'
+import type { PixlCpuQuestion, PixlCpuReply } from '../shared/pixlcpu'
 import type { FoundThing, PhotoNames } from '../shared/naming'
 import type { CullReason } from '../shared/cullsuggest'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
@@ -184,11 +205,45 @@ const api = {
     forgetFolder: (folder: string) => call<void>(IPC.library.forgetFolder, folder),
     setMeta: (keys: string[], patch: MetaPatch) =>
       call<(LibraryItem | undefined)[]>(IPC.library.setMeta, keys, patch),
-    createCopy: (key: string) => call<LibraryItem>(IPC.library.createCopy, key),
+    /** A virtual copy (a proof copy named and carrying its proof). */
+    createCopy: (key: string, opts?: { name?: string; proof?: ProofSettings }) =>
+      call<LibraryItem>(IPC.library.createCopy, key, opts),
     deleteCopy: (key: string) => call<void>(IPC.library.deleteCopy, key),
-    /** `sourceKey` is the photo the recipe came from, so a white balance can change units. */
-    applyRecipe: (keys: string[], recipe: Recipe, groups: RecipeGroup[], sourceKey?: string) =>
-      call<(LibraryItem | undefined)[]>(IPC.library.applyRecipe, keys, recipe, groups, sourceKey),
+    /**
+     * A chunk of the Library batch `batch` (lib/batch.ts). `sourceKey` is the
+     * photo the recipe came from, so a white balance can change units.
+     */
+    applyRecipe: (
+      keys: string[],
+      recipe: Recipe,
+      groups: RecipeGroup[],
+      sourceKey: string | undefined,
+      batch: BatchTag
+    ) => call<BatchResult>(IPC.library.applyRecipe, keys, recipe, groups, sourceKey, batch),
+    /** A Library batch taken back through each photo's history, where its step is still the newest. */
+    undoBatch: (steps: { key: string; seq: number }[]) =>
+      call<BatchUndoResult>(IPC.library.undoBatch, steps),
+    redoBatch: (steps: { key: string; seq: number }[]) =>
+      call<BatchUndoResult>(IPC.library.redoBatch, steps),
+    /** A photo's settings as seen (switched-off sections as their defaults), slim. */
+    copyRecipe: (key: string) => call<Recipe>(IPC.library.copyRecipe, key),
+    /** Photos' items by key, whether the listing shown has them or not. */
+    itemsOf: (keys: string[]) => call<(LibraryItem | undefined)[]>(IPC.library.itemsOf, keys),
+    /** A photo's screen preview for the Loupe, Compare and Survey. */
+    preview: (key: string) => call<LibraryPreview>(IPC.library.preview, key),
+    /** The photos either side of those shown: their previews made ahead (and what is shown kept). */
+    warmPreviews: (keys: string[], shown: string[]) =>
+      call<void>(IPC.library.warmPreviews, keys, shown),
+    /** A photo's 1:1: a picture of it whole, or the size its regions are rendered at. */
+    focus: (key: string) => call<FocusPicture>(IPC.library.focus, key),
+    /** A part of a photo at 1:1 (fractions of its picture). */
+    focusRegion: (key: string, rect: { x: number; y: number; width: number; height: number }) =>
+      call<FocusTile>(IPC.library.focusRegion, key, rect),
+    previewCache: () => call<PreviewCacheState>(IPC.library.previewCache),
+    setPreviewCap: (bytes: number) => call<PreviewCacheState>(IPC.library.setPreviewCap, bytes),
+    clearPreviews: () => call<PreviewCacheState>(IPC.library.clearPreviews),
+    /** The shots taken with a photo (its burst, or the pictures nearly the same), or null. */
+    shotGroup: (key: string) => call<ShotGroup | null>(IPC.library.shotGroup, key),
     resetRecipe: (keys: string[]) =>
       call<(LibraryItem | undefined)[]>(IPC.library.resetRecipe, keys),
     prioritize: (keys: string[]) => call<void>(IPC.library.prioritize, keys),
@@ -198,7 +253,8 @@ const api = {
     onHdr: (cb: (p: { photoId: number; hdr: HdrKind | null }) => void) => on(IPC.library.hdr, cb),
     /** A photo's search words from Gemma's names (every copy shares them). */
     onNames: (cb: (p: { photoId: number; words: string[] }) => void) => on(IPC.library.names, cb),
-    onChanged: (cb: (p: { folder: string }) => void) => on(IPC.library.changed, cb),
+    onChanged: (cb: (p: { folder: string; items?: LibraryItem[] }) => void) =>
+      on(IPC.library.changed, cb),
     openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
     resolvePaths: (paths: string[]) =>
       call<{ folder: string | null; keys: string[] }>(IPC.library.resolvePaths, paths),
@@ -225,15 +281,39 @@ const api = {
       call<number>(IPC.library.autoStack, folder, seconds),
     duplicates: (folder: string | null, threshold: number) =>
       call<SourceListing>(IPC.library.duplicates, folder, threshold),
-    autoWb: (keys: string[]) => call<AutoWbResult>(IPC.library.autoWb, keys),
-    setWb: (pairs: { key: string; wb: Recipe['wb'] }[]) =>
-      call<(LibraryItem | undefined)[]>(IPC.library.setWb, pairs),
+    autoWb: (keys: string[], batch: BatchTag) =>
+      call<AutoWbResult>(IPC.library.autoWb, keys, batch),
+    /**
+     * Quick develop (main/quickdevelop.ts): a chunk of a nudge burst, `delta`
+     * its total so far; `prior` the burst's steps written already (rewritten).
+     */
+    nudge: (
+      keys: string[],
+      delta: QuickDelta,
+      batch: BatchTag,
+      prior: { key: string; seq: number }[]
+    ) => call<BatchResult>(IPC.library.nudge, keys, delta, batch, prior),
+    /** A look at `amount` on a chunk; with `prior`, that batch's steps rewritten (Amount, a swap). */
+    applyLook: (
+      keys: string[],
+      lookId: string,
+      amount: number,
+      batch: BatchTag,
+      prior: { key: string; seq: number }[]
+    ) => call<BatchResult>(IPC.library.applyLook, keys, lookId, amount, batch, prior),
+    autoTone: (keys: string[], batch: BatchTag) =>
+      call<BatchResult>(IPC.library.autoTone, keys, batch),
+    /** Each photo's settings stamped (the clipboard's "changed since"). */
+    stamps: (keys: string[]) => call<Record<string, string>>(IPC.library.stamps, keys),
     onSourcesChanged: (cb: () => void) => on(IPC.library.sourcesChanged, cb)
   },
   develop: {
     open: (key: string) => call<DevelopSession>(IPC.develop.open, key),
     setRawColour: (key: string, colour: RawColour) =>
       call<RawColour>(IPC.develop.setRawColour, key, colour),
+    cameraProfiles: (key: string) => call<CameraProfileChoices>(IPC.develop.cameraProfiles, key),
+    addCameraProfile: (key: string, path: string | null) =>
+      call<CameraProfileAdded | null>(IPC.develop.addCameraProfile, key, path),
     close: (key: string) => call<void>(IPC.develop.close, key),
     update: (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
       call<void>(IPC.develop.update, key, recipe, interactive, rev),
@@ -243,6 +323,13 @@ const api = {
     sample: (key: string, x: number, y: number) =>
       call<SampleResult>(IPC.develop.sample, key, x, y),
     autoTone: (key: string) => call<BasicSetting>(IPC.develop.autoTone, key),
+    scopes: (req: ScopesRequest) => call<ScopeBins | null>(IPC.develop.scopes, req),
+    gamutCoverage: (key: string) => call<GamutCoverage | null>(IPC.develop.gamutCoverage, key),
+    /** `named`: profiles' paths to list wherever they are (Recent's, the proof in force). */
+    proofProfiles: (named: string[] = []) => call<FoundProfile[]>(IPC.develop.proofProfiles, named),
+    proofBrowse: () => call<ProofBrowsed | null>(IPC.develop.proofBrowse),
+    proofCheck: (key: string, settings: ProofSettings) =>
+      call<ProofCheck>(IPC.develop.proofCheck, key, settings),
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
     measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),
@@ -268,6 +355,12 @@ const api = {
     uprightFromLines: (key: string, lines: GuideLine[], focal: number) =>
       call<Transform>(IPC.develop.uprightFromLines, key, lines, focal),
     putPlane: (png: string) => call<string>(IPC.develop.putPlane, png),
+    rebaseMasks: (key: string, recipe: Recipe) =>
+      call<Recipe>(IPC.develop.rebaseMasks, key, recipe),
+    maskGrid: (key: string, masks: LensFrame, rendered: LensFrame) =>
+      call<LensGrid | null>(IPC.develop.maskGrid, key, masks, rendered),
+    planeOnFrame: (key: string, ref: string, from: LensFrame, to: LensFrame) =>
+      call<string>(IPC.develop.planeOnFrame, key, ref, from, to),
     getPlane: (ref: string) => call<string>(IPC.develop.getPlane, ref),
     /** The photo's versions as stored now (main makes automatic ones as it goes). */
     versionList: (key: string) => call<Snapshot[]>(IPC.develop.versionList, key),
@@ -289,6 +382,8 @@ const api = {
       call<void>(IPC.develop.compareWith, key, recipe),
     historyList: (key: string) => call<HistoryLog>(IPC.develop.historyList, key),
     warm: (keys: string[]) => call<void>(IPC.develop.warm, keys),
+    firstLook: (key: string, edge: number) =>
+      call<FirstLookPicture | null>(IPC.develop.firstLook, key, edge),
     historyAppend: (key: string, label: string, recipe: Recipe) =>
       call<HistoryAppend>(IPC.develop.historyAppend, key, label, recipe),
     historyAmend: (key: string, seq: number, label: string, recipe: Recipe) =>
@@ -360,9 +455,17 @@ const api = {
     chooseWatermark: () => call<WatermarkFile | null>(IPC.export.chooseWatermark),
     /** A chosen watermark again (a preset's), or an error when it is gone. */
     readWatermark: (path: string) => call<WatermarkFile>(IPC.export.readWatermark, path),
-    start: (keys: string[], settings: ExportSettings) =>
-      call<string>(IPC.export.start, keys, settings),
+    /** Queue an export; `label` names the preset it was made with (null: settings of one's own). */
+    start: (keys: string[], settings: ExportSettings, label: string | null = null) =>
+      call<string>(IPC.export.start, keys, settings, label),
+    /** Stop an export: the one running at the engine's next stage, a queued one before it begins. */
     cancel: (id: string) => call<void>(IPC.export.cancel, id),
+    /** Every export queued, running, or lately finished. */
+    jobs: () => call<ExportProgress[]>(IPC.export.jobs),
+    /** An export's failures again, as a new export (its id), or null when none are left. */
+    retry: (id: string) => call<string | null>(IPC.export.retry, id),
+    /** An export's files in the system's file browser. */
+    show: (id: string) => call<void>(IPC.export.show, id),
     presets: () => call<ExportPreset[]>(IPC.export.presets),
     savePreset: (p: Omit<ExportPreset, 'id'> & { id?: string }) =>
       call<ExportPreset>(IPC.export.savePreset, p),
@@ -374,6 +477,8 @@ const api = {
     /** The checks the disk and the photos make: folder, room, replaced files, size. */
     check: (keys: string[], settings: ExportSettings) =>
       call<Guard[]>(IPC.export.check, keys, settings),
+    /** The photos an export would take, read once for the selection: the estimate's sample. */
+    facts: (keys: string[]) => call<ExportFacts>(IPC.export.facts, keys),
     onProgress: (cb: (p: ExportProgress) => void) => on(IPC.export.progress, cb)
   },
   enhance: {
@@ -396,6 +501,9 @@ const api = {
     setHeavy: (model: HeavyModel, on: boolean) => call<AiSwitches>(IPC.ai.setHeavy, model, on),
     setPixlDemosaic: (on: boolean) => call<AiSwitches>(IPC.ai.setPixlDemosaic, on),
     setPixlCpu: (answer: PixlCpuAnswer) => call<AiSwitches>(IPC.ai.setPixlCpu, answer),
+    pixlCpuPending: () => call<PixlCpuQuestion | null>(IPC.ai.pixlCpuPending),
+    answerPixlCpu: (reply: PixlCpuReply) => call<void>(IPC.ai.answerPixlCpu, reply),
+    onPixlCpuAsk: (cb: (q: PixlCpuQuestion | null) => void) => on(IPC.ai.pixlCpuAsk, cb),
     /** What today's pipeline has (shared/rebuild.ts): the PIXL demosaic, PIXL Enhance. */
     pipeline: () => call<Pipeline>(IPC.ai.pipeline),
     benchmark: (model: HeavyModel) => call<HeavyBenchmark>(IPC.ai.benchmark, model),

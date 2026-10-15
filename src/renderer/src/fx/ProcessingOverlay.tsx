@@ -16,7 +16,9 @@ const SHOW_AFTER_MS = 250
  */
 export function ProcessingOverlay(): React.JSX.Element | null {
   const job = useBusy((s) => s.jobs.filter((j) => j.scope === 'loupe').at(-1) ?? null)
-  const loading = useDevelop((s) => s.loading)
+  // A photo opening with a first look to show (views/loupe/FirstLook.tsx)
+  // shows it, marked as developing, instead of the sphere over the stage.
+  const loading = useDevelop((s) => s.loading && s.firstLook === null)
   const name = useDevelop((s) => s.session?.item.name ?? null)
   const busy = job !== null || loading
   const [shown, setShown] = useState(false)

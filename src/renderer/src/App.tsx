@@ -9,7 +9,10 @@ import { api, errorText } from './lib/api'
 import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { ConfirmHost } from './components/ConfirmHost'
+import { MessagesDialog, Toasts } from './components/Toasts'
+import { TooltipHost } from './components/Tooltip'
 import { ModelPromptHost } from './components/ModelPromptHost'
+import { PixlCpuHost } from './components/PixlCpuHost'
 import { Scopes } from './develop/Scopes'
 import { AdjustStack } from './develop/AdjustStack'
 import { ToolStrip } from './develop/ToolStrip'
@@ -28,6 +31,7 @@ import { useDevelop } from './state/develop'
 import { openPhotos } from './lib/openPhotos'
 import { useBoot } from './state/boot'
 import { startCullUpkeep } from './state/cull'
+import { startExportUpkeep } from './state/exports'
 import { startUpdateNotice } from './lib/updates'
 import { UpdateDialog } from './views/UpdateDialog'
 import { useLibrary } from './state/library'
@@ -46,9 +50,13 @@ import { useGate } from './lib/gate'
 import { isFrame, whenFrame } from './lib/frames'
 import { openReport } from './lib/report'
 import { startMenuUpkeep } from './lib/menus'
+import { askProjectsLocation } from './lib/batch'
 import { t, useLanguage } from './lib/i18n'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
-import { LibraryIdentity, LibraryStatus, CullBar, LibraryView, Toolbar } from './views/Library'
+import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
+import { LibraryCompare, LibraryLoupe, LibrarySurvey } from './views/library/CullViews'
+import { FilterBar } from './views/library/FilterBar'
+import { filmPick, noteCapsLock } from './lib/librarymodes'
 import { CollectionDialog } from './views/library/CollectionDialog'
 import { InfoDrawer } from './views/library/InfoDrawer'
 import { Sidebar } from './views/library/Sidebar'
@@ -63,6 +71,9 @@ import { setSpace } from './views/loupe/zoom'
  * changing elsewhere never re-renders what is under the pointer.
  */
 const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
+  // The first Develop (or Library batch) asks once where projects and exports
+  // go, before an edit makes a project: of everyone, each shown what it has
+  // now. Never of a scripted run.
   useEffect(() => void askProjectsLocation(), [])
   return (
     <div className="develop">
@@ -97,8 +108,8 @@ const LibraryScreen = memo(function LibraryScreen(): React.JSX.Element {
       <div className="library-body">
         <Sidebar />
         <main className="library-main">
-          <CullBar />
-          <LibraryView />
+          <FilterBar />
+          <LibraryModes />
         </main>
         <InfoDrawer />
       </div>
@@ -106,6 +117,23 @@ const LibraryScreen = memo(function LibraryScreen(): React.JSX.Element {
     </div>
   )
 })
+
+/**
+ * The Library's view of its photos: the Grid, or the Loupe, Compare or
+ * Survey with the filmstrip under them (a click there picks, never opens).
+ */
+function LibraryModes(): React.JSX.Element {
+  const mode = useLibrary((s) => s.mode)
+  if (mode === 'grid') return <LibraryView />
+  return (
+    <>
+      {mode === 'loupe' && <LibraryLoupe />}
+      {mode === 'compare' && <LibraryCompare />}
+      {mode === 'survey' && <LibrarySurvey />}
+      <Filmstrip always onPick={filmPick} />
+    </>
+  )
+}
 
 function Screens(): React.JSX.Element {
   const view = useLibrary((s) => s.view)
@@ -121,7 +149,8 @@ function DialogHost(): React.JSX.Element {
         <CollectionDialog key={`collection:${editing.id ?? 'new'}`} initial={editing} />
       )}
       {dialog === 'export' && <ExportDialog key="export" />}
-      {dialog === 'sync' && <SyncDialog key="sync" />}
+      {dialog === 'sync' && <SyncDialog key="sync" mode="sync" />}
+      {dialog === 'paste' && <SyncDialog key="paste" mode="paste" />}
       {dialog === 'preset' && <SavePresetDialog key="preset" />}
       {dialog === 'looks' && <LooksBrowser key="looks" />}
       {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
@@ -132,28 +161,8 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'update' && <UpdateDialog key="update" />}
       {dialog === 'scopes' && <ScopesExpandedDialog key="scopes" />}
       {dialog === 'editing-space' && <EditingSpaceDialog key="editing-space" />}
+      {dialog === 'messages' && <MessagesDialog key="messages" />}
     </AnimatePresence>
-  )
-}
-
-function Toast(): React.JSX.Element | null {
-  const toast = useLibrary((s) => s.toast)
-  if (!toast) return null
-  return (
-    <div className={`toast ${toast.tone}`} key={toast.text} role="status">
-      {toast.text}
-      {toast.action && (
-        <button
-          className="primary"
-          onClick={() => {
-            useLibrary.setState({ toast: null })
-            toast.action?.run()
-          }}
-        >
-          {toast.action.label}
-        </button>
-      )}
-    </div>
   )
 }
 
@@ -391,24 +400,11 @@ async function askCrashConsent(): Promise<void> {
 const LOST_FRAME_RETRIES = 3
 let lostFrames = 0
 
-/**
- * The first Develop asks once where projects and exports go (before an edit
- * makes a project): of everyone, a new install and one updating alike, each
- * shown what it has now. Never of a scripted run. Another dialog already
- * open: asked at the next Develop instead.
- */
-async function askProjectsLocation(): Promise<void> {
-  const ask = await api.app.locations().then(
-    (l) => l.ask,
-    () => false
-  )
-  if (!ask || useLibrary.getState().dialog) return
-  useLibrary.getState().setDialog('projects-location')
-}
-
 function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Caps Lock flips auto-advance while it is on: the status bar's chip follows it.
+      noteCapsLock(e)
       const el = e.target as HTMLElement
       if (
         el.tagName === 'INPUT' &&
@@ -429,6 +425,7 @@ function useShortcuts(): void {
       e.preventDefault()
     }
     const onKeyUp = (e: KeyboardEvent): void => {
+      noteCapsLock(e)
       // A held command lets go when its key does, whatever else is still down.
       const code = chordOf(e).code
       const bindings = currentBindings()
@@ -488,7 +485,7 @@ export default function App(): React.JSX.Element {
         const mine = useLibrary.getState().items.filter((i) => i.photoId === photoId)
         if (mine.length) useLibrary.getState().patchItems(mine.map((i) => ({ ...i, names: words })))
       }),
-      api.library.onChanged(({ folder }) => useLibrary.getState().onChanged(folder)),
+      api.library.onChanged(({ folder, items }) => useLibrary.getState().onChanged(folder, items)),
       api.library.onSourcesChanged(() => void useLibrary.getState().onSourcesChanged()),
       api.develop.onRendered((e) => {
         // A draft sent as pixels is shown once they are here (they come on their own port).
@@ -512,6 +509,7 @@ export default function App(): React.JSX.Element {
       startStaleUpkeep(),
       startDisplayUpkeep(),
       startCullUpkeep(),
+      startExportUpkeep(),
       startUpdateNotice(),
       startMenuUpkeep(),
       // Full HDR toggled, or the display's numbers moved: render for it again.
@@ -607,7 +605,9 @@ export default function App(): React.JSX.Element {
         <DialogHost />
         <ConfirmHost />
         <ModelPromptHost />
-        <Toast />
+        <PixlCpuHost />
+        <Toasts />
+        <TooltipHost />
         <EngineBanner />
         <Splash />
         <BetaGate gate={gate} />
