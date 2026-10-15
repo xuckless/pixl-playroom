@@ -15,11 +15,33 @@ import {
   type Recipe
 } from '../../shared/recipe'
 import { shownRings, type FaceFound } from '../../shared/faceparts'
+import { renderedLens } from '../../shared/edits'
+import { lensFrameOf, sameLensFrame, type LensFrame } from '../../shared/lensframe'
 import { modelRefine } from '../../shared/refine'
 import { parseKey } from '../keys'
 import type { Library } from '../library'
 import type { PlaneStore } from '../planestore'
 import type { DevelopSessions } from '../render'
+
+/**
+ * The lens frame a model's mask was found on (the lens the photo rendered
+ * with when the model ran: ai/segment.ts; the one it renders with now if
+ * the result does not say), when it is not the frame the photo's masks are
+ * on: the mask says so, and is carried over (shared/lensframe.ts). Optics
+ * switched while the model ran leaves it on the frame it was found on.
+ */
+async function foundOn(
+  key: string,
+  recipe: Recipe,
+  library: Library,
+  found: LensFrame | undefined
+): Promise<{ lensFrame?: LensFrame }> {
+  const made =
+    found !== undefined
+      ? found
+      : lensFrameOf(renderedLens(recipe, (await library.photoRow(key)).is_raw === 1))
+  return sameLensFrame(made, recipe.masks?.lensFrame) ? {} : { lensFrame: made }
+}
 
 export async function applyMaskResult(
   e: AiJobEvent,
@@ -32,9 +54,11 @@ export async function applyMaskResult(
   if (png === undefined) throw new Error(t('the mask went missing before it could be added'))
   const live = deps.sessions.liveRecipe(e.key)
   const recipe: Recipe = structuredClone(live ?? (await deps.library.recipe(e.key)))
+  const frame = await foundOn(e.key, recipe, deps.library, r.lensFrame)
   const depth: DepthComponent | null = r.depth
     ? {
         id: newId(),
+        ...frame,
         kind: 'depth',
         mode: 'Add',
         opacity: 100,
@@ -51,6 +75,7 @@ export async function applyMaskResult(
     : null
   const brush: BrushComponent = {
     id: newId(),
+    ...frame,
     name: r.label,
     kind: 'brush',
     mode: 'Add',
@@ -73,9 +98,12 @@ export async function applyMaskResult(
     const layer = recipe.layers.find((l) => l.id === r.into!.layerId)
     const old = layer?.components.find((c) => c.id === r.into!.replace)
     if (!layer || !old || (old.kind !== 'brush' && old.kind !== 'depth')) return
-    layer.components = layer.components.map((c) =>
-      c.id === old.id ? { ...c, png, width: r.width, height: r.height, ref: undefined } : c
-    ) as typeof layer.components
+    layer.components = layer.components.map((c) => {
+      if (c.id !== old.id) return c
+      const { lensFrame: _, ...rest } = c
+      void _
+      return { ...rest, ...frame, png, width: r.width, height: r.height, ref: undefined }
+    }) as typeof layer.components
     await keepRecipe(e.key, recipe, live !== undefined, deps)
     return
   }
@@ -107,6 +135,7 @@ async function applyFacePart(
   const [first, ...rings] = shownRings(found)
   const comp: PolygonComponent = {
     id: newId(),
+    ...(await foundOn(e.key, recipe, deps.library, r.lensFrame)),
     name: r.label,
     kind: 'polygon',
     mode: 'Add',

@@ -44,7 +44,7 @@ import {
   type SpotRefine
 } from '../shared/retouch'
 import { activeSteps, stackSignature, type PixelStep } from '../shared/pixels'
-import { effective } from '../shared/edits'
+import { effective, renderedLens } from '../shared/edits'
 import {
   dcpOf,
   exposureOffsetOf,
@@ -116,6 +116,15 @@ import {
 import { brushPlanes } from './brushes'
 import { lutsFor } from './lutfile'
 import { cacheFile } from './contain'
+import { maskFramesFor, maskGrid, planeOnFrame, rebaseMasks } from './maskframe'
+import {
+  lensFrameOf,
+  spotFramesKey,
+  spotsOn,
+  type LensFrame,
+  type LensGrid,
+  type MaskFrames
+} from '../shared/lensframe'
 import { paths } from './paths'
 import { sweepPhoto } from './sweep'
 import type { PhotoRow } from './db'
@@ -593,6 +602,9 @@ class Session {
     // The working pixels' frame: the photo's, or an upscale step's.
     const px = baked ? this.lensed!.px : this.basePx()
     const { user } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
+    // Masks drawn under another lens than the one rendered; a draft takes the
+    // maps only once they are made (see `maskFramesFor`).
+    const maskFrames = await this.maskFrames(recipe, smoothing)
     const compiled = compile(recipe, {
       isRaw: this.isRaw,
       asShot: this.info.as_shot_white,
@@ -602,7 +614,11 @@ class Session {
       frameHeight: px.frameHeight,
       scale: source.width / px.frameWidth,
       seed: seedOf(this.row),
-      brushPaths: await brushPlanes(this.row.id, recipe, user),
+      brushPaths: await brushPlanes(this.row.id, recipe, user, {
+        isRaw: this.isRaw,
+        frames: maskFrames
+      }),
+      maskFrames,
       luts: await lutsFor(recipe, paths.luts()),
       applyCrop,
       // HDR only where the request's pipeline has room above white (Preserve
@@ -619,6 +635,49 @@ class Session {
       gpuDrag: drag === 'gpu'
     })
     return baked ? { ...compiled, lens: null, retouch: null } : compiled
+  }
+
+  /**
+   * What carries a recipe's masks to the lens it renders with
+   * (main/maskframe.ts); null when they are on it, or when the maps could
+   * not be made (the masks then show where they were drawn, as before).
+   */
+  async maskFrames(recipe: Recipe, wait = true): Promise<MaskFrames | null> {
+    const base = this.basePx()
+    return maskFramesFor(
+      this.frameDeps(),
+      recipe,
+      this.isRaw,
+      base.frameWidth,
+      base.frameHeight,
+      wait
+    ).catch((err) => {
+      log.warn('masks on another lens: not mapped', err)
+      return null
+    })
+  }
+
+  /** What the masks' lens maps are made with: the background engine, the photo's cache. */
+  private frameDeps(): ReturnType<typeof pixelDeps> {
+    return pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row)
+  }
+
+  /** A recipe with its masks rewritten onto its own lens (a lens edit settling). */
+  rebaseMasks(recipe: Recipe): Promise<Recipe> {
+    const base = this.basePx()
+    return rebaseMasks(this.frameDeps(), recipe, base.frameWidth, base.frameHeight)
+  }
+
+  /** The loupe's grid between the masks' lens frame and the one rendered. */
+  maskGrid(masks: LensFrame, rendered: LensFrame): Promise<LensGrid | null> {
+    const base = this.basePx()
+    return maskGrid(this.frameDeps(), masks, rendered, base.frameWidth, base.frameHeight)
+  }
+
+  /** A plane drawn on one lens frame, re-warped onto another (painted into again). */
+  planeOnFrame(png: string, from: LensFrame, to: LensFrame): Promise<string> {
+    const base = this.basePx()
+    return planeOnFrame(this.frameDeps(), png, from, to, base.frameWidth, base.frameHeight)
   }
 
   /** Whether a source is one of the prepared set's (lens and spots baked in). */
@@ -898,7 +957,11 @@ class Session {
    * What the prepared proxies hold for a recipe: its lens correction and
    * its spots, placed on the base frame (the proxy's own).
    */
-  private prepared(recipe: Recipe): {
+  private prepared(
+    recipe: Recipe,
+    /** Spots drawn under another lens than the one rendered: what carries them to it (`maskFrames`). */
+    frames: MaskFrames | null = null
+  ): {
     lens: LensCorrection | null
     retouch: Retouch | null
     /** The proxies they are prepared from: the plain ones or the working pixels (steps laid on). */
@@ -910,7 +973,7 @@ class Session {
       base: this.basePx().proxy.path,
       lens: lensCorrection(shown.lens),
       retouch: compileRetouch(
-        shown.retouch,
+        spotsOn(shown, frames),
         'Normal',
         this.basePx().frameWidth,
         this.basePx().frameHeight
@@ -920,20 +983,45 @@ class Session {
 
   /** What names the prepared proxies a recipe needs: '' for none (the plain proxies serve). */
   /** The last `lensKey` asked for, by what it is made from (asked several times per update). */
-  private lensKeyMemo: { lens: unknown; retouch: unknown; base: Proxies; key: string } | null = null
+  private lensKeyMemo: {
+    lens: unknown
+    retouch: unknown
+    masks: unknown
+    off: unknown
+    base: Proxies
+    key: string
+  } | null = null
 
   private lensKey(recipe: Recipe): string {
     const base = this.basePx()
     const m = this.lensKeyMemo
-    if (m && m.lens === recipe.lens && m.retouch === recipe.retouch && m.base === base) return m.key
+    if (
+      m &&
+      m.lens === recipe.lens &&
+      m.retouch === recipe.retouch &&
+      m.masks === recipe.masks &&
+      m.off === recipe.off &&
+      m.base === base
+    )
+      return m.key
     const key = this.lensKeyOf(recipe)
-    this.lensKeyMemo = { lens: recipe.lens, retouch: recipe.retouch, base, key }
+    this.lensKeyMemo = {
+      lens: recipe.lens,
+      retouch: recipe.retouch,
+      masks: recipe.masks,
+      off: recipe.off,
+      base,
+      key
+    }
     return key
   }
 
   private lensKeyOf(recipe: Recipe): string {
     const p = this.prepared(recipe)
-    return p.lens || p.retouch ? hash32(JSON.stringify(p)).toString(16) : ''
+    if (!p.lens && !p.retouch) return ''
+    // Spots drawn under another lens are baked carried over (see `bake`).
+    const carried = spotFramesKey(effective(recipe, this.isRaw), lensFrameOf(p.lens))
+    return hash32(JSON.stringify(carried ? [p, carried] : p)).toString(16)
   }
 
   /**
@@ -964,38 +1052,45 @@ class Session {
   private bake(): void {
     const key = this.lensKey(this.recipe)
     if (!key || this.lensed?.key === key || this.baking === key || this.bakeFailed === key) return
-    const { lens, retouch } = this.prepared(this.recipe)
+    const recipe = this.recipe
     const base = this.basePx()
     this.baking = key
-    ensureLensedProxies(
-      this.owner.bgEngine,
-      this.row,
-      base,
-      lens,
-      retouch,
-      key,
-      this.hdrWorking
-    ).then(
-      (px) => {
-        if (this.baking === key) this.baking = null
-        if (this.closed) return
-        if (this.lensKey(this.recipe) === key) {
-          const before = this.lensed?.key
-          this.lensed = { key, px }
-          this.schedule('full')
-          // The sets before the last go now, not only when the photo closes
-          // (each is two proxies: a session of lens edits made gigabytes).
-          void pruneLensed(this.row, this.key, key, before)
-        } else this.bake()
-      },
-      (err) => {
-        if (this.baking === key) this.baking = null
-        log.warn('lens proxies failed; correcting live', (err as Error).message)
-        this.bakeFailed = key
-        // The settled render, mask, before and headroom waited for the bake: they run now.
-        if (!this.closed && this.lensKey(this.recipe) === key) this.schedule('full')
-      }
-    )
+    // Spots drawn under another lens than the one rendered are baked where
+    // their content now is: renders from the set leave the spots out.
+    this.maskFrames(recipe)
+      .then((frames) => {
+        const { lens, retouch } = this.prepared(recipe, frames)
+        return ensureLensedProxies(
+          this.owner.bgEngine,
+          this.row,
+          base,
+          lens,
+          retouch,
+          key,
+          this.hdrWorking
+        )
+      })
+      .then(
+        (px) => {
+          if (this.baking === key) this.baking = null
+          if (this.closed) return
+          if (this.lensKey(this.recipe) === key) {
+            const before = this.lensed?.key
+            this.lensed = { key, px }
+            this.schedule('full')
+            // The sets before the last go now, not only when the photo closes
+            // (each is two proxies: a session of lens edits made gigabytes).
+            void pruneLensed(this.row, this.key, key, before)
+          } else this.bake()
+        },
+        (err) => {
+          if (this.baking === key) this.baking = null
+          log.warn('lens proxies failed; correcting live', (err as Error).message)
+          this.bakeFailed = key
+          // The settled render, mask, before and headroom waited for the bake: they run now.
+          if (!this.closed && this.lensKey(this.recipe) === key) this.schedule('full')
+        }
+      )
   }
 
   update(next: Recipe, interactive: boolean, rev?: number): void {
@@ -1339,7 +1434,7 @@ class Session {
     }
     // The lensed set's correction, baked as on its proxies; a live one is the render's.
     if (key.endsWith(':live') === false) {
-      const { lens, retouch } = this.prepared(this.recipe)
+      const { lens, retouch } = this.prepared(this.recipe, await this.maskFrames(this.recipe))
       file = await lensOn(
         engine,
         file,
@@ -2425,6 +2520,9 @@ class Session {
    */
   private async renderMaskThumbs(signal: AbortSignal): Promise<void> {
     const src = this.viewPx().draft
+    // The recipe they are drawn from: the overlay shows none from before a
+    // framing or lens change (renderer state/maskplanes.ts).
+    const rev = this.rev
     const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
     // A warp shown whole has transparent corners a plane cannot carry; the
     // thumbnails wait for the crop tool to close.
@@ -2441,6 +2539,7 @@ class Session {
           this.owner.send(IPC.develop.rendered, {
             key: this.key,
             seq: this.seq,
+            rev,
             kind: 'mask-thumb',
             layerId: layer.id,
             cropMode: this.view.cropMode,
@@ -2497,6 +2596,7 @@ class Session {
       this.owner.send(IPC.develop.rendered, {
         key: this.key,
         seq: this.seq,
+        rev,
         kind: 'mask-thumb',
         layerId: layer.id,
         cropMode: this.view.cropMode,
@@ -2513,6 +2613,7 @@ class Session {
         this.owner.send(IPC.develop.rendered, {
           key: this.key,
           seq: this.seq,
+          rev,
           kind: 'mask-thumb',
           layerId: id,
           cropMode: this.view.cropMode,
@@ -2767,6 +2868,7 @@ class Session {
     // Framed as the picture on screen is (straightened, cropped, warped, the
     // crop tool's whole frame): since engine 0.16 a region of it is the full
     // render's own pixels there, so 1:1 is sharp on any photo.
+    const maskFrames = await this.maskFrames(this.recipe)
     const compiled = compile(this.recipe, {
       isRaw: raw,
       asShot: this.info.as_shot_white,
@@ -2777,7 +2879,11 @@ class Session {
       frameHeight: src.height,
       scale: zoom,
       seed: seedOf(this.row),
-      brushPaths: await brushPlanes(this.row.id, this.recipe, user),
+      brushPaths: await brushPlanes(this.row.id, this.recipe, user, {
+        isRaw: raw,
+        frames: maskFrames
+      }),
+      maskFrames,
       luts: await lutsFor(this.recipe, paths.luts()),
       applyCrop: !this.view.cropMode,
       showTransform: !this.view.guides,
@@ -3122,9 +3228,10 @@ class Session {
   async sample(nx: number, ny: number): Promise<SampleResult> {
     const src = this.px.proxy
     const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
-    // The point is of the frame on screen: the lens-corrected one when there
-    // is a correction, which the sample is taken through too.
-    const lens = lensCorrection(this.recipe.lens)
+    // The point is of the frame on screen: the lens-corrected one when a
+    // correction is rendered (none with Optics switched off), which the
+    // sample is taken through too.
+    const lens = renderedLens(this.recipe, this.isRaw)
     const at = await this.correctedRegion(
       lens,
       width,
@@ -3805,6 +3912,21 @@ export class DevelopSessions {
 
   measureCa(key: string): Promise<CaMeasurement> {
     return this.get(key).measureCa()
+  }
+
+  /** An open photo's recipe with its masks on its own lens (shared/lensframe.ts `rebaseNeed`). */
+  rebaseMasks(key: string, recipe: Recipe): Promise<Recipe> {
+    return this.get(key).rebaseMasks(recipe)
+  }
+
+  /** The loupe's grid between an open photo's masks' lens frame and the one rendered. */
+  maskGrid(key: string, masks: LensFrame, rendered: LensFrame): Promise<LensGrid | null> {
+    return this.get(key).maskGrid(masks, rendered)
+  }
+
+  /** A plane of an open photo re-warped from one lens frame onto another. */
+  planeOnFrame(key: string, png: string, from: LensFrame, to: LensFrame): Promise<string> {
+    return this.get(key).planeOnFrame(png, from, to)
   }
 
   /** What lens matching needs of an open photo: its lens, its camera and its frame. */

@@ -41,6 +41,7 @@ import {
 import { convertWb, type WbContext } from '../shared/wbconvert'
 import { LicenceError } from '../shared/licence'
 import { applyGroups, NAFNET_DENOISE, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
+import type { LensFrame } from '../shared/lensframe'
 import { applyLook } from '../shared/looks/apply'
 import { resolveLook } from '../shared/looks/catalog'
 import { planeRef } from './planeref'
@@ -730,6 +731,21 @@ export function registerIpc(s: Services): void {
     s.planes.put(ref, png)
     return ref
   })
+  // The recipe crosses slim (planes by reference): its points are what move.
+  handle(IPC.develop.rebaseMasks, (key: string, recipe: Recipe) =>
+    s.sessions.rebaseMasks(key, recipe)
+  )
+  handle(IPC.develop.maskGrid, (key: string, masks: LensFrame, rendered: LensFrame) =>
+    s.sessions.maskGrid(key, masks, rendered)
+  )
+  handle(
+    IPC.develop.planeOnFrame,
+    async (key: string, ref: string, from: LensFrame, to: LensFrame) => {
+      const png = await s.planes.get(ref)
+      if (png === undefined) throw new Error('a painted mask is missing from the plane store')
+      return s.sessions.planeOnFrame(key, png, from, to)
+    }
+  )
   handle(IPC.develop.getPlane, async (ref: string) => {
     const png = await s.planes.get(ref)
     if (png === undefined) throw new Error('a painted mask is missing from the plane store')

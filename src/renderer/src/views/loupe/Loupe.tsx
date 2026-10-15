@@ -22,17 +22,19 @@ import {
   displaySize,
   displayToOriented,
   displayToBase,
+  displayToRendered,
   fitRect,
   normalisedIn,
   panBy,
+  loupeGeometry,
   scaleOf,
-  viewGeometry,
   zoomAt,
   zoomedRect,
   type Rect,
   type Viewport,
   type ZoomView
 } from '../../../../shared/view'
+import { sameLensFrame } from '../../../../shared/lensframe'
 import { api, errorText } from '../../lib/api'
 import { depthAt } from '../../lib/depth'
 import { touchInteracting } from '../../lib/interacting'
@@ -204,22 +206,29 @@ export function Loupe(): React.JSX.Element {
   // Visualise Spots, while the Heal tool is the one showing.
   const spots = useUi((s) => s.drawer === 'heal' && !!s.heal.visualise)
   const spotLevel = useUi((s) => s.heal.spotLevel ?? 50)
-  // On the geometry alone (a slider elsewhere keeps it), so what takes `g`
-  // stays memoised through a drag.
+  // On the geometry and the sections switched off alone (a slider elsewhere
+  // keeps them), so what takes `g` stays memoised through a drag. The
+  // picture as rendered: what `compile` reads, not the raw geometry.
   const geometry = useDevelop((s) => s.recipe?.geometry)
-  const g = useMemo(
-    () =>
-      session && geometry
-        ? viewGeometry(
-            { geometry },
+  const off = useDevelop((s) => s.recipe?.off)
+  // Masks on another lens than the one rendered: points go through its grid.
+  const maskGrid = useDevelop((s) => s.maskGrid)
+  const g = useMemo(() => {
+    const recipe = useDevelop.getState().recipe
+    return session && geometry && off && recipe
+      ? {
+          ...loupeGeometry(
+            recipe,
+            session.isRaw,
             session.frameWidth,
             session.frameHeight,
             tool === 'crop',
             tool === 'upright-guide'
-          )
-        : null,
-    [session, geometry, tool]
-  )
+          ),
+          lens: maskGrid
+        }
+      : null
+  }, [session, geometry, off, tool, maskGrid])
 
   // Where the picture sits in the loupe. In the crop tool the frame comes
   // from the geometry, which a render cannot change, so the crop box and the
@@ -480,8 +489,17 @@ export function Loupe(): React.JSX.Element {
           [...(layer?.components ?? [])].reverse().find((x) => x.kind === 'depth')
         if (!layer || !comp || comp.kind !== 'depth')
           return useLibrary.getState().say(t('Select a Depth range first'), 'error')
-        // Where the click is on the base frame, where the depth map lives.
-        const b = displayToBase(g, p)
+        // Where the click is on the base frame, where the depth map lives: on
+        // the picture as rendered when it was found there, not on the masks'
+        // lens frame (Optics switched off since they were drawn).
+        const own = comp.lensFrame
+        const b =
+          own !== undefined &&
+          g.lens?.rendered !== undefined &&
+          sameLensFrame(own, g.lens.rendered) &&
+          !sameLensFrame(own, recipe.masks?.lensFrame)
+            ? displayToRendered(g, p)
+            : displayToBase(g, p)
         const at = await depthAt(comp, b.x, b.y)
         // Centred there, as wide as it was (a tenth of the photo's depth at least).
         const half = Math.max(5, Math.round(Math.abs(comp.far - comp.near) / 2))

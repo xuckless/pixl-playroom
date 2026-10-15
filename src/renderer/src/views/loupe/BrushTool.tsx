@@ -1,8 +1,11 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { newId, type BrushComponent } from '../../../../shared/recipe'
 import {
-  baseToDisplay,
+  baseToDisplayMatrixNear,
   displayToBase,
+  displayToBaseMatrix,
+  displayToBaseMatrixNear,
+  localScale,
   normalisedIn,
   visiblePart,
   type P,
@@ -12,8 +15,8 @@ import {
 import { api, errorText } from '../../lib/api'
 import { isFrame, pictureBitmap as framePixels, readable } from '../../lib/frames'
 import { touchInteracting } from '../../lib/interacting'
-import { planePng, rememberPlane } from '../../lib/planes'
-import type { Affine, Dab } from '../../workers/brush.worker'
+import { planePngOn, rememberPlane } from '../../lib/planes'
+import type { Dab } from '../../workers/brush.worker'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
@@ -30,14 +33,6 @@ const FLOW_PER_DAB = 0.35
 function strokeAlpha(): number {
   const o = useUi.getState().maskOverlay
   return Math.min(0.6, Math.max(0.2, o.opacity / 100))
-}
-
-/** An affine map of normalised points, from where it takes three of them. */
-function affine(f: (p: P) => P): Affine {
-  const o = f({ x: 0, y: 0 })
-  const x = f({ x: 1, y: 0 })
-  const y = f({ x: 0, y: 1 })
-  return [x.x - o.x, y.x - o.x, o.x, x.y - o.y, y.y - o.y, o.y]
 }
 
 interface Stroke {
@@ -91,16 +86,15 @@ export const BrushLayer = memo(function BrushLayer({
   const planeH = baseH > baseW ? BRUSH_EDGE : Math.round((BRUSH_EDGE * baseH) / baseW)
   const toDisplay = (e: { clientX: number; clientY: number }, el: Element): P =>
     normalisedIn(e.clientX, e.clientY, el.getBoundingClientRect())
-  // Plane pixels per screen pixel, measured through the view mapping.
-  const scaleAt = (p: P): number => {
-    const a = displayToBase(g, p)
-    const b = displayToBase(g, { x: p.x + 1 / rect.w, y: p.y })
-    return Math.hypot((b.x - a.x) * planeW, (b.y - a.y) * planeH)
-  }
+  // Plane pixels per screen pixel about a point, through the view mapping:
+  // the scale an area keeps (an Upright warp stretches one way more).
+  const scaleAt = (p: P): number =>
+    localScale(g, p, { w: rect.w, h: rect.h }, { w: planeW, h: planeH })
 
   // The worker's canvas covers the part of the picture in view; it learns
-  // where that is whenever the view moves.
-  useEffect(() => {
+  // where that is whenever the view moves, and where a stroke starts (the
+  // masks on another lens than the one rendered: their grid, about there).
+  const postScreen = (at: P | null): void =>
     worker.post({
       t: 'screen',
       screen: {
@@ -111,10 +105,11 @@ export const BrushLayer = memo(function BrushLayer({
         oy: vis.y,
         rw: rect.w,
         rh: rect.h,
-        toBase: affine((p) => displayToBase(g, p))
+        toBase: at ? displayToBaseMatrixNear(g, at) : displayToBaseMatrix(g)
       }
     })
-  }, [worker, vis.x, vis.y, vis.w, vis.h, rect.w, rect.h, g])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => postScreen(null), [worker, vis.x, vis.y, vis.w, vis.h, rect.w, rect.h, g])
 
   const dab = (s: Stroke, q: P, pressure: number): void => {
     const set = s.set
@@ -198,9 +193,12 @@ export const BrushLayer = memo(function BrushLayer({
       started: false
     }
     paint(p, pressure)
+    if (g.lens) postScreen(p)
     let png: string | null = null
     try {
-      if (existing && (existing.png || existing.ref)) png = await planePng(existing)
+      // On the masks' lens frame, where the pointer's dabs land (view.ts).
+      if (existing && (existing.png || existing.ref) && d.session)
+        png = await planePngOn(d.session.key, existing, recipe.masks?.lensFrame ?? null)
     } catch (err) {
       stroke.current = null
       return useLibrary.getState().say(errorText(err), 'error')
@@ -219,7 +217,8 @@ export const BrushLayer = memo(function BrushLayer({
         erase,
         picture,
         ...(pictureBitmap ? { pictureBitmap } : {}),
-        toDisplay: affine((q) => baseToDisplay(g, q)),
+        // Auto Mask reads the picture where the plane's pixels show.
+        toDisplay: baseToDisplayMatrixNear(g, displayToBase(g, p)),
         alpha: strokeAlpha()
       },
       pictureBitmap ? [pictureBitmap] : []
@@ -254,6 +253,8 @@ export const BrushLayer = memo(function BrushLayer({
         if (c && c.kind === 'brush') {
           c.png = ''
           c.ref = ref
+          // Painted on the masks' lens frame (re-warped onto it if it was on another).
+          delete c.lensFrame
         } else
           l.components.push({
             id: s.compId,

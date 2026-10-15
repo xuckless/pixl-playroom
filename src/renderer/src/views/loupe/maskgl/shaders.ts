@@ -130,19 +130,30 @@ void main() {
   o = vec4(band(uHue, h, 360.0) * band(uSat, s, 0.0) * band(uLuma, l, 0.0), 0.0, 0.0, 1.0);
 }`
 
+/**
+ * Display → base through a projective map (an Upright warp is one): the
+ * perspective divide, and nowhere for a point past the horizon.
+ */
+const TO_BASE = `
+vec2 toBase(mat3 m, vec2 d) {
+  vec3 h = m * vec3(d, 1.0);
+  return h.z > 0.0 ? h.xy / h.z : vec2(-1.0);
+}
+`
+
 /** One component joins the mask so far (see maskpreview.ts `combine`), in display space. */
-export const JOIN_FS = `${HEAD}
+export const JOIN_FS = `${HEAD}${TO_BASE}
 uniform sampler2D uAcc;
 uniform sampler2D uComp;
 uniform bool uFirst;
 uniform bool uBase;       // the component's plane is in the base frame
-uniform mat3 uToBase;     // display → base, normalised
+uniform mat3 uToBase;     // display → base, normalised, projective
 uniform int uMode;        // 0 add, 1 subtract, 2 intersect
 uniform bool uInvert;
 uniform float uOpacity;
 void main() {
   vec2 d = here();
-  vec2 q = uBase ? (uToBase * vec3(d, 1.0)).xy : d;
+  vec2 q = uBase ? toBase(uToBase, d) : d;
   float shape = (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) ? 0.0 : S(uComp, q);
   float v = (uInvert ? 1.0 - shape : shape) * uOpacity;
   float prev = uFirst ? 0.0 : S(uAcc, d);
@@ -155,7 +166,7 @@ void main() {
  * (premultiplied, blended "over"): what each part of a mask covers. One that
  * subtracts is hatched.
  */
-export const COMPONENT_FS = `${HEAD}
+export const COMPONENT_FS = `${HEAD}${TO_BASE}
 uniform sampler2D uComp;
 uniform bool uBase;
 uniform mat3 uToBase;
@@ -166,7 +177,7 @@ uniform float uAlpha;
 uniform bool uHatch;
 void main() {
   vec2 d = here();
-  vec2 q = uBase ? (uToBase * vec3(d, 1.0)).xy : d;
+  vec2 q = uBase ? toBase(uToBase, d) : d;
   float shape = (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) ? 0.0 : S(uComp, q);
   float a = uAlpha * (uInvert ? 1.0 - shape : shape) * uOpacity;
   if (uHatch) a *= 0.25 + 0.75 * step(0.5, fract((gl_FragCoord.x + gl_FragCoord.y) / 10.0));

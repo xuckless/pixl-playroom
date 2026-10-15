@@ -1,3 +1,4 @@
+import { sameLensFrame, type LensFrame } from '../../../shared/lensframe'
 import type { PlaneComponent } from '../../../shared/recipe'
 import { api } from './api'
 
@@ -24,4 +25,23 @@ export async function planePng(c: PlaneComponent): Promise<string> {
   const png = await api.develop.getPlane(c.ref)
   rememberPlane(c.ref, png)
   return png
+}
+
+/**
+ * A plane component's PNG on lens frame `to`: as it is, or, when it is on
+ * another (its own `lensFrame`, else the masks' frame `masks`), re-warped
+ * onto it by the main process. The brush paints on the masks' frame; the
+ * loupe shows a mask on the frame rendered.
+ */
+export async function planePngOn(
+  key: string,
+  c: PlaneComponent,
+  to: LensFrame,
+  masks: LensFrame = to
+): Promise<string> {
+  const from = c.lensFrame !== undefined ? c.lensFrame : masks
+  if (sameLensFrame(from, to)) return planePng(c)
+  // A plane held here (a selection being made) is not in the plane store yet.
+  const ref = c.png || !c.ref ? await api.develop.putPlane(await planePng(c)) : c.ref
+  return api.develop.planeOnFrame(key, ref, from, to)
 }

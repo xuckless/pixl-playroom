@@ -1,14 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { readable } from '../../../lib/frames'
 import { maskJoins } from '../../../../../shared/maskpreview'
-import type { LocalLayer } from '../../../../../shared/recipe'
-import { displayToBase, type P, type ViewGeometry } from '../../../../../shared/view'
-import { planePng } from '../../../lib/planes'
+import type { LocalLayer, MaskComponentSetting } from '../../../../../shared/recipe'
+import {
+  displayToBaseMatrix,
+  glMat3,
+  masksToRendered,
+  type ViewGeometry
+} from '../../../../../shared/view'
+import { planePng, planePngOn } from '../../../lib/planes'
+import {
+  isVector,
+  lensFrameKey,
+  remapComponent,
+  sameLensFrame,
+  type LensFrame,
+  type LensGrid
+} from '../../../../../shared/lensframe'
 import { lastSentRev, useDevelop } from '../../../state/develop'
 import { useUi, type OverlayMode } from '../../../state/ui'
 import { BASE_EDGE, MaskGl, type Join, type ViewMode } from './MaskGl'
 import { useMaskDraft, useMaskGlBroken } from './state'
 import { useAiJobs } from '../../../state/jobs'
+import { nextTarget, type Watched } from './handover'
 
 /** The canvas is at most this many device pixels on its long edge (the tint is soft). */
 const MAX_EDGE = 2048
@@ -52,13 +66,12 @@ let current: MaskGl | null = null
   read: () => current?.readMask() ?? null
 }
 
-/** Normalised display → base as a column-major mat3 (the map is affine). */
+/**
+ * Normalised display → base as a column-major mat3: projective, since an
+ * Upright warp is (the shaders divide by its third row).
+ */
 function toBaseMat(g: ViewGeometry): Float32Array {
-  const f = (p: P): P => displayToBase(g, p)
-  const o = f({ x: 0, y: 0 })
-  const x = f({ x: 1, y: 0 })
-  const y = f({ x: 0, y: 1 })
-  return new Float32Array([x.x - o.x, x.y - o.y, 0, y.x - o.x, y.y - o.y, 0, o.x, o.y, 1])
+  return glMat3(displayToBaseMatrix(g))
 }
 
 /** The base frame (the file upright) at the planes' size. */
@@ -90,8 +103,29 @@ async function bitmapOf(url: string, width?: number): Promise<ImageBitmap> {
 
 /** Painted planes, decoded, by what the component holds (its reference or its PNG). */
 const brushBitmaps = new Map<string, ImageBitmap | Promise<ImageBitmap | null>>()
-function brushKey(c: { ref?: string; png: string }): string {
-  return c.ref ?? `png:${c.png.length}:${c.png.slice(-64)}`
+function brushKey(c: { ref?: string; png: string }, from: LensFrame, to: LensFrame): string {
+  const own = c.ref ?? `png:${c.png.length}:${c.png.slice(-64)}`
+  // A plane on another lens frame than the one shown is shown re-warped onto it.
+  return sameLensFrame(from, to) ? own : `${own}@${lensFrameKey(from)}>${lensFrameKey(to)}`
+}
+
+/** Shapes carried onto the frame rendered, by grid and component (a lasso has many points). */
+const carried = new WeakMap<LensGrid, WeakMap<MaskComponentSetting, MaskComponentSetting>>()
+/**
+ * A shape drawn on the masks' frame where the picture shows it, when that
+ * is rendered through another lens (`ViewGeometry.lens`): the loupe draws
+ * the mask on the frame rendered, which the display ↔ base matrix maps.
+ */
+function onRendered(c: MaskComponentSetting, grid: LensGrid): MaskComponentSetting {
+  if (!isVector(c)) return c
+  let byComp = carried.get(grid)
+  if (!byComp) carried.set(grid, (byComp = new WeakMap()))
+  let out = byComp.get(c)
+  if (!out) {
+    out = remapComponent(c, (p) => masksToRendered({ lens: grid }, p))
+    byComp.set(c, out)
+  }
+  return out
 }
 
 function viewOf(mode: OverlayMode): ViewMode {
@@ -190,18 +224,23 @@ export function MaskCanvas({
   // edit, and the edit is sent as the next number.
   useEffect(() => {
     if (isHover) return
-    const s0 = useDevelop.getState()
-    let id = s0.layerId
-    let shape = shapeOf(s0.recipe?.layers.find((l) => l.id === id))
+    const watched = (s: ReturnType<typeof useDevelop.getState>): Watched => ({
+      layerId: s.layerId,
+      ...shapeOf(s.recipe?.layers.find((l) => l.id === s.layerId)),
+      geometryRev: s.geometryRev
+    })
+    let was = watched(useDevelop.getState())
     return useDevelop.subscribe((s) => {
-      const next = shapeOf(s.recipe?.layers.find((l) => l.id === s.layerId))
-      if (next.components === shape.components && next.invert === shape.invert && s.layerId === id)
+      const now = watched(s)
+      if (
+        now.components === was.components &&
+        now.invert === was.invert &&
+        now.layerId === was.layerId &&
+        now.geometryRev === was.geometryRev
+      )
         return
-      // A different mask selected shows the engine's plane as soon as it
-      // has one for it; an edit waits for the engine to draw that edit.
-      target.current = s.layerId === id ? lastSentRev() + 1 : 0
-      id = s.layerId
-      shape = next
+      target.current = nextTarget(was, now, target.current, lastSentRev())
+      was = now
       stats.target = target.current
     })
   }, [isHover])
@@ -298,18 +337,27 @@ export function MaskCanvas({
     // Painted planes: decode what is missing, and come back when it is.
     const joins: Join[] = []
     let waiting = false
+    const s = useDevelop.getState()
+    const masksFrame = s.recipe?.masks?.lensFrame ?? null
+    // Masks on another lens than the one rendered: drawn on the frame
+    // rendered (shapes through the lens grid, planes re-warped onto it).
+    const grid = g.lens && g.lens.rendered !== undefined ? g.lens : null
+    const shownFrame = grid ? (grid.rendered ?? null) : masksFrame
     for (const { c: comp, mode } of maskJoins(components)) {
       if (comp.kind !== 'brush') {
-        joins.push({ c: comp, mode })
+        joins.push({ c: grid ? onRendered(comp, grid) : comp, mode })
         continue
       }
-      const key = brushKey(comp)
+      const from = comp.lensFrame !== undefined ? comp.lensFrame : masksFrame
+      const key = brushKey(comp, from, shownFrame)
       const got = brushBitmaps.get(key)
       if (got instanceof ImageBitmap) joins.push({ c: comp, mode, bitmap: got })
       else {
         waiting = true
         if (!got) {
-          const p = planePng(comp)
+          const p = (
+            s.session ? planePngOn(s.session.key, comp, shownFrame, masksFrame) : planePng(comp)
+          )
             .then((b64) => {
               const bytes = Uint8Array.from(atob(b64), (x) => x.charCodeAt(0))
               return createImageBitmap(new Blob([bytes], { type: 'image/png' }), decodeOpts)

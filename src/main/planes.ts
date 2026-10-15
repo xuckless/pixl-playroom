@@ -10,6 +10,7 @@ import { threadId } from 'worker_threads'
 import type { Orientation } from '../shared/engine-types'
 import { rasteriseGradient } from '../shared/gradients'
 import { orientPlane } from '../shared/orientation'
+import { warpPlane, type PlaneWarp } from '../shared/lensframe'
 import { applyEdge, type MaskEdge } from '../shared/maskedge'
 import type { GradientComponent } from '../shared/recipe'
 import { decodePng, encodeGreyPng } from './pngio'
@@ -41,24 +42,27 @@ export function writeGradientPlane(file: string, c: GradientComponent, user: Ori
 
 /**
  * A painted (or AI) plane turned to the user's orientation, its edge moved
- * and hardened; with `object` (Snap to edges on a stroke), first cut to the
- * object at the object's size, so its edge is the object's.
+ * and hardened; with `warp`, first re-warped from the lens it was drawn
+ * under to the one rendered; with `object` (Snap to edges on a stroke), then
+ * cut to the object at the object's size, so its edge is the object's.
  */
 export function writeBrushPlane(
   file: string,
   png: string,
   user: Orientation,
   edge?: MaskEdge,
-  object?: { data: Uint8Array; width: number; height: number }
+  object?: { data: Uint8Array; width: number; height: number },
+  warp?: PlaneWarp
 ): void {
   const buf = Buffer.from(png, 'base64')
-  if (user === 'Normal' && !edge && !object) return writeAtomic(file, buf)
+  if (user === 'Normal' && !edge && !object && !warp) return writeAtomic(file, buf)
   const d = decodePng(buf)
   let plane: { data: Uint8Array; width: number; height: number } = {
     data: new Uint8Array(d.rows),
     width: d.width,
     height: d.height
   }
+  if (warp) plane = { ...plane, data: warpPlane(plane.data, plane.width, plane.height, warp) }
   if (object) plane = cutToObject(plane, object)
   const shaped = applyEdge(plane.data, plane.width, plane.height, edge)
   const turned = orientPlane(user, shaped, plane.width, plane.height)

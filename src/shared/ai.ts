@@ -11,6 +11,7 @@ import type { MaskMode } from './engine-types'
 import type { AiDenoiseModel, BrushSource } from './recipe'
 import type { SmartReadiness } from './looks/smart'
 import type { Finders } from './concepts'
+import type { LensFrame } from './lensframe'
 import type { PromptGeometry, PromptVia } from './prompt'
 import {
   FACE_LANDMARKER,
@@ -128,6 +129,12 @@ export type AiResult =
       depth?: true
       /** A face part: a lasso of every face's outline (no plane; `ref` is empty). */
       polygon?: FaceFound
+      /**
+       * The lens frame it was found on (the lens the photo rendered with
+       * when the model ran: shared/lensframe.ts); unset, the one it renders
+       * with when applied.
+       */
+      lensFrame?: LensFrame
     }
 
 export type AiPhase = 'queued' | 'running' | 'done' | 'error' | 'cancelled'

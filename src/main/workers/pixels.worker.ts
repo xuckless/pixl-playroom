@@ -24,7 +24,7 @@ parentPort?.on('message', (job: PixelsJob & { id: number }) => {
       writeGradientPlane(job.file, job.c, job.user)
       pruneGradientsSometimes(job.dir)
     } else if (job.op === 'brush')
-      writeBrushPlane(job.file, job.png, job.user, job.edge, job.object)
+      writeBrushPlane(job.file, job.png, job.user, job.edge, job.object, job.warp)
     else if (job.op === 'compose') composeMasked(job.image, job.mask, job.out)
     else if (job.op === 'guard') guardOverlay(job.src, job.guard, job.out, job.at)
     else if (job.op === 'png8')

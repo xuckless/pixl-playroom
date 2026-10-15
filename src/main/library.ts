@@ -68,6 +68,7 @@ import type { PlaneStore } from './planestore'
 import { brushPlanes } from './brushes'
 import { lutsFor } from './lutfile'
 import { cacheFile } from './contain'
+import { maskFramesFor } from './maskframe'
 import { keyOf } from './keys'
 import { paths } from './paths'
 import { pixelDeps } from './pixels/base'
@@ -1007,6 +1008,17 @@ export class Library {
     }).crop
     const cropLong = Math.max((cropOf?.width ?? 1) * width, (cropOf?.height ?? 1) * height)
     const src = cropLong * (px.draft.width / px.frameWidth) >= THUMB_EDGE ? px.draft : px.proxy
+    // Masks drawn under another lens than the one rendered are carried to it.
+    const maskFrames = await maskFramesFor(
+      pixelDeps(this.engine, this.index, row),
+      recipe,
+      row.is_raw === 1,
+      px.frameWidth,
+      px.frameHeight
+    ).catch((err) => {
+      log.warn('thumbnail: masks on another lens not mapped', err)
+      return null
+    })
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
@@ -1016,7 +1028,11 @@ export class Library {
       frameHeight: px.frameHeight,
       scale: src.width / px.frameWidth,
       seed: seedOf(row),
-      brushPaths: await brushPlanes(row.id, recipe, user),
+      brushPaths: await brushPlanes(row.id, recipe, user, {
+        isRaw: row.is_raw === 1,
+        frames: maskFrames
+      }),
+      maskFrames,
       luts: await lutsFor(recipe, paths.luts()),
       applyCrop: true,
       hdr: info.is_hdr

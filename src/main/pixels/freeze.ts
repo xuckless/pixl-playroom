@@ -18,6 +18,7 @@ import { newId, type Recipe } from '../../shared/recipe'
 import { brushPlanes } from '../brushes'
 import { lutsFor } from '../lutfile'
 import { paths } from '../paths'
+import { maskFramesFor } from '../maskframe'
 import type { ProxyFile } from '../proxy'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import { lensMap, moves } from './lensmap'
@@ -60,6 +61,8 @@ export async function freezeMask(
   const r = onSourceFrame(recipe)
   const { master } = ctx
   const { user } = orientedFrame(r, master.width, master.height)
+  // On the lens it is rendered with, as the develop view shows it.
+  const maskFrames = await maskFramesFor(deps, r, ctx.isRaw, master.width, master.height)
   const compiled = compile(r, {
     isRaw: ctx.isRaw,
     asShot: ctx.asShot,
@@ -69,7 +72,8 @@ export async function freezeMask(
     frameHeight: master.height,
     scale: 1,
     seed: ctx.seed,
-    brushPaths: await brushPlanes(ctx.photoId, r, user),
+    brushPaths: await brushPlanes(ctx.photoId, r, user, { isRaw: ctx.isRaw, frames: maskFrames }),
+    maskFrames,
     luts: await lutsFor(r, paths.luts()),
     applyCrop: false
   })

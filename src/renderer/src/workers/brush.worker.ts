@@ -10,10 +10,8 @@
  * worker paints on the CPU with `shared/brush.ts`.
  */
 import { autoMaskWeight, composeStroke, deltaE, srgbToLab, stampDab } from '../../../shared/brush'
+import { applyProjective, glMat3, type Projective } from '../../../shared/projective'
 import { encodeGreyPng } from '../lib/png'
-
-/** An affine map of normalised points: x' = a·x + b·y + c, y' = d·x + e·y + f. */
-export type Affine = [number, number, number, number, number, number]
 
 export interface Dab {
   /** Centre and radius in plane pixels. */
@@ -40,8 +38,8 @@ export interface Screen {
   oy: number
   rw: number
   rh: number
-  /** Display → base (normalised). */
-  toBase: Affine
+  /** Display → base (normalised), projective (`view.ts` `displayToBaseMatrix`). */
+  toBase: Projective
 }
 
 export type BrushIn =
@@ -58,8 +56,8 @@ export type BrushIn =
       picture: string | null
       /** Its pixels, when it is a preview frame (no file to fetch). */
       pictureBitmap?: ImageBitmap
-      /** Base (normalised) → display. */
-      toDisplay: Affine
+      /** Base (normalised) → display, projective (`view.ts` `baseToDisplayMatrix`). */
+      toDisplay: Projective
       /** How strongly the stroke shows while painted (the mask overlay's own strength). */
       alpha?: number
     }
@@ -96,6 +94,13 @@ vec3 lab(vec3 srgb) {
   return vec3(116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz));
 }`
 
+/** A point through a projective map (an Upright warp is one); past the horizon, nowhere. */
+const PROJECT = `
+vec2 project(mat3 m, vec2 p) {
+  vec3 h = m * vec3(p, 1.0);
+  return h.z > 0.0 ? h.xy / h.z : vec2(-1.0);
+}`
+
 /** One dab: flow × falloff × Auto Mask, blended onto the stroke as s + a(1 − s). */
 const DAB_FS = `#version 300 es
 precision highp float;
@@ -110,13 +115,14 @@ uniform vec2 uRef;      // display coords of the dab's centre
 uniform mat3 uToDisplay;
 out vec4 o;
 ${LAB}
+${PROJECT}
 void main() {
   float d = distance(gl_FragCoord.xy, uCentre);
   if (d > uR) discard;
   float t = uR > uInner ? smoothstep(uInner, uR, d) : (d < uInner ? 0.0 : 1.0);
   float a = uFlow * (1.0 - t);
   if (uAuto) {
-    vec2 disp = (uToDisplay * vec3(gl_FragCoord.xy / uPlane, 1.0)).xy;
+    vec2 disp = project(uToDisplay, gl_FragCoord.xy / uPlane);
     float dE = distance(lab(texture(uPicture, uRef).rgb), lab(texture(uPicture, disp).rgb));
     a *= 1.0 - smoothstep(6.0, 18.0, dE);
   }
@@ -149,10 +155,11 @@ uniform vec4 uMap;      // ox, oy, rw, rh
 uniform mat3 uToBase;
 uniform vec4 uTint;
 out vec4 o;
+${PROJECT}
 void main() {
   vec2 css = vec2(gl_FragCoord.x, uCanvas.y - gl_FragCoord.y) / uDpr;
   vec2 disp = (uMap.xy + css) / uMap.zw;
-  vec2 base = (uToBase * vec3(disp, 1.0)).xy;
+  vec2 base = project(uToBase, disp);
   if (base.x < 0.0 || base.y < 0.0 || base.x > 1.0 || base.y > 1.0) discard;
   float s = texture(uStroke, base).r;
   o = uTint * min(1.0, s * 1.6);
@@ -172,15 +179,11 @@ interface Stroke {
   h: number
   softness: number
   erase: boolean
-  toDisplay: Affine
+  toDisplay: Projective
   auto: boolean
   alpha: number
 }
 let stroke: Stroke | null = null
-
-const mat3 = (m: Affine): Float32Array =>
-  // column-major: x' = a·x + b·y + c
-  new Float32Array([m[0], m[3], 0, m[1], m[4], 0, m[2], m[5], 1])
 
 async function bitmapOf(src: string | Blob, w?: number, h?: number): Promise<ImageBitmap> {
   const blob = typeof src === 'string' ? await (await fetch(src)).blob() : src
@@ -341,7 +344,7 @@ class Gpu {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_COLOR)
     gl.uniform2f(this.u(p, 'uPlane'), this.w, this.h)
     gl.uniform1i(this.u(p, 'uAuto'), s.auto && this.pictureTex ? 1 : 0)
-    gl.uniformMatrix3fv(this.u(p, 'uToDisplay'), false, mat3(s.toDisplay))
+    gl.uniformMatrix3fv(this.u(p, 'uToDisplay'), false, glMat3(s.toDisplay))
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.pictureTex)
     gl.uniform1i(this.u(p, 'uPicture'), 0)
@@ -376,7 +379,7 @@ class Gpu {
     gl.uniform2f(this.u(p, 'uCanvas'), c.width, c.height)
     gl.uniform1f(this.u(p, 'uDpr'), screen.dpr)
     gl.uniform4f(this.u(p, 'uMap'), screen.ox, screen.oy, screen.rw, screen.rh)
-    gl.uniformMatrix3fv(this.u(p, 'uToBase'), false, mat3(screen.toBase))
+    gl.uniformMatrix3fv(this.u(p, 'uToBase'), false, glMat3(screen.toBase))
     // Premultiplied: the accent while painting (as strong as the overlay it
     // becomes), a shadow while erasing.
     const t = s.erase ? [0.04, 0.04, 0.055, 0.4] : [0.62, 0.55, 0.92, s.alpha]
@@ -473,11 +476,8 @@ function cpuDabs(c: Cpu, s: Stroke, dabs: Dab[]): void {
     if (s.auto && lab) {
       const centre = labAt(lab, d.dx, d.dy)
       weight = (x, y) => {
-        const bx = (x + 0.5) / s.w
-        const by = (y + 0.5) / s.h
-        return autoMaskWeight(
-          deltaE(centre, labAt(lab, m[0] * bx + m[1] * by + m[2], m[3] * bx + m[4] * by + m[5]))
-        )
+        const d = applyProjective(m, { x: (x + 0.5) / s.w, y: (y + 0.5) / s.h })
+        return autoMaskWeight(deltaE(centre, labAt(lab, d.x, d.y)))
       }
     }
     stampDab(c.stroke, s.w, s.h, d.x, d.y, d.r, s.softness, d.flow, weight)

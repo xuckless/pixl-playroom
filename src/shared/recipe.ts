@@ -35,6 +35,7 @@ import { conceptOf, type ConceptId } from './concepts'
 import { isFacePart, type FaceFound } from './faceparts'
 import { tk } from './i18n'
 import { isPlaneHash, safeIdOf } from './ids'
+import { carryFrame, normaliseLensFrame, ownLensFrame, type LensFrame } from './lensframe'
 
 /**
  * 3 (engine 0.18): a RAW's untouched default sharpening takes the edge mask
@@ -45,7 +46,10 @@ import { isPlaneHash, safeIdOf } from './ids'
  * removals, which an HDR photo cannot take yet) keeps its SDR base. 6
  * (engine 0.21): the Log wheels grade in PixlLog, their Low and High range
  * its code values; an older recipe's (display-encoded luma) are carried to
- * the same tones, Resolve's defaults to the new ones.
+ * the same tones, Resolve's defaults to the new ones. Also
+ * from 6: the lens frame the masks are drawn on (`masks.lensFrame`,
+ * shared/lensframe.ts); an older recipe's masks are taken to be on the lens
+ * it renders with.
  */
 export const RECIPE_VERSION = 6
 
@@ -344,6 +348,12 @@ export interface GeometrySetting {
 
 interface ComponentBase {
   id: string
+  /**
+   * The lens frame it is on, when not the masks' (`Recipe.masks`): a model's
+   * plane made under another correction, a plane kept as painted across a
+   * lens edit, a mask pasted from another photo. Absent: the masks' frame.
+   */
+  lensFrame?: LensFrame
   /** The user's name for it; unset, the list shows the kind's own label. */
   name?: string
   mode: MaskMode
@@ -722,6 +732,17 @@ export interface Recipe {
   gainMap: GainMapEdit
   /** Sections switched off, their values kept (see `EDIT_SECTIONS`). */
   off: OffSections
+  /** Where the masks and spots are placed: the lens frame they are drawn on. */
+  masks: MaskPlacement
+}
+
+/**
+ * The lens geometry every mask and spot coordinate is a fraction of (the
+ * frame the correction leaves): null for none. When the photo is rendered
+ * through another, they are carried over (shared/lensframe.ts).
+ */
+export interface MaskPlacement {
+  lensFrame: LensFrame
 }
 
 export type GainMapEdit = 'base' | 'hdr'
@@ -888,7 +909,8 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     pixels: [],
     layers: [],
     custom: [],
-    off: {}
+    off: {},
+    masks: { lensFrame: null }
   }
 }
 
@@ -943,6 +965,10 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   // Before 5 every gain-map photo was edited on its SDR base by default: it
   // moves to HDR, unless it has pixel steps, which an HDR photo cannot take.
   if (saved < 5) r.gainMap = r.pixels.length > 0 ? 'base' : 'hdr'
+  // Before 6 nothing said which lens the masks were drawn under: the one the
+  // photo renders with is the best guess (none while Optics is switched off).
+  const placement = isObject(value) && isObject(value.masks) ? value.masks : null
+  const lensFrame = placement ? normaliseLensFrame(placement.lensFrame) : undefined
   r.version = RECIPE_VERSION
   if (r.gainMap !== 'base') r.gainMap = 'hdr'
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {
@@ -1008,14 +1034,25 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     ...(c as unknown as CustomLayer),
     layer: migrateLook(structuredClone(c.layer))
   }))
-  r.retouch = (Array.isArray(r.retouch) ? (r.retouch as unknown[]) : []).filter(
-    (s): s is RetouchSpot =>
-      isObject(s) &&
-      typeof s.id === 'string' &&
-      typeof s.kind === 'string' &&
-      Array.isArray(s.points) &&
-      typeof s.radius === 'number'
-  )
+  r.retouch = (Array.isArray(r.retouch) ? (r.retouch as unknown[]) : [])
+    .filter(
+      (s): s is RetouchSpot =>
+        isObject(s) &&
+        typeof s.id === 'string' &&
+        typeof s.kind === 'string' &&
+        Array.isArray(s.points) &&
+        typeof s.radius === 'number'
+    )
+    .map((s) => {
+      // A spot's own frame (pasted from another photo), if it is one.
+      if (s.lensFrame === undefined) return s
+      const { lensFrame, ...rest } = s
+      const f = normaliseLensFrame(lensFrame)
+      return f === undefined ? rest : { ...rest, lensFrame: f }
+    })
+  r.masks = {
+    lensFrame: lensFrame !== undefined ? lensFrame : r.off.optics ? null : ownLensFrame(r)
+  }
   r.pointColors = (Array.isArray(r.pointColors) ? (r.pointColors as unknown[]) : [])
     .map(normalisePointColor)
     .filter((p): p is PointColorSetting => p !== null)
@@ -1250,7 +1287,8 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
     ...((e) => (e ? { edge: e } : {}))(normaliseEdge(c.edge)),
     ...((r) => (r ? { refine: r } : {}))(normaliseRefine(c.refine)),
     ...(num(c.smooth, 0, 0, 100) > 0 ? { smooth: num(c.smooth, 0, 0, 100) } : {}),
-    ...(num(c.contrast, 0, 0, 100) > 0 ? { contrast: num(c.contrast, 0, 0, 100) } : {})
+    ...(num(c.contrast, 0, 0, 100) > 0 ? { contrast: num(c.contrast, 0, 0, 100) } : {}),
+    ...((f) => (f !== undefined ? { lensFrame: f } : {}))(normaliseLensFrame(c.lensFrame))
   }
   switch (c.kind) {
     case 'brush':
@@ -1465,7 +1503,8 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.lens = f.lens
         break
       case 'retouch':
-        r.retouch = f.retouch
+        // On the source's lens frame: the target maps them to its own.
+        r.retouch = carryFrame(f.retouch, f.masks?.lensFrame ?? null, r.masks?.lensFrame ?? null)
         break
       case 'effects':
         r.effects = f.effects
@@ -1490,7 +1529,14 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.geometry.flipHorizontal = f.geometry.flipHorizontal
         break
       case 'localAdjustments':
-        r.layers = f.layers
+        r.layers = f.layers.map((l) => ({
+          ...l,
+          components: carryFrame(
+            l.components,
+            f.masks?.lensFrame ?? null,
+            r.masks?.lensFrame ?? null
+          )
+        }))
         break
       case 'custom':
         r.custom = f.custom

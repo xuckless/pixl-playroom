@@ -6,7 +6,12 @@
  */
 import { memo, useEffect, useRef, useState } from 'react'
 import type { FramePoint } from '../../../../shared/looks/smart'
-import { displayToBase, normalisedIn, type Rect, type ViewGeometry } from '../../../../shared/view'
+import {
+  displayToRendered,
+  normalisedIn,
+  type Rect,
+  type ViewGeometry
+} from '../../../../shared/view'
 import { boxAround } from '../../../../shared/prompt'
 import { answerPick } from '../../lib/applyLook'
 import { useDevelop } from '../../state/develop'
@@ -54,7 +59,8 @@ export const LookPick = memo(function LookPick({
   }
   const toBase = (x: number, y: number): FramePoint => {
     const b = layer.current!.getBoundingClientRect()
-    return displayToBase(g, normalisedIn(b.left + x, b.top + y, b))
+    // On the picture as rendered, which the model sees (not the masks' lens frame).
+    return displayToRendered(g, normalisedIn(b.left + x, b.top + y, b))
   }
   const down = (e: React.PointerEvent): void => {
     if (e.button !== 0) return

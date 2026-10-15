@@ -207,6 +207,12 @@ export const IPC = {
     autoWb: 'develop:auto-wb',
     /** A painted plane (grey PNG, base64) into the plane store; its reference back. */
     putPlane: 'develop:put-plane',
+    /** The masks moved onto the recipe's own lens (a lens edit settling: shared/lensframe.ts). */
+    rebaseMasks: 'develop:rebase-masks',
+    /** The loupe's grid between the masks' lens frame and the one rendered. */
+    maskGrid: 'develop:mask-grid',
+    /** A plane (by reference) re-warped from one lens frame onto another; its PNG back. */
+    planeOnFrame: 'develop:plane-on-frame',
     getPlane: 'develop:get-plane',
     historyList: 'develop:history-list',
     historyAppend: 'develop:history-append',
