@@ -10,6 +10,7 @@ import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { ConfirmHost } from './components/ConfirmHost'
 import { ModelPromptHost } from './components/ModelPromptHost'
+import { PixlCpuHost } from './components/PixlCpuHost'
 import { Scopes } from './develop/Scopes'
 import { AdjustStack } from './develop/AdjustStack'
 import { ToolStrip } from './develop/ToolStrip'
@@ -607,6 +608,7 @@ export default function App(): React.JSX.Element {
         <DialogHost />
         <ConfirmHost />
         <ModelPromptHost />
+        <PixlCpuHost />
         <Toast />
         <EngineBanner />
         <Splash />

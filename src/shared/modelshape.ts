@@ -116,6 +116,21 @@ export function cacheTrouble(err: unknown): boolean {
   return /CoreMl\.cache/.test(field) || /CoreMl\.cache\.(dir|sha256)/.test(String(e?.message))
 }
 
+/**
+ * The compile in CoreML's cache a load could not read, by its folder
+ * (`<sha256>-<runtime>`), or null for any other error. Two loads of one
+ * model compiling at once (a thumbnail and the develop) can have one read
+ * the other's half-written package ("A valid manifest does not exist at
+ * path …/coreml-cache/…"): that is the cache's trouble, not the graphics
+ * chip's, and never a reason to move a model to the processor.
+ */
+export function brokenCompile(err: unknown): string | null {
+  const m = /\/coreml-cache\/([^/\s]+)\//.exec(
+    String((err as { message?: unknown } | null)?.message)
+  )
+  return m && m[1] !== KEPT_FOR ? m[1] : null
+}
+
 /** The file in the compile cache saying what it was kept for. */
 export const KEPT_FOR = 'kept-for.json'
 

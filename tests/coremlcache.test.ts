@@ -6,6 +6,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  acceleratorTrouble,
+  brokenCompile,
   cacheTrouble,
   compilesKeptFor,
   compilesMoved,
@@ -13,6 +15,7 @@ import {
   withCompileCache
 } from '../src/shared/modelshape'
 import type { ExecutionProvider } from '../src/shared/engine-types'
+import { cpuDetail } from '../src/shared/pixlcpu'
 
 const coreml: ExecutionProvider = {
   CoreMl: { units: 'All', format: 'MlProgram', static_shapes: false, low_precision_gpu: false }
@@ -71,4 +74,52 @@ test('the compiles go when the models or the engine move on, not before the engi
   const early = compilesMoved(now, compilesKeptFor(roster, null))
   assert.equal(early.clear, false)
   assert.equal(early.keep.engine, '0.21.0')
+})
+
+// Seen 2026-10-15: two loads of the PIXL demosaic compiling at once, one
+// reading the other's package before its Manifest.json was written. It
+// raised the CPU question; it is the cache's trouble, tried again instead.
+const T = '/var/folders/w2/jy/T/pr-sph-PgmgHn'
+const halfWritten = new Error(
+  `model failed (load-model): ${T}/models/pixl-demosaic-v1-bayer/1.0.1/pixl_demosaic_v1_bayer.onnx: ` +
+    `Error compiling model: Failed to read model package at file://${T}/coreml-cache/` +
+    'c31ca11b71f43f8a3a212229bcc1d0f9d63cd157879c8a68dc3bd3db6be99945-8beae5ef962b7d4b/8592514899454107509/0_static_mlprogram/model/. ' +
+    `Error: A valid manifest does not exist at path: ${T}/coreml-cache/` +
+    'c31ca11b71f43f8a3a212229bcc1d0f9d63cd157879c8a68dc3bd3db6be99945-8beae5ef962b7d4b/8592514899454107509/0_static_mlprogram/model/Manifest.json'
+)
+
+test('a compile the cache could not read is named, before the accelerator is blamed', () => {
+  assert.equal(
+    brokenCompile(halfWritten),
+    'c31ca11b71f43f8a3a212229bcc1d0f9d63cd157879c8a68dc3bd3db6be99945-8beae5ef962b7d4b'
+  )
+  // The same words would otherwise read as the accelerator refusing the model.
+  assert.ok(acceleratorTrouble(halfWritten))
+  assert.equal(brokenCompile(new Error('load-model: /m/pixl-demosaic-v1-bayer/x.onnx')), null)
+  assert.equal(brokenCompile(new Error('could not write /x/coreml-cache/kept-for.json/')), null)
+  assert.equal(brokenCompile(null), null)
+})
+
+test('the engine’s words in the CPU question lose the app’s folders', () => {
+  const s = cpuDetail(halfWritten.message, [T], '/Users/someone')
+  assert.ok(!s.includes('/var/folders'))
+  assert.ok(!s.includes('file://'))
+  assert.ok(s.startsWith('model failed (load-model): …/models/pixl-demosaic-v1-bayer/1.0.1/'))
+  assert.ok(s.includes('…/coreml-cache/c31ca11b'))
+  assert.equal(
+    cpuDetail(
+      '/Users/someone/Pictures/a.onnx: refused',
+      ['/Users/someone/Library/Application Support/Playroom/'],
+      '/Users/someone'
+    ),
+    '~/Pictures/a.onnx: refused'
+  )
+  assert.equal(
+    cpuDetail(
+      '/Users/someone/Library/Application Support/Playroom/models/x.onnx',
+      ['/Users/someone/Library/Application Support/Playroom'],
+      '/Users/someone'
+    ),
+    '…/models/x.onnx'
+  )
 })

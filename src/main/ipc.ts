@@ -79,6 +79,7 @@ import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/
 import type { LookRunRequest, PickAnswer } from '../shared/looks/run'
 import { LookRuns } from './looks/runner'
 import { editPhotoRecipe } from './ai/apply'
+import { answerPixlCpu, pixlCpuPending } from './ai/pixlcpu'
 import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
@@ -1066,9 +1067,15 @@ export function registerIpc(s: Services): void {
   handle(IPC.ai.setPixlCpu, async (answer: unknown) => {
     const a = answer === 'yes' || answer === 'no' ? answer : 'ask'
     const switches = await s.switches.setPixlCpu(a)
+    // A question open meanwhile is answered by it.
+    answerPixlCpu(a === 'ask' ? 'later' : a)
     // A RAW planned around the PIXL demosaic for a "no" is planned again.
     if (a !== 'no') s.sessions.tilesStale()
     return switches
+  })
+  handle(IPC.ai.pixlCpuPending, () => pixlCpuPending())
+  handle(IPC.ai.answerPixlCpu, (reply: unknown) => {
+    if (reply === 'yes' || reply === 'no' || reply === 'later') answerPixlCpu(reply)
   })
   handle(IPC.ai.setPixlDemosaic, async (on: boolean) => {
     const switches = await s.switches.setPixlDemosaic(on === true)

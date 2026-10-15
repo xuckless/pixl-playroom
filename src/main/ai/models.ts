@@ -41,6 +41,7 @@ import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
 import { carryOver, keptBesides, retiredModelDirs } from './carryover'
 import {
   acceleratorTrouble,
+  brokenCompile,
   cacheTrouble,
   compilesKeptFor,
   compilesMoved,
@@ -665,6 +666,8 @@ export class ModelStore {
   private readonly cpuOnly = new Set<string>()
   /** CoreML's compile cache is used (off for the session once it is refused: `cacheTrouble`). */
   private compileCache = true
+  /** Compiles a load could not read once (`brokenCompile`): tried again before they go. */
+  private readonly compileRetried = new Set<string>()
 
   /**
    * Run `make` with each of `ids` on the chosen provider, moving a model to
@@ -694,6 +697,26 @@ export class ModelStore {
         // The compile cache refused (its folder, a model file not the roster's): without it.
         if (!signal.aborted && this.compileCache && cacheTrouble(err)) {
           log.warn('CoreML compile cache refused; compiling at every load this session', message)
+          this.compileCache = false
+          continue
+        }
+        // A compile another load was still writing: once more after a moment, then
+        // removed and the cache left off this session. Never the CPU question.
+        const broken = this.compileCache ? brokenCompile(err) : null
+        if (!signal.aborted && broken !== null) {
+          if (!this.compileRetried.has(broken)) {
+            this.compileRetried.add(broken)
+            log.warn('CoreML compile not read; trying again', broken, message)
+            await new Promise((r) => setTimeout(r, 750))
+            continue
+          }
+          log.warn(
+            'CoreML compile not read twice; removed, compiling at every load this session',
+            broken
+          )
+          await rm(join(paths.coremlCache(), broken), { recursive: true, force: true }).catch(
+            () => undefined
+          )
           this.compileCache = false
           continue
         }

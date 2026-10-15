@@ -344,6 +344,12 @@ export const IPC = {
     /** The PIXL demosaic's switch (a development kit; shared/pixldemosaic.ts). */
     setPixlDemosaic: 'ai:set-pixl-demosaic',
     setPixlCpu: 'ai:set-pixl-cpu',
+    /** main → renderer: PIXL's models would run on the processor; null when answered (shared/pixlcpu.ts). */
+    pixlCpuAsk: 'ai:pixl-cpu-ask',
+    /** The question still open, for a window that reloads. */
+    pixlCpuPending: 'ai:pixl-cpu-pending',
+    /** The window's answer: yes, no, or not now. */
+    answerPixlCpu: 'ai:answer-pixl-cpu',
     /** What today's pipeline has (shared/rebuild.ts `Pipeline`): the PIXL demosaic, PIXL Enhance. */
     pipeline: 'ai:pipeline',
     /** A heavy model's sustained-load benchmark; resolves with its result. */
