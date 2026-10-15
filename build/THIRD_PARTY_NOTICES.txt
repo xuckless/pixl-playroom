@@ -1,6 +1,6 @@
 PIXL PLAYROOM: THIRD-PARTY NOTICES
 
-Pixl Playroom 0.4.6-beta includes the third-party software listed below. Each
+Pixl Playroom 0.5.0-beta includes the third-party software listed below. Each
 component is used under its own licence, reproduced here or in section 3. Pixl
 Playroom itself is proprietary software; these licences cover only the components
 they name.
@@ -25,7 +25,7 @@ PIXL Engine's components
   Source:    the source of LibRaw, PIXL's LibRaw shim, libheif and libde265 ships inside the application, beside the engine (app.asar.unpacked/node_modules/@xuckless/pixl-engine-<platform>/); each notice below also names its upstream
   Copyright (c) their respective authors, as each notice below states
 
-    PIXL Engine 0.20.0 (aarch64-apple-darwin)
+    PIXL Engine 0.21.0 (aarch64-apple-darwin)
     Copyright (c) 2026 Syed Ali (xuckless), PixlFoundation. All rights reserved.
 
     This package contains third-party software, listed below with its licence.
@@ -63,7 +63,7 @@ PIXL Engine's components
     LibRaw: CDDL-1.0 (or LGPL-2.1); the shim: MIT
     ================================================================================
 
-    Sources beside it: LibRaw-0.22.2.tar.gz and pixl_libraw-0.20.0-source.tar.gz (REBUILD.md inside says how to rebuild the library and put it in place).
+    Sources beside it: LibRaw-0.22.2.tar.gz and pixl_libraw-0.21.0-source.tar.gz (REBUILD.md inside says how to rebuild the library and put it in place).
 
     LibRaw in PIXL
     ==============
@@ -14329,7 +14329,7 @@ PIXL demosaic v1: demosaic and denoise in one, Bayer
   Licence:   Apache-2.0 (section 3)
   Source:    https://github.com/xuckless/pixl-engine
   xuckless and PIXL (PIXL's own weights)
-  Training data: Version 1 of PIXL's own demosaic (the teacher of 0.20.0's model work as trained, step 300,000), named for 0.20.0 by the owner on 2026-10-14. The whole route from a noisy mosaic to RGB: raw.mosaic_denoise stays null beside it. Told each photosite's noise through `noise`; `MeasuredFloor` reads it from the frame, with the read-noise floor of its darkest flat tiles (Pass 143: an engine built before it refuses the name). Trained on true RGB binned from real sensors (docs/ai/pixl-demosaic.md, section 3.5): raw.pixls.us (CC0 1.0), RawNIND (CC0, and CC BY-SA 4.0 for its LucieB_* scenes, by the owner's decision of 2026-10-07), HDR+ (CC BY-SA 4.0; Google's stated intention of scientific use is not a licence term) and the owner's own photos; the CC BY-SA sets are credited here as their terms ask.
+  Training data: Version 1 of PIXL's own demosaic (the teacher of 0.20.0's model work as trained, step 300,000), named for 0.20.0 by the owner on 2026-10-14. The whole route from a noisy mosaic to RGB: raw.mosaic_denoise stays null beside it. Told each photosite's noise through `noise`; `MeasuredGreenFloor` reads it from the frame's green photosites, with the read-noise floor of their darkest flat tiles, and tells red and blue that line (0.21.0: an engine built before it refuses the name; 0.20.0's ref stated `MeasuredFloor`). Trained on true RGB binned from real sensors (docs/ai/pixl-demosaic.md, section 3.5): raw.pixls.us (CC0 1.0), RawNIND (CC0, and CC BY-SA 4.0 for its LucieB_* scenes, by the owner's decision of 2026-10-07), HDR+ (CC BY-SA 4.0; Google's stated intention of scientific use is not a licence term) and the owner's own photos; the CC BY-SA sets are credited here as their terms ask.
 
     PIXL's own model weights (pixl-demosaic-v1-bayer, pixl-demosaic-v1-xtrans,
     pixl-enhance-v1) are licensed under the Apache License, Version 2.0, below.
@@ -14547,7 +14547,7 @@ PIXL demosaic v1: demosaic and denoise in one, X-Trans
   Licence:   Apache-2.0 (section 3)
   Source:    https://github.com/xuckless/pixl-engine
   xuckless and PIXL (PIXL's own weights)
-  Training data: Version 1 of PIXL's own demosaic (the teacher of 0.20.0's model work as trained, step 300,000), named for 0.20.0 by the owner on 2026-10-14. The whole route from a noisy mosaic to RGB: raw.mosaic_denoise stays null beside it. Its ref states `MeasuredFloor`, which the engine reads from an X-Trans mosaic from Pass 143 on: an engine built before it refuses the request by `raw.demosaic.noise.noise`. Trained on true RGB binned from real sensors, every patch mosaiced as X-Trans (docs/ai/pixl-demosaic.md, section 3.5): raw.pixls.us (CC0 1.0), RawNIND (CC0, and CC BY-SA 4.0 for its LucieB_* scenes, by the owner's decision of 2026-10-07) and HDR+ (CC BY-SA 4.0; Google's stated intention of scientific use is not a licence term), without the owner's photos; the CC BY-SA sets are credited here as their terms ask.
+  Training data: Version 1 of PIXL's own demosaic (the teacher of 0.20.0's model work as trained, step 300,000), named for 0.20.0 by the owner on 2026-10-14. The whole route from a noisy mosaic to RGB: raw.mosaic_denoise stays null beside it. Its ref states `MeasuredGreenFloor` (0.21.0), on X-Trans the same reading as 0.20.0's `MeasuredFloor` to the bit: an engine built before 0.21.0 refuses the name by `raw.demosaic.noise.noise`. Trained on true RGB binned from real sensors, every patch mosaiced as X-Trans (docs/ai/pixl-demosaic.md, section 3.5): raw.pixls.us (CC0 1.0), RawNIND (CC0, and CC BY-SA 4.0 for its LucieB_* scenes, by the owner's decision of 2026-10-07) and HDR+ (CC BY-SA 4.0; Google's stated intention of scientific use is not a licence term), without the owner's photos; the CC BY-SA sets are credited here as their terms ask.
 
     PIXL's own model weights (pixl-demosaic-v1-bayer, pixl-demosaic-v1-xtrans,
     pixl-enhance-v1) are licensed under the Apache License, Version 2.0, below.
