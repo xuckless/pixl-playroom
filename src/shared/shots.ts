@@ -70,3 +70,20 @@ export function groupAround(
   if (alike && alike.length >= 2) return { kind: 'near', keys: [...alike] }
   return null
 }
+
+/**
+ * A group found for a virtual copy (`asked`) through its photo (`own`): the
+ * copy goes in right after its photo, so Survey keeps the one being looked
+ * at. Unchanged when it was the photo itself that was asked about.
+ */
+export function withAsked(
+  group: { kind: ShotGroupKind; keys: string[] } | null,
+  own: string,
+  asked: string
+): { kind: ShotGroupKind; keys: string[] } | null {
+  if (!group || asked === own || group.keys.includes(asked)) return group
+  const keys = [...group.keys]
+  const at = keys.indexOf(own)
+  keys.splice(at < 0 ? keys.length : at + 1, 0, asked)
+  return { ...group, keys }
+}

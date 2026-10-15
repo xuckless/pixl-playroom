@@ -58,6 +58,7 @@ import {
   groupAround,
   NEAR_BITS,
   nearGroups,
+  withAsked,
   type ShotGroupKind,
   type TimedShot
 } from '../../shared/shots'
@@ -1970,7 +1971,9 @@ export class IndexService {
    * The shots taken with a photo, for the Library's Survey of it (N): its
    * burst in its folder, else the photos there whose picture hashes are
    * near its own. Read only: nothing is stacked, and only hashes already
-   * made are compared (no file is read). Null when it stands alone.
+   * made are compared (no file is read). A virtual copy is grouped by its
+   * photo's capture and picture, and shown beside it. Null when it stands
+   * alone.
    */
   shotGroup(
     key: string,
@@ -1987,7 +1990,8 @@ export class IndexService {
       .map((r) => ({ key: keyOf(r.id, null), hash: r.dhash as string }))
     // The near groups only when there is no burst: comparing hashes is the slower half.
     const near = runs.some((r) => r.includes(own)) ? [] : nearGroups(hashed, bits)
-    return groupAround(own, runs, near)
+    // A virtual copy asked about: its photo's group, with the copy beside it.
+    return withAsked(groupAround(own, runs, near), own, key)
   }
 
   // ── duplicates ──

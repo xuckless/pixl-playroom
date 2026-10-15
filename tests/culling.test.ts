@@ -14,7 +14,7 @@ import {
   surveyLayout,
   surveyOf
 } from '../src/shared/cullnav'
-import { bursts, groupAround, nearGroups } from '../src/shared/shots'
+import { bursts, groupAround, nearGroups, withAsked } from '../src/shared/shots'
 import {
   DEFAULT_PREVIEW_CAP,
   evictions,
@@ -321,4 +321,12 @@ test('suggested rejects are never saved as a smart collection (no rule keeps the
   assert.equal(savableFilter(f({ minRating: 3 })), true)
   assert.equal(savableFilter(f({ suggested: true })), false)
   assert.equal(savableFilter(f({ suggested: true, minRating: 3 })), false)
+})
+
+test('a virtual copy surveys its photo’s burst, beside its photo', () => {
+  const g = { kind: 'burst' as const, keys: ['1', '2', '3'] }
+  assert.deepEqual(withAsked(g, '2', '2:c1').keys, ['1', '2', '2:c1', '3'])
+  assert.equal(withAsked(g, '2', '2'), g, 'the photo itself: unchanged')
+  assert.equal(withAsked(null, '2', '2:c1'), null, 'alone stays alone')
+  assert.deepEqual(withAsked(g, '9', '9:c').keys, ['1', '2', '3', '9:c'])
 })

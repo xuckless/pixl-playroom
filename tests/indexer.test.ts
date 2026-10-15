@@ -292,6 +292,12 @@ test('a photo’s shots: its burst, else the pictures nearly the same, never sta
     })
     const [a, b, c, d, e] = items
     assert.deepEqual(f.index.shotGroup(b.key), { kind: 'burst', keys: [a.key, b.key, c.key] })
+    // A virtual copy of a burst's shot: the burst, the copy beside its photo.
+    const copy = f.index.createCopy(b.key)
+    assert.deepEqual(f.index.shotGroup(copy.key), {
+      kind: 'burst',
+      keys: [a.key, b.key, copy.key, c.key]
+    })
     assert.equal(f.index.shotGroup(d.key), null, 'no hashes yet: alone')
     const hashes = [
       'ffff000000000000',
