@@ -24,6 +24,7 @@ import {
   reduceRefused,
   unreadableFile,
   type ConvertRequest,
+  type InputFormat,
   type SourceInfo,
   type WhitePoint
 } from '../shared/engine-types'
@@ -119,6 +120,12 @@ export interface RegionSetup {
   info: SourceInfo
   raw: boolean
   compiled: Compiled
+  /**
+   * What a region is read from when it is not the file: a gain-map photo
+   * edited as HDR renders from its applied rendition (hdrsource.ts), as its
+   * screen preview does, tone mapped the same way.
+   */
+  hdr: { path: string; input: InputFormat; info: SourceInfo } | null
   /** The framed picture at full size: what a region's fractions are of. */
   framed: PictureSize
   margin: number
@@ -960,11 +967,20 @@ export class Library {
     const row = await this.readable(work.row)
     const info = await this.probe(row, engine)
     const raw = row.is_raw === 1
+    // A gain-map photo edited as HDR: its applied rendition, upright, as `graded` reads it.
+    const applied =
+      !raw && editsHdr(recipe, info) ? await ensureHdrSource(this.engine, row, info) : null
+    const hdr = applied
+      ? { path: applied.master.path, input: applied.master.input, info: applied.info }
+      : null
+    const shownInfo = hdr?.info ?? info
     // A RAW's develop is cropped to the sensor's best area: its frame is
     // the one its proxies (or thumbnail source) state, to a pixel or two,
     // taken a little short so a region at its edge is never refused (the
     // first region's report says it exactly).
-    let frame: PictureSize = uprightSize(info, sourceOrientation(info, null))
+    let frame: PictureSize = applied
+      ? { width: applied.master.width, height: applied.master.height }
+      : uprightSize(info, sourceOrientation(info, null))
     if (raw) {
       const learnt = this.rawFrames.get(row.id)
       const px = learnt ? null : await ensureThumbSource(this.engine, row, info, BACKGROUND_THREADS)
@@ -983,9 +999,9 @@ export class Library {
     ).catch(() => null)
     const compiled = compile(recipe, {
       isRaw: raw,
-      asShot: info.as_shot_white,
+      asShot: shownInfo.as_shot_white,
       exposureOffset: exposureOffsetOf(colourOf(row)),
-      sourceOrientation: raw ? 'Normal' : sourceOrientation(info, null),
+      sourceOrientation: raw || hdr ? 'Normal' : sourceOrientation(info, null),
       frameWidth: frame.width,
       frameHeight: frame.height,
       scale: 1,
@@ -994,7 +1010,8 @@ export class Library {
       maskFrames,
       luts: await lutsFor(recipe, paths.luts()),
       applyCrop: true,
-      hdr: false
+      // As the screen preview's grade (`graded`): an HDR source graded as HDR, then shown in SDR.
+      hdr: shownInfo.is_hdr
     })
     // The oriented frame after the lens correction's crop, then the framing's.
     let lensed = { width, height }
@@ -1024,7 +1041,7 @@ export class Library {
         (r) => Math.min(Math.ceil(r.pixels), Math.max(framed.width, framed.height)),
         () => 0
       )
-    return { row, info, raw, compiled, framed, margin: Math.max(REGION_MARGIN, margin) }
+    return { row, info, raw, compiled, hdr, framed, margin: Math.max(REGION_MARGIN, margin) }
   }
 
   /**
@@ -1039,16 +1056,19 @@ export class Library {
     engine: EngineClient,
     signal?: AbortSignal
   ): Promise<{ x: number; y: number; width: number; height: number }> {
-    const { row, info, raw, compiled, framed } = setup
+    const { row, info, raw, compiled, hdr, framed } = setup
     const px = regionPixels(rect, framed.width, framed.height)
     const report = await engine.convert(
       {
-        ...blankRequest(row.path, out, raw ? 'Raw' : info.input, raw ? null : info),
+        ...(hdr
+          ? blankRequest(hdr.path, out, hdr.input)
+          : blankRequest(row.path, out, raw ? 'Raw' : info.input, raw ? null : info)),
         raw: raw ? rawMaster(colourOf(row)) : null,
         encode: { Jpeg: { quality: 92, subsampling: 'None', optimize: false } },
         pixel: { depth: 'Eight', channels: 3 },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
-        color: displayPolicy(info, 'DisplayP3'),
+        // Tone mapped as the screen preview is (`graded`), so the 1:1 lies over it unchanged.
+        color: hdr ? displayPolicy(hdr.info, 'Srgb') : displayPolicy(info, 'DisplayP3'),
         grade: compiled.grade,
         framing: compiled.framing,
         lens: compiled.lens,

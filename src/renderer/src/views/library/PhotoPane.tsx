@@ -8,6 +8,7 @@ import {
   type Rect,
   type Viewport
 } from '../../../../shared/view'
+import { zoomSize } from '../../../../shared/previews'
 import { Stars } from '../../components/ui'
 import { api } from '../../lib/api'
 import { LABEL_COLOURS } from '../../lib/helpers'
@@ -70,12 +71,12 @@ export const PhotoPane = memo(function PhotoPane({
   const focus = full?.key === item.key ? full.f : null
   /** The last 1:1 size this pane had: the next shot of a burst is the same size. */
   const [lastFull, setLastFull] = useState<{ width: number; height: number } | null>(null)
-  const dims = focus ?? lastFull ?? shown
+  const can = previewable(item)
+  const dims = zoomSize(can, focus, lastFull, shown)
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
   const viewport: Viewport | null =
     box.w > 0 && dims ? { box, width: dims.width, height: dims.height, dpr } : null
-  const zoomed = pane !== null && view.scale !== 'fit'
-  const can = previewable(item)
+  const zoomed = pane !== null && can && view.scale !== 'fit'
 
   // What the zoom keys read: kept current without registering again.
   const now = useRef({ viewport, item, box, dpr })

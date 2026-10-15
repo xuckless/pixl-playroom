@@ -12,8 +12,9 @@
  *   sensor's size: that preview, whole. Any other unedited photo: its own
  *   pixels, whole. Otherwise (an edited photo, a RAW with a small preview)
  *   the part in view is rendered at 1:1 by the engine, once per view.
- * - The previews folder is a cache with a cap (Settings › Library › Storage,
- *   `DEFAULT_PREVIEW_CAP`): past it the least recently shown go first.
+ * - The previews folder is a cache with a cap (Settings › Projects &
+ *   interface › Storage, `DEFAULT_PREVIEW_CAP`): past it the least recently
+ *   shown go first.
  */
 import type { SourceInfo } from './engine-types'
 
@@ -91,4 +92,18 @@ export function regionPixels(
     width: Math.max(1, Math.min(width - x, Math.ceil(r.width * width))),
     height: Math.max(1, Math.min(height - y, Math.ceil(r.height * height)))
   }
+}
+
+/**
+ * The size a Loupe or Compare pane zooms by: its 1:1's, else the last 1:1
+ * it showed (the next shot of a burst is the same size), else its screen
+ * preview's. None for a photo with no larger picture (offline, unreadable):
+ * its thumbnail stays fitted and Z does nothing.
+ */
+export function zoomSize<T extends { width: number; height: number }>(
+  previewable: boolean,
+  ...sizes: (T | null | undefined)[]
+): T | null {
+  if (!previewable) return null
+  return sizes.find((s): s is T => !!s) ?? null
 }
