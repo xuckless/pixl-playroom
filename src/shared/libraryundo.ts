@@ -174,6 +174,23 @@ export function metaRedoPlan(
   return { keys, skipped }
 }
 
+/**
+ * What each of `keys` has now, from `items` (the listing shown, then main's
+ * answer for the rest): the values found, added to `into`, and the keys
+ * still missing. An undo checks a photo rated in another folder too.
+ */
+export function metaValuesOf(
+  items: Iterable<({ key: string } & MetaValues) | undefined>,
+  keys: readonly string[],
+  into = new Map<string, MetaValues>()
+): { now: Map<string, MetaValues>; missing: string[] } {
+  const want = new Set(keys)
+  for (const it of items)
+    if (it && want.has(it.key))
+      into.set(it.key, { rating: it.rating, flag: it.flag, label: it.label })
+  return { now: into, missing: keys.filter((k) => !into.has(k)) }
+}
+
 /** The entry cut down to `keys` (what an undo or redo actually changed). */
 export function onlyKeys<E extends UndoEntry>(e: E, keys: readonly string[]): E {
   const keep = new Set(keys)

@@ -91,6 +91,20 @@ export function keepPinned<T extends { key: string }>(
 }
 
 /**
+ * Whether the pinned item shows only because it is pinned (the filter,
+ * `passes`, would hide it): it is not counted among the photos shown.
+ */
+export function pinnedOnly<T extends { key: string }>(
+  items: readonly T[],
+  pinned: string | null,
+  passes: (item: T) => boolean
+): boolean {
+  if (pinned === null) return false
+  const it = items.find((i) => i.key === pinned)
+  return it !== undefined && !passes(it)
+}
+
+/**
  * The photos a rating, flag or label key acts on (UX-13): the selection (or
  * the focus) in the Grid; the shown photo in Develop and in the Library's
  * single-photo modes.

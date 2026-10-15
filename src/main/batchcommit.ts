@@ -101,35 +101,45 @@ async function follow(s: BatchServices, recipes: { key: string; recipe: Recipe }
 /**
  * Write a chunk of a batch: for each photo that changes, its Version (when
  * the batch keeps one) and its step, with the recipe saved alongside. An open
- * photo follows, and the thumbnails re-render. Returns the items after and
- * each changed photo's step.
+ * photo follows, and the thumbnails re-render. Returns the items after,
+ * each changed photo's step, and the photos that failed (`failed`, on top of
+ * any the caller found): one that fails never costs the others their step,
+ * nor the batch its Undo of what was written.
  */
 export async function commitBatch(
   s: BatchServices,
   changes: BatchChange[],
-  tag: BatchTag
+  tag: BatchTag,
+  failed: BatchResult['failed'] = []
 ): Promise<BatchResult> {
   const label = batchLabel(tag.label, tag.id)
   const steps: BatchResult['steps'] = []
   const written: { key: string; recipe: Recipe }[] = []
   for (const { key, before, next } of changes) {
     if (sameValue(before, next)) continue
-    // What it had before the batch came over it, a Version to step back to.
-    if (tag.version)
-      await s.library.addVersion(key, {
-        name: tag.version.name,
-        kind: 'auto',
-        reason: tag.version.reason,
-        recipe: before
-      })
-    const seq = await s.index.batchStep(key, label, s.planes.slim(before), s.planes.slim(next))
-    if (seq === null) continue
-    steps.push({ key, seq })
-    written.push({ key, recipe: next })
+    try {
+      const seq = await s.index.batchStep(key, label, s.planes.slim(before), s.planes.slim(next))
+      if (seq === null) continue
+      steps.push({ key, seq })
+      written.push({ key, recipe: next })
+      // What it had before the batch came over it, a Version to step back to
+      // (kept only where the step was written; an automatic one never fails it).
+      if (tag.version)
+        await s.library
+          .addVersion(key, {
+            name: tag.version.name,
+            kind: 'auto',
+            reason: tag.version.reason,
+            recipe: before
+          })
+          .catch(() => null)
+    } catch (err) {
+      failed.push({ key, message: err instanceof Error ? err.message : String(err) })
+    }
   }
   await follow(s, written)
   const items = await s.index.itemsFor(changes.map((c) => c.key))
-  return { items, steps }
+  return { items, steps, failed }
 }
 
 /**

@@ -22,6 +22,7 @@ import {
   type AppError,
   type Collection,
   type CrashConsent,
+  type BatchResult,
   type ErrorReport,
   type ExportPreset,
   type HistoryLog,
@@ -483,13 +484,16 @@ export function registerIpc(s: Services): void {
       }
       const current = await currentRecipes(s, keys)
       const changes: BatchChange[] = []
-      for (const key of keys) {
+      const failed: BatchResult['failed'] = []
+      // One photo that can't be read (its RAW offline, for a white balance's
+      // units) is said and left; the rest of the chunk goes on.
+      const change = async (key: string): Promise<BatchChange | null> => {
         const target = sourceWb ? await wbContext(s.library, key) : null
         const from =
           sourceWb && target ? { ...recipe, wb: convertWb(recipe.wb, sourceWb, target) } : recipe
         const live = s.sessions.liveRecipe(key)
         const base = current.get(key)?.recipe
-        if (!base) continue
+        if (!base) return null
         // What was pasted is meant to show: a section it wrote is on again.
         const next = keepWrittenOn(base, applyGroups(base, from, groups))
         // A crop locked to an aspect keeps it on a photo of another shape:
@@ -520,10 +524,18 @@ export function registerIpc(s: Services): void {
             log.info('lens profile not re-resolved for', key, (err as Error).message)
           }
         }
-        changes.push({ key, before: base, next })
+        return { key, before: base, next }
+      }
+      for (const key of keys) {
+        try {
+          const c = await change(key)
+          if (c) changes.push(c)
+        } catch (err) {
+          failed.push({ key, message: err instanceof Error ? err.message : String(err) })
+        }
       }
       // Each photo's Version (paste and sync keep one) and step; planes by reference.
-      return commitBatch(s, changes, tag)
+      return commitBatch(s, changes, tag, failed)
     }
   )
   handle(IPC.library.undoBatch, (steps: unknown) => undoBatch(s, stepRefsOf(steps)))
@@ -534,6 +546,7 @@ export function registerIpc(s: Services): void {
     if (!cur) throw new Error(t('the photo is not in the library'))
     return s.planes.slim(effective(cur.recipe, cur.row.is_raw === 1))
   })
+  handle(IPC.library.itemsOf, (keys: string[]) => s.index.itemsFor(keys))
   handle(IPC.library.prioritize, (keys: string[]) => s.library.prioritize(keys))
   handle(IPC.library.resetRecipe, async (keys: string[]) => {
     const { items, recipes } = await s.index.resetRecipes(keys)

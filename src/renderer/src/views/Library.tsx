@@ -21,6 +21,7 @@ import {
   selectionSet,
   useHiddenByFilter,
   useLibrary,
+  useShownCount,
   useTargets,
   useVisible,
   type SortKey
@@ -361,7 +362,8 @@ export function Toolbar(): React.JSX.Element {
   const targets = useTargets()
   const setView = useLibrary((s) => s.setView)
   const open = useDevelop((s) => s.open)
-  const count = useVisible().length
+  // A photo kept only while it has the focus (sticky hide) is not counted as shown.
+  const count = useShownCount()
   const total = useLibrary((s) => s.items.length)
   const pct = ((thumbSize - 100) / 260) * 100
   return (
@@ -844,7 +846,8 @@ export function CullBar(): React.JSX.Element | null {
 
 export function LibraryStatus(): React.JSX.Element | null {
   const source = useLibrary((s) => s.source)
-  const count = useVisible().length
+  // A photo kept only while it has the focus (sticky hide) is not counted as shown.
+  const count = useShownCount()
   const total = useLibrary((s) => s.items.length)
   const selected = useLibrary((s) => s.selection.length)
   if (!source) return null

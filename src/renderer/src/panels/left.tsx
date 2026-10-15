@@ -57,7 +57,6 @@ export function PresetsActions(): React.JSX.Element {
   )
 }
 
-/** The Looks browser, searching for `query` when one is given. */
 /** A saved preset deleted, its toast's Undo saving it back as it was (the same id, UX-14). */
 async function deletePreset(p: Preset): Promise<void> {
   const lib = useLibrary.getState()
@@ -82,6 +81,7 @@ async function deletePreset(p: Preset): Promise<void> {
   }
 }
 
+/** The Looks browser, searching for `query` when one is given. */
 function openLooks(query = ''): void {
   useLooks.setState({ browseQuery: query })
   useLibrary.getState().setDialog('looks')

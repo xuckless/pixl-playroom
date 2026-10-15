@@ -15,7 +15,7 @@ import type {
   MetaTextPatch
 } from '../../../shared/ipc'
 import type { SettingsClipboard } from '../../../shared/clipboard'
-import { keepPinned, rangeKeys, type LibraryMode } from '../../../shared/cullnav'
+import { keepPinned, pinnedOnly, rangeKeys, type LibraryMode } from '../../../shared/cullnav'
 import {
   CONFIRM_ABOVE,
   patched,
@@ -807,13 +807,24 @@ export function useVisible(): LibraryItem[] {
  * it stays (dimmed, tagged "Hidden by filter") until the focus leaves it.
  */
 export function useHiddenByFilter(item: LibraryItem): boolean {
-  return useLibrary(
-    (s) =>
-      s.sticky === item.key &&
-      (applyFilter([item], s.filter).length === 0 ||
-        (s.filter.suggested === true &&
-          suggestedReasons(item, useCull.getState().reasons) === null))
+  return useLibrary((s) => s.sticky === item.key && filteredOut(item, s.filter))
+}
+
+/** The filter (Suggested rejects with it) would not show this photo. */
+function filteredOut(item: LibraryItem, filter: Filter): boolean {
+  return (
+    applyFilter([item], filter).length === 0 ||
+    (filter.suggested === true && suggestedReasons(item, useCull.getState().reasons) === null)
   )
+}
+
+/** How many photos the filter shows: the visible ones, less one kept only by sticky hide. */
+export function useShownCount(): number {
+  const visible = useVisible().length
+  const pinned = useLibrary((s) =>
+    pinnedOnly(s.items, s.sticky, (it) => !filteredOut(it, s.filter))
+  )
+  return visible - (pinned ? 1 : 0)
 }
 
 // The focus left the pinned photo: the filter has its say again.

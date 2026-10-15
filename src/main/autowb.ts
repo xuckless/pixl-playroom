@@ -283,6 +283,5 @@ export async function autoWbBatch(
   await Promise.all([worker(), worker()])
   // In the order asked, whichever was measured first.
   changes.sort((a, b) => keys.indexOf(a.key) - keys.indexOf(b.key))
-  const written = changes.length ? await commitBatch(s, changes, tag) : { items: [], steps: [] }
-  return { ...written, failed }
+  return changes.length ? commitBatch(s, changes, tag, failed) : { items: [], steps: [], failed }
 }

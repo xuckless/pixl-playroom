@@ -154,7 +154,6 @@
   background: rgb(var(--shade-rgb) / 0.6);
   border: 1px solid rgb(var(--fg-rgb) / 0.22);
   backdrop-filter: blur(6px);
-  pointer-events: none;
 }
 /* A suggested reject (Pass 115): dimmed and grey; on hover its colour and reason come back. */
 .thumb.culled .thumb-img img {

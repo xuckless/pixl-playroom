@@ -24,6 +24,7 @@ import {
   EMPTY_STACK,
   metaRedoPlan,
   metaUndoPlan,
+  metaValuesOf,
   onlyKeys,
   pushEntry,
   withoutEntry,
@@ -67,9 +68,17 @@ function inTurn<T>(fn: () => Promise<T>): Promise<T> {
   return p
 }
 
-const valuesNow = (key: string): MetaValues | undefined => {
-  const it = useLibrary.getState().items.find((i) => i.key === key)
-  return it && { rating: it.rating, flag: it.flag, label: it.label }
+/**
+ * What each of `keys` has now: the listing's (written at once, so the
+ * newest), or main's for a photo the folder shown doesn't hold (rated in
+ * another folder, then ⌘Z here).
+ */
+async function valuesNow(
+  keys: readonly string[]
+): Promise<(key: string) => MetaValues | undefined> {
+  const { now, missing } = metaValuesOf(useLibrary.getState().items, keys)
+  if (missing.length > 0) metaValuesOf(await api.library.itemsOf(missing), missing, now)
+  return (key) => now.get(key)
 }
 
 /** The photo open in Develop shows what a batch's undo or redo wrote (its recipe and history). */
@@ -91,13 +100,14 @@ async function runMeta(
   redo: boolean
 ): Promise<{ done: string[]; skipped: string[] }> {
   const lib = useLibrary.getState()
+  const now = await valuesNow(Object.keys(e.before))
   if (redo) {
-    const plan = metaRedoPlan(e, valuesNow)
+    const plan = metaRedoPlan(e, now)
     if (plan.keys.length > 0 && !(await lib.writeMeta(e.patch, plan.keys)))
       return { done: [], skipped: Object.keys(e.before) }
     return { done: plan.keys, skipped: plan.skipped }
   }
-  const plan = metaUndoPlan(e, valuesNow)
+  const plan = metaUndoPlan(e, now)
   const done: string[] = []
   for (const w of plan.writes) if (await lib.writeMeta(w.patch, w.keys)) done.push(...w.keys)
   return { done, skipped: plan.skipped }

@@ -214,6 +214,8 @@ const api = {
       call<BatchUndoResult>(IPC.library.redoBatch, steps),
     /** A photo's settings as seen (switched-off sections as their defaults), slim. */
     copyRecipe: (key: string) => call<Recipe>(IPC.library.copyRecipe, key),
+    /** Photos' items by key, whether the listing shown has them or not. */
+    itemsOf: (keys: string[]) => call<(LibraryItem | undefined)[]>(IPC.library.itemsOf, keys),
     resetRecipe: (keys: string[]) =>
       call<(LibraryItem | undefined)[]>(IPC.library.resetRecipe, keys),
     prioritize: (keys: string[]) => call<void>(IPC.library.prioritize, keys),

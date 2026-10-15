@@ -2691,9 +2691,14 @@ export class IndexService {
    * paste from before batches wrote history) catches up with one, as an open
    * in Develop would. Then `next` is one step under `label`, saved with the
    * recipe (its first step makes the photo's project). Returns the step's
-   * seq, or null when `next` changed nothing.
+   * seq, or null when `next` changed nothing. A photo whose original is
+   * gone (its drive unplugged) and that has no project yet is refused: its
+   * first step would make a project with nothing to carry.
    */
   batchStep(key: string, label: string, before: Recipe, next: Recipe): number | null {
+    const row = this.row(key)
+    if (!this.projectOf(row) && !existsSync(row.path))
+      throw Object.assign(new Error(tk('{{name}} is offline')), { values: { name: row.name } })
     const log = this.history(key)
     if (!log.base) this.appendHistory(key, tk('Opened'), before)
     else {

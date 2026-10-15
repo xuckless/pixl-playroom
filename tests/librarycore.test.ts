@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -10,6 +10,7 @@ import {
   entrySize,
   metaRedoPlan,
   metaUndoPlan,
+  metaValuesOf,
   onlyKeys,
   pushEntry,
   RING,
@@ -19,7 +20,7 @@ import {
   type MetaValues,
   type RecipeEntry
 } from '../src/shared/libraryundo'
-import { gridMove, keepPinned, metaTargetsFor, rangeKeys } from '../src/shared/cullnav'
+import { gridMove, keepPinned, metaTargetsFor, pinnedOnly, rangeKeys } from '../src/shared/cullnav'
 import {
   batchLabel,
   batchOf,
@@ -41,7 +42,7 @@ import {
   NOT_COPIED
 } from '../src/shared/clipboard'
 import { defaultRecipe, type Recipe } from '../src/shared/recipe'
-import { batchTagOf, stepRefsOf } from '../src/main/batchcommit'
+import { batchTagOf, commitBatch, stepRefsOf, type BatchServices } from '../src/main/batchcommit'
 import { IndexService } from '../src/main/indexer/service'
 import type { XmpIo } from '../src/main/indexer/xmp'
 import type { HistoryLog } from '../src/shared/ipc'
@@ -131,6 +132,26 @@ test('undoing ratings puts old values back, grouped, leaving photos changed sinc
   assert.deepEqual(r, { keys: ['a', 'c'], skipped: ['b', 'd', 'gone'] })
 })
 
+test('an undo reads what each photo has now, from the listing and then from main', () => {
+  const listed = [
+    { key: 'a', ...v(3) },
+    { key: 'x', ...v(1) }
+  ]
+  const first = metaValuesOf(listed, ['a', 'b', 'c'])
+  assert.deepEqual([...first.now.keys()], ['a'])
+  assert.deepEqual(first.missing, ['b', 'c'])
+  // Main's answer for the rest (a photo it no longer has comes back undefined).
+  const second = metaValuesOf([{ key: 'b', ...v(4, 'pick') }, undefined], first.missing, first.now)
+  assert.equal(second.now, first.now)
+  assert.deepEqual(second.now.get('b'), v(4, 'pick'))
+  assert.deepEqual(second.missing, ['c'])
+  // Rated in another folder, then ⌘Z: the photo is still checked and put back.
+  const e = meta('m', { b: v(1, 'pick') }, { rating: 4 })
+  assert.deepEqual(metaUndoPlan(e, (k) => second.now.get(k)).writes, [
+    { patch: { rating: 1 }, keys: ['b'] }
+  ])
+})
+
 // ── moving through the grid ──
 
 test('grid moves go by row and keep the column; pages and ends clamp', () => {
@@ -175,6 +196,18 @@ test('sticky hide keeps the pinned photo where it was', () => {
   assert.equal(keepPinned(all, passed, 'a'), passed)
   assert.equal(keepPinned(all, passed, null), passed)
   assert.equal(keepPinned(all, passed, 'gone'), passed)
+})
+
+test("a photo kept only by sticky hide isn't counted as shown", () => {
+  const items = [
+    { key: 'a', flag: null },
+    { key: 'b', flag: 'reject' }
+  ]
+  const passes = (i: { flag: string | null }): boolean => i.flag !== 'reject'
+  assert.equal(pinnedOnly(items, 'b', passes), true)
+  assert.equal(pinnedOnly(items, 'a', passes), false)
+  assert.equal(pinnedOnly(items, null, passes), false)
+  assert.equal(pinnedOnly(items, 'gone', passes), false)
 })
 
 test('ratings act on the selection in the Grid only; on the shown photo elsewhere (UX-13)', () => {
@@ -399,9 +432,56 @@ test('a batch writes one step per photo, its base seeded quietly, and undoes thr
     assert.equal(index.recipe(a).basic.exposure, 2)
     // A photo that is gone is skipped, not an error.
     assert.deepEqual(index.undoBatchSteps([{ key: '999999', seq: 2 }]).skipped, ['999999'])
+    // An original gone (its drive unplugged) with no project: refused, and no
+    // project made without it; one with its project takes the step there.
+    rmSync(join(folder, 'c.jpg'))
+    assert.throws(() => index.batchStep(c, label, r, exposed(r, 1)), /offline/)
+    assert.equal(index.projectPath(c), null)
+    rmSync(join(folder, 'a.jpg'))
+    assert.ok(existsSync(index.projectPath(a)!))
+    assert.ok(index.batchStep(a, batchLabel('Paste settings', 'b3'), exposed(r, 2), exposed(r, 4)))
+    assert.equal(index.recipe(a).basic.exposure, 4)
   } finally {
     await settle()
     index.close()
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('a photo that fails in a chunk is said, and the rest keep their steps', async () => {
+  const r = defaultRecipe(false)
+  const thumbs: string[] = []
+  const versions: string[] = []
+  const s = {
+    index: {
+      batchStep: async (key: string) => {
+        if (key === '2') throw new Error('IMG_2 is offline')
+        return 7
+      },
+      itemsFor: async (keys: string[]) => keys.map(() => undefined)
+    },
+    planes: { slim: (x: Recipe) => x, hydrate: async (x: Recipe) => x },
+    library: {
+      addVersion: async (key: string) => void versions.push(key),
+      queueThumb: (photoId: number) => void thumbs.push(String(photoId))
+    },
+    sessions: { liveRecipe: () => undefined, update: () => {}, flush: async () => {} }
+  } as unknown as BatchServices
+  const out = await commitBatch(
+    s,
+    ['1', '2', '3'].map((key) => ({ key, before: r, next: exposed(r, 1) })),
+    { id: 'b', label: 'Paste settings', version: { name: 'Before', reason: 'paste' } },
+    [{ key: '9', message: 'measured nothing' }]
+  )
+  assert.deepEqual(out.steps, [
+    { key: '1', seq: 7 },
+    { key: '3', seq: 7 }
+  ])
+  assert.deepEqual(out.failed, [
+    { key: '9', message: 'measured nothing' },
+    { key: '2', message: 'IMG_2 is offline' }
+  ])
+  assert.deepEqual(thumbs, ['1', '3'])
+  // Its Version only where the step was written.
+  assert.deepEqual(versions, ['1', '3'])
 })

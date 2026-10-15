@@ -38,7 +38,7 @@ export interface RecipeBatch {
   /** Photos per call (the background engine measures a few at a time). */
   chunk?: number
   /** Write one chunk: main's half of the batch. */
-  write(keys: string[], tag: BatchTag): Promise<BatchResult & { failed?: Failure[] }>
+  write(keys: string[], tag: BatchTag): Promise<BatchResult>
   /** What it did ("Pasted onto 12 photos"). */
   said(count: number): string
 }
@@ -131,7 +131,7 @@ export async function runRecipeBatch(b: RecipeBatch): Promise<BatchOutcome | nul
       const r = await b.write(part, tag)
       useLibrary.getState().patchItems(r.items)
       steps.push(...r.steps)
-      failed.push(...(r.failed ?? []))
+      failed.push(...r.failed)
       done += part.length
       busy.update(job, { progress: done / keys.length, detail: progress() })
     }
