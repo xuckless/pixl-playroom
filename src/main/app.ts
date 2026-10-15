@@ -202,6 +202,13 @@ function createWindow(): void {
   // Previews' pixels go straight from the interactive engine to this page,
   // on a channel each load of it gets afresh.
   win.webContents.on('did-finish-load', () => engine.sendPreviewsTo(win.webContents))
+  // Closing the last window quits, but on macOS: exports are asked about
+  // while the window is still there, or Keep exporting would leave them
+  // running with no window to come back to.
+  win.on('close', (e) => {
+    if (process.platform === 'darwin' || BrowserWindow.getAllWindows().length > 1) return
+    if (!mayQuit(win)) e.preventDefault()
+  })
   win.on('closed', () => {
     rendererGone()
     if (mainWindow === win) mainWindow = undefined
@@ -516,6 +523,31 @@ app.on('window-all-closed', () => {
   }
 })
 
+/** Quitting while exporting was agreed to: closing the last window and the quit it leads to ask once. */
+let quitAgreed = false
+
+/**
+ * Whether quitting may go ahead: while exports are running or queued it is
+ * asked first (Quit / Keep exporting); never of a scripted run.
+ */
+function mayQuit(parent?: BrowserWindow): boolean {
+  if (quitAgreed) return true
+  const ask = exporting?.busy && !hidden ? quitQuestion(exporting.jobs()) : null
+  if (!ask) return true
+  const opts = {
+    type: 'question' as const,
+    buttons: [t('Quit'), t('Keep exporting')],
+    defaultId: 1,
+    cancelId: 1,
+    message: ask.message,
+    detail: ask.detail
+  }
+  const w = parent ?? BrowserWindow.getFocusedWindow() ?? mainWindow
+  const choice = w ? dialog.showMessageBoxSync(w, opts) : dialog.showMessageBoxSync(opts)
+  quitAgreed = choice === 0
+  return quitAgreed
+}
+
 /** The longest a quit waits for pending edits to reach their sidecars. */
 const QUIT_DRAIN_MS = 3000
 let drained = false
@@ -524,20 +556,7 @@ app.on('before-quit', (e) => {
   if (drained) return
   // Exports would stop part-way: asked first (closing the last window on
   // macOS does not quit, and needs no asking; the export goes on).
-  const ask = exporting?.busy && !hidden ? quitQuestion(exporting.jobs()) : null
-  if (ask) {
-    const opts = {
-      type: 'question' as const,
-      buttons: [t('Quit'), t('Keep exporting')],
-      defaultId: 1,
-      cancelId: 1,
-      message: ask.message,
-      detail: ask.detail
-    }
-    const w = BrowserWindow.getFocusedWindow() ?? mainWindow
-    const choice = w ? dialog.showMessageBoxSync(w, opts) : dialog.showMessageBoxSync(opts)
-    if (choice !== 0) return e.preventDefault()
-  }
+  if (!mayQuit()) return e.preventDefault()
   exporting?.stopAll()
   // Pending edits go to the index host, and it closes the database, before
   // anything stops: once, and never for longer than QUIT_DRAIN_MS.
