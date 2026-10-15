@@ -16,6 +16,7 @@ import { MASK_TOOL_GROUPS, startMaskTool } from '../panels/masks/model'
 import { useConfirm } from '../state/confirm'
 import { suggestedReasons, useCull } from '../state/cull'
 import { useDevelop } from '../state/develop'
+import { useExports } from '../state/exports'
 import { aboveWhite, canShowHdr, useDisplay } from '../state/display'
 import { selectionSet, useLibrary } from '../state/library'
 import { useUi } from '../state/ui'
@@ -298,6 +299,7 @@ function fileMenu(): Item[] {
         ? tp('Export {{count}} Photo…', 'Export {{count}} Photos…', lib().targets().length)
         : t('Export…')
     ),
+    exportPrevious(),
     sep,
     ...revealItems()
   ]
@@ -593,7 +595,36 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
       'export',
       n > 1 ? tp('Export {{count}} Photo…', 'Export {{count}} Photos…', n) : t('Export…')
     ),
+    exportPrevious(),
     ...revealItems()
+  ])
+}
+
+/** Export with previous, naming the preset it was ("Web 2048"); plain for settings of one's own. */
+function exportPrevious(): Item {
+  const label = useExports.getState().last?.label
+  return cmd(
+    'export.previous',
+    label ? t('Export with Previous ({{name}})', { name: label }) : t('Export with Previous')
+  )
+}
+
+/**
+ * An export preset's menu in the Export sheet: Rename and Delete for one of
+ * the person's own, Duplicate for any. The sheet is a dialog, which greys
+ * the app's menus: these are its own, so they stay on.
+ */
+export function exportPresetMenu(
+  e: ReactMouseEvent,
+  acts: { rename?: () => void; duplicate: () => void; remove?: () => void }
+): void {
+  e.preventDefault()
+  e.stopPropagation()
+  const on = { enabled: true }
+  popup([
+    ...(acts.rename ? [act('preset.rename', t('Rename…'), acts.rename, on)] : []),
+    act('preset.duplicate', t('Duplicate'), acts.duplicate, on),
+    ...(acts.remove ? [sep, act('preset.delete', t('Delete'), acts.remove, on)] : [])
   ])
 }
 
@@ -728,6 +759,7 @@ export function startMenuUpkeep(): () => void {
     useCull.subscribe(soon),
     useDisplay.subscribe(soon),
     useConfirm.subscribe(soon),
+    useExports.subscribe(soon),
     useLanguage.subscribe(soon),
     usePipeline.subscribe(soon),
     api.menu.onRun((id) => {

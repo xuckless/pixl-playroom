@@ -327,6 +327,61 @@ button.bg-job-link {
   text-overflow: ellipsis;
 }
 
+/* An export just done, in the pill: how it went, then a dot until the queue is opened. */
+.bg-receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+}
+.bg-receipt.partial {
+  color: var(--warn);
+}
+.bg-receipt.failed {
+  color: var(--danger);
+}
+.receipt-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.receipt-dot.partial {
+  background: var(--warn);
+}
+.receipt-dot.failed {
+  background: var(--danger);
+}
+.activity-list li.receipt .activity-what > :first-child {
+  color: var(--text);
+}
+.activity-list li.receipt.partial .activity-what > :first-child {
+  color: var(--warn);
+}
+.activity-list li.receipt.failed .activity-what > :first-child {
+  color: var(--danger);
+}
+.activity-list li.receipt button.sm:not(.icon) {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.receipt-notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+.receipt-notes li {
+  padding: 1px 0;
+  border: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Settings → AI models: the killswitch and the heavy models (views/HeavyModels.tsx). */
 .model-kill .check {
   font-size: var(--fs-title);

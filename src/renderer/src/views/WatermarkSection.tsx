@@ -40,12 +40,20 @@ const BLEND_CSS: Record<WatermarkBlend, React.CSSProperties['mixBlendMode']> = {
 export function WatermarkSection({
   value: w,
   onChange,
-  thumbUrl
+  thumbUrl,
+  open,
+  onOpenChange,
+  right
 }: {
   value: WatermarkSettings
   onChange: (w: WatermarkSettings) => void
   /** The first photo's thumbnail, to preview on. */
   thumbUrl: string | null
+  /** Folded and unfolded by the export sheet (its own when not given). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** Its value in a word, beside the title. */
+  right?: React.ReactNode
 }): React.JSX.Element {
   const [read, setRead] = useState<WatermarkFile | null>(null)
   // Only the file the settings name (a removed or changed one is not shown).
@@ -87,7 +95,14 @@ export function WatermarkSection({
   const mark = file && thumb ? placeMark(w, thumb.w, thumb.h, file.width, file.height) : null
 
   return (
-    <Card id="export.watermark" title={t('Watermark')} defaultOpen={w.enabled || !!w.path}>
+    <Card
+      id="export.watermark"
+      title={t('Watermark')}
+      defaultOpen={w.enabled || !!w.path}
+      open={open}
+      onOpenChange={onOpenChange}
+      right={right}
+    >
       <label className="check">
         <input
           type="checkbox"

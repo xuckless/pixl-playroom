@@ -322,6 +322,11 @@ export const IPC = {
     preview: 'export:preview',
     cancelPreview: 'export:cancel-preview',
     check: 'export:check',
+    facts: 'export:facts',
+    /** The queue: every export queued, running, or lately finished; retry one's failures; show its files. */
+    jobs: 'export:jobs',
+    retry: 'export:retry',
+    show: 'export:show',
     /** main → renderer */
     progress: 'export:progress'
   },
@@ -1058,8 +1063,26 @@ export interface ExportPreview {
   notes: string[]
 }
 
+/**
+ * What the export sheet knows of the photos it would export, read once for
+ * a selection (main/exporter.ts `facts`): how many, which are offline, and a
+ * sample's size and HDR as probed, for the size estimate and the HDR guards.
+ */
+export interface ExportFacts {
+  photos: number
+  offline: number
+  /** The first photos (up to a hundred), as probed: their size upright, before any crop. */
+  sample: { key: string; width: number; height: number; isHdr: boolean; hasGainMap: boolean }[]
+}
+
+/**
+ * One export in the queue (main/exportqueue.ts), as the top bar's pill and
+ * its receipt show it: queued, running, or finished (the last few are kept).
+ */
 export interface ExportProgress {
   jobId: string
+  /** The preset it was made with ("Web 2048"), or null for settings of the person's own. */
+  label: string | null
   done: number
   total: number
   current: string | null
@@ -1067,6 +1090,22 @@ export interface ExportProgress {
   errors: { name: string; message: string; warning?: boolean }[]
   finished: boolean
   outputs: string[]
+  /** Waiting its turn behind another export. */
+  queued: boolean
+  /** When it began writing (ms since the epoch); null while queued. */
+  startedAt: number | null
+  /** When it ended; null until then. */
+  finishedAt: number | null
+  /** Photos passed over because their original is offline, by name. */
+  skipped: string[]
+  /** Its engine is waiting for the editing to settle ("Paused while you edit"). */
+  paused: boolean
+  /** Stopped before it was done. */
+  stopped: boolean
+  /** The disk filled: the export stopped at the first file that would not fit. */
+  diskFull: boolean
+  /** Photos Retry would export again: those that failed, and those a full disk left. */
+  retryable: number
 }
 
 export type { BasicSetting, ConvertReport }

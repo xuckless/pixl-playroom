@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'fs'
 import {
   allConflicts,
   chordLabel,
@@ -92,6 +93,22 @@ test('conflicts only count where both commands listen', () => {
   assert.equal(conflictOf(cmds, b, 'before', parseChord('1')), 'rate')
   assert.equal(conflictOf(cmds, b, 'rate', parseChord('Backslash')), 'before')
   assert.equal(conflictOf(cmds, b, 'before', parseChord('Y')), null)
+})
+
+test('the default keys never clash, Export with previous’s ⌘⌥⇧E among them', () => {
+  // The commands as lib/commands.ts writes them (it needs the stores, not loaded here).
+  const src = readFileSync(new URL('../src/renderer/src/lib/commands.ts', import.meta.url), 'utf8')
+  const found =
+    /id: '([^']+)',[\s\S]*?context: '([^']+)',\s*(?:\/\/[^\n]*\n\s*)*keys: \[([^\]]*)\]/g
+  const cmds: CommandKey[] = []
+  const b: Record<string, ReturnType<typeof parseChord>[]> = {}
+  for (const m of src.matchAll(found)) {
+    cmds.push({ id: m[1], context: m[2] as CommandKey['context'] })
+    b[m[1]] = [...m[3].matchAll(/'([^']+)'/g)].map((k) => parseChord(k[1]))
+  }
+  assert.ok(cmds.length > 50)
+  assert.deepEqual(b['export.previous'], [parseChord('Mod+Alt+Shift+E')])
+  assert.deepEqual(allConflicts(cmds, b), [])
 })
 
 test('labels follow the platform', () => {

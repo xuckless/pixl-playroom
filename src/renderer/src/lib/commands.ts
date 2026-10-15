@@ -32,6 +32,7 @@ import {
 } from '../panels/masks/model'
 import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
+import { useExports } from '../state/exports'
 import { scoped } from '../state/scope'
 import { useLibrary } from '../state/library'
 import { choosePhotos } from './openPhotos'
@@ -252,6 +253,16 @@ export const COMMANDS: KeyCommand[] = [
     context: 'global',
     keys: ['Mod+Shift+E'],
     run: () => lib().setDialog('export')
+  },
+  {
+    id: 'export.previous',
+    label: tk('Export with previous'),
+    group: 'Library',
+    context: 'global',
+    // Lightroom's key for it.
+    keys: ['Mod+Alt+Shift+E'],
+    when: () => useExports.getState().last !== null && lib().targets().length > 0,
+    run: () => void useExports.getState().previous()
   },
   {
     id: 'library.openPhotos',
