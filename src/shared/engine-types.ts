@@ -2709,6 +2709,21 @@ export function unsupportedRaw(detail: EngineErrorShape['detail']): string | nul
 }
 
 /**
+ * Whether a RAW was refused for having no embedded preview the engine can
+ * decode (0.21.0, OBS-1: `Unsupported`, operation `raw embedded preview`):
+ * the one refusal a preview's caller develops instead. An I/O failure or a
+ * picture past `limits` is not a reason to develop.
+ */
+export function noPreview(code: string, detail: EngineErrorShape['detail']): boolean {
+  return code === 'Unsupported' && detail?.['Unsupported']?.['operation'] === 'raw embedded preview'
+}
+
+/** Whether a request was refused for its `decode_reduce` (a lossless JPEG): ask again without. */
+export function reduceRefused(code: string, detail: EngineErrorShape['detail']): boolean {
+  return code === 'InvalidRequest' && detail?.['InvalidRequest']?.['field'] === 'decode_reduce'
+}
+
+/**
  * Plainer words for the errors engine 0.17 added: a picture past `limits`
  * (`TooLarge`: `{ field, pixels, side }`) and a master cache made by another
  * engine (`StaleCache`). Null for every other code.

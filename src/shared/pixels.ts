@@ -84,6 +84,13 @@ export const RAW_DEVELOP_REV = 's'
 export const ENGINE_RENDER_REV = 4
 
 /**
+ * The making of an unedited RAW's thumbnail, its embedded preview. 2 is
+ * engine 0.21 (OBS-1): sized from the preview, not the sensor (a body whose
+ * preview is about 1600 px across had thumbnails of about 108).
+ */
+export const PREVIEW_THUMB_REV = 2
+
+/**
  * A step on a RAW made from another develop than the photo's now (rawler's,
  * before engine 0.16; the file's own camera colour when the photo has since
  * moved to PIXL's, or back): its pixels are that develop's, so where it is

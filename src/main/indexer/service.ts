@@ -50,7 +50,7 @@ import type {
   Snapshot,
   SourceListing
 } from '../../shared/ipc'
-import { ENGINE_RENDER_REV } from '../../shared/pixels'
+import { ENGINE_RENDER_REV, PREVIEW_THUMB_REV } from '../../shared/pixels'
 import { groupNear } from '../../shared/dupes'
 import { parseRawColour } from '../../shared/rawcolour'
 import { readNames, searchWords } from '../../shared/naming'
@@ -2223,7 +2223,10 @@ export class IndexService {
     const edited = recipeKey !== 'plain'
     // An unedited RAW's thumbnail is its embedded preview, which no develop makes.
     // An edited photo's thumbnail is of the engine that graded it (`ENGINE_RENDER_REV`).
-    const stamp = `${versionStamp(row, !raw || edited)}${edited ? `-e${ENGINE_RENDER_REV}` : ''}-${recipeKey}`
+    // An unedited RAW's since engine 0.21 is sized from its preview, not the
+    // sensor (`PREVIEW_THUMB_REV`): those made before, often far too small, again.
+    const mark = edited ? `-e${ENGINE_RENDER_REV}` : raw ? `-t${PREVIEW_THUMB_REV}` : ''
+    const stamp = `${versionStamp(row, !raw || edited)}${mark}-${recipeKey}`
     const have = existing.thumb_path && existsSync(existing.thumb_path)
     if (existing.thumb_key === stamp && have) return null
     return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }

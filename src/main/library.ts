@@ -14,11 +14,12 @@ import { t } from '../shared/i18n'
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { existsSync } from 'fs'
-import { mkdir, readFile, rm, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { compile } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
-import { PRESERVE_ALL, type SourceInfo } from '../shared/engine-types'
+import { noPreview, PRESERVE_ALL, reduceRefused, type SourceInfo } from '../shared/engine-types'
+import { previewPlan, type PreviewPlan } from '../shared/thumbsize'
 import {
   IPC,
   type HdrKind,
@@ -252,18 +253,33 @@ export class Library {
   }
 
   private async probeOnce(photo: PhotoRow, k: string, engine: EngineClient): Promise<SourceInfo> {
-    // Per app version too: the engine ships with it, and a newer one may say more.
-    const file = join(
-      paths.photoCachePath(photo.id),
-      `probe-${hash32(`${k}:${app.getVersion()}`).toString(16)}.json`
-    )
+    // Per app version and per engine build too (a development run's engine
+    // shares the app's version): a newer engine may say more (0.21's
+    // `raw_previews`). Before the engine has said which it is, it is asked.
+    const file = (): string | null => {
+      const status = engine.getStatus()
+      const build = status.build?.commit ?? status.version
+      if (!build) return null
+      const name = hash32(`${k}:${app.getVersion()}:${build}`).toString(16)
+      return join(paths.photoCachePath(photo.id), `probe-${name}.json`)
+    }
+    const known = file()
     let info: SourceInfo | null = null
     try {
-      info = JSON.parse(await readFile(file, 'utf8')) as SourceInfo
+      if (!known) throw new Error('the engine has not said which build it is')
+      info = JSON.parse(await readFile(known, 'utf8')) as SourceInfo
     } catch {
       info = await engine.probe(photo.path)
-      await mkdir(paths.photoCachePath(photo.id), { recursive: true })
-      await writeFile(file, JSON.stringify(info)).catch(() => undefined)
+      const to = file()
+      if (to) {
+        const dir = paths.photoCachePath(photo.id)
+        await mkdir(dir, { recursive: true })
+        await writeFile(to, JSON.stringify(info)).catch(() => undefined)
+        // Those of another version or engine are not read again.
+        for (const f of await readdir(dir).catch(() => [] as string[]))
+          if (/^probe-[0-9a-f]+\.json$/.test(f) && join(dir, f) !== to)
+            await rm(join(dir, f), { force: true }).catch(() => undefined)
+      }
     }
     this.probes.set(k, info)
     // The grid's HDR badge learns what the file is.
@@ -595,8 +611,6 @@ export class Library {
     const recipe = await this.planes.hydrate(work.recipe)
     const row = await this.readable(work.row)
     const key = keyOf(row.id, job.copyId)
-    const raw = row.is_raw === 1
-
     const info = await this.probe(row)
     const out = join(
       paths.thumbs(),
@@ -612,26 +626,7 @@ export class Library {
     if (!edited) {
       // The quickest honest picture: a RAW's embedded preview, anything else
       // its own pixels, upright and small.
-      const rawMode = raw ? ('EmbeddedPreview' as const) : null
-      const orientation = sourceOrientation(info, rawMode)
-      const long = Math.max(info.width, info.height)
-      const factor = Math.min(1, THUMB_EDGE / long)
-      try {
-        await this.engine.convert({
-          ...blankRequest(row.path, out, info.input, info),
-          ...base,
-          raw: rawMode,
-          resize: factor < 1 ? { Scale: { factor } } : 'None',
-          framing:
-            orientation === 'Normal'
-              ? null
-              : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
-        })
-      } catch (err) {
-        if (!raw) throw err
-        // Some RAWs have no usable embedded preview: develop instead.
-        await this.graded(row, info, recipe, out, base)
-      }
+      await this.unedited(row, info, THUMB_EDGE, out, base, recipe)
     } else if (!picture || !(await this.shrunk(picture, out, base))) {
       await this.graded(row, info, recipe, out, base)
     }
@@ -663,7 +658,6 @@ export class Library {
   async writeUnedited(photoId: number, edge: number, out: string): Promise<void> {
     const row = await this.readable(await this.index.row(keyOf(photoId, null)))
     const info = await this.probe(row)
-    const raw = row.is_raw === 1
     const base = {
       encode: { Jpeg: { quality: 90, subsampling: 'Quarter' as const, optimize: false } },
       pixel: { depth: 'Eight' as const, channels: 3 },
@@ -671,23 +665,52 @@ export class Library {
       threads: BACKGROUND_THREADS,
       color: displayPolicy(info, 'Srgb')
     }
+    await this.unedited(row, info, edge, out, base, defaultRecipe(true))
+  }
+
+  /**
+   * The photo unedited at most `edge` on its long side (`previewPlan`): a
+   * RAW's embedded preview sized from the preview, a JPEG decoded at a
+   * fraction of its size where that still leaves the edge. Only a RAW with
+   * no preview the engine can decode is developed instead (graded with
+   * `recipe`); any other refusal is the photo's.
+   */
+  private async unedited(
+    row: PhotoRow,
+    info: SourceInfo,
+    edge: number,
+    out: string,
+    base: Record<string, unknown>,
+    recipe: Recipe
+  ): Promise<void> {
+    const raw = row.is_raw === 1
+    const plan = previewPlan(info, raw, edge)
+    if (plan === 'develop') return this.graded(row, info, recipe, out, base)
     const rawMode = raw ? ('EmbeddedPreview' as const) : null
     const orientation = sourceOrientation(info, rawMode)
-    const factor = Math.min(1, edge / Math.max(info.width, info.height))
-    try {
-      await this.engine.convert({
+    const convert = ({ reduce, factor }: PreviewPlan): ReturnType<EngineClient['convert']> =>
+      this.engine.convert({
         ...blankRequest(row.path, out, info.input, info),
         ...base,
         raw: rawMode,
+        decode_reduce: reduce,
         resize: factor < 1 ? { Scale: { factor } } : 'None',
         framing:
           orientation === 'Normal'
             ? null
             : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
       })
+    try {
+      await convert(plan).catch((err) => {
+        // A JPEG the scaled decode cannot read (a lossless one): whole, then.
+        if (!(err instanceof EngineError) || !plan.reduce || !reduceRefused(err.code, err.detail))
+          throw err
+        return convert({ reduce: null, long: plan.long, factor: Math.min(1, edge / plan.long) })
+      })
     } catch (err) {
-      if (!raw) throw err
-      await this.graded(row, info, defaultRecipe(true), out, base)
+      if (!raw || !(err instanceof EngineError) || !noPreview(err.code, err.detail)) throw err
+      // No usable embedded preview after all: develop instead.
+      await this.graded(row, info, recipe, out, base)
     }
   }
 
