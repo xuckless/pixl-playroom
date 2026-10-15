@@ -5,14 +5,16 @@ import { readdirSync, readFileSync, statSync } from 'fs'
 import { join, resolve } from 'path'
 import { logRate, rateLimited } from '../src/main/lograte'
 import { KnownFiles } from '../src/main/knownfiles'
-import { coalesceByKey, mergeChanged } from '../src/main/coalesce'
+import { coalesceByKey, mergeChanged, thumbsAgain } from '../src/main/coalesce'
 import { changedBeyond } from '../src/renderer/src/lib/storechange'
 import { fadeDone, slotKey, swapPicture } from '../src/renderer/src/lib/pictureslots'
 import { LIVE_TILE_MS, liveTiles } from '../src/renderer/src/lib/livetile'
 import { withThumbs } from '../src/renderer/src/views/looks/thumbmerge'
 import { cosmeticChanges, editedCount, withChanged } from '../src/renderer/src/lib/visiblepatch'
 import { floatSettled } from '../src/shared/hdrdisplay'
-import { LANGUAGES } from '../src/shared/i18n/index'
+import { LANGUAGES, t } from '../src/shared/i18n/index'
+import { loadCatalog, startI18n, withLanguage } from '../src/shared/i18n/setup'
+import { relistsOn } from '../src/renderer/src/lib/sources'
 import type { LookThumbEvent } from '../src/shared/ipc'
 import { item } from './items'
 
@@ -115,6 +117,37 @@ test('facts read in gather by photo; a change to the listing takes it whole', ()
   assert.deepEqual([...(mergeChanged(new Set([1]), [2]) ?? [])], [1, 2])
   assert.equal(mergeChanged(new Set([1]), undefined), null)
   assert.equal(mergeChanged(null, [3]), null)
+})
+
+test('facts read in patch the items shown; a collection lists again, as it may match on them', () => {
+  const folder = { kind: 'folder', path: '/p/a' } as const
+  // The folder's files changed: it lists again; its facts alone: the items patched in.
+  assert.equal(relistsOn(folder, '/p/a', false), true)
+  assert.equal(relistsOn(folder, '/p/a', true), false)
+  assert.equal(relistsOn(folder, '/p/b', false), false)
+  assert.equal(relistsOn({ ...folder, deep: true }, '/p/a/sub', false), true)
+  // A smart collection may gain the photos whose camera or date was just read.
+  assert.equal(relistsOn({ kind: 'collection', id: 'c' }, '/p/a', true), true)
+  assert.equal(relistsOn({ kind: 'collection', id: 'c' }, '/p/a', false), true)
+  assert.equal(relistsOn({ kind: 'keyword', path: 'k' }, '/p/a', true), false)
+  assert.equal(relistsOn({ kind: 'photos', paths: [] }, '/p/a', true), false)
+  const dupes = { kind: 'duplicates', folder: '/p/a', threshold: 4 } as const
+  assert.equal(relistsOn(dupes, '/p/a', false), true)
+  assert.equal(relistsOn(dupes, '/p/a', true), false)
+})
+
+test("a fill's thumbnails are queued again only for what the window lists", () => {
+  const listed = new Set(['1', '2'])
+  const items = [
+    item({ key: '1' }),
+    item({ key: '2', offline: true }),
+    // A photo opened on its own filled its whole folder: the others wait.
+    item({ key: '3' })
+  ]
+  assert.deepEqual(
+    thumbsAgain(items, listed).map((i) => i.key),
+    ['1']
+  )
 })
 
 // ── PERF-13: the menus ───────────────────────────────────────────────────────
@@ -242,6 +275,33 @@ test('only English is bundled at start; every other catalog loads when wanted', 
       file
     )
   }
+})
+
+test('a catalog loads before its language is in force, and English stands in until then', async () => {
+  const inst = startI18n('fr')
+  // Started in French with no catalog yet: the English shows.
+  assert.equal(t('Exposure'), 'Exposure')
+  await withLanguage(inst, 'fr')
+  assert.equal(t('Exposure'), 'Exposition')
+  await withLanguage(inst, 'en')
+  assert.equal(t('Exposure'), 'Exposure')
+})
+
+test('a language chosen while another catalog loads is the one in force', async () => {
+  const inst = startI18n('en')
+  // French's catalog in hand, German's still to read: German comes last.
+  await loadCatalog('fr')
+  let wanted = 'de'
+  // German asked first, then French before German's catalog is in.
+  const slow = withLanguage(inst, 'de', () => wanted === 'de')
+  wanted = 'fr'
+  await withLanguage(inst, 'fr', () => wanted === 'fr')
+  await slow
+  assert.equal(inst.language, 'fr')
+  assert.equal(t('Exposure'), 'Exposition')
+  // German stays loaded for a later switch.
+  assert.ok(inst.hasResourceBundle('de', 'translation'))
+  await withLanguage(inst, 'en')
 })
 
 // ── PERF-16: stable selector results ─────────────────────────────────────────
