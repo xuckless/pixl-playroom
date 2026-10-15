@@ -241,7 +241,11 @@ aside.right .panels {
 .spine button.on {
   color: var(--acc);
   border-color: color-mix(in srgb, var(--acc) 40%, transparent);
-  background: linear-gradient(160deg, color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 3%, transparent));
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--acc) 16%, transparent),
+    color-mix(in srgb, var(--acc) 3%, transparent)
+  );
   box-shadow: 0 0 18px -8px var(--glow);
 }
 .spine button.on::after {
@@ -325,7 +329,12 @@ aside.right .panels {
 .rail-group .line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), var(--hair) 40%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    var(--hair) 40%,
+    transparent
+  );
 }
 .rail-item {
   display: flex;
@@ -941,6 +950,120 @@ aside.right .panels.scoped {
    its wrapper's last child: the dividers between them come back here. */
 .seg > .hover-hint:not(:last-child) > button {
   border-right: 1px solid var(--hair);
+}
+
+/* Soft proofing (shell/ProofSetup.tsx): Proof and its chevron read as one
+   control in the View segment, a real box the setup opens under. */
+.seg > .proof-seg {
+  display: inline-flex;
+  align-items: stretch;
+  border-right: 1px solid var(--hair);
+}
+.seg .proof-chevron {
+  padding: 0 6px 0 2px;
+}
+.seg .proof-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+.seg .proof-chevron[aria-expanded='true'] {
+  color: var(--acc);
+}
+.popover.proof-pop {
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+.proof-pop .pp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.proof-pop .pp-label {
+  color: var(--text2);
+  font-size: 12px;
+}
+.proof-pop .pp-field > .muted.small,
+.proof-pop .pp-field > p {
+  margin: 0;
+}
+.proof-pop .seg {
+  width: 100%;
+}
+.proof-pop .seg button {
+  flex: 1;
+}
+.proof-pop .pp-profile {
+  width: 100%;
+  height: 30px;
+}
+.proof-pop .pp-error {
+  margin: 0;
+  color: var(--warn);
+}
+.proof-pop .pp-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px 0;
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+}
+.proof-pop .pp-group {
+  padding: 8px 8px 3px;
+  color: var(--muted);
+}
+.proof-pop .pp-empty {
+  margin: 0;
+  padding: 2px 8px 6px;
+}
+.proof-pop .pp-option {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  min-height: 26px;
+  padding: 3px 8px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text2);
+  text-align: left;
+}
+.proof-pop .pp-option:hover,
+.proof-pop .pp-option:focus-visible {
+  transform: none;
+  background: color-mix(in srgb, var(--acc) 14%, transparent);
+  border-color: transparent;
+}
+.proof-pop .pp-option .pp-mark {
+  width: 10px;
+  flex: none;
+  font-size: 7px;
+  color: var(--acc);
+}
+.proof-pop .pp-option .pp-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proof-pop .pp-option .hint {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+/* CMYK and grey: the engine warns against them, with no preview */
+.proof-pop .pp-option.warn .pp-name {
+  color: var(--muted);
+}
+.proof-pop .pp-copy {
+  align-self: flex-start;
+  gap: 6px;
 }
 .hint-pop .tip-title {
   display: flex;

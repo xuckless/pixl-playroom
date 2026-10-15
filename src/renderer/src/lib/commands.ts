@@ -41,6 +41,7 @@ import { flashHud } from '../views/loupe/hudNote'
 import { loupeZoom, setSpace } from '../views/loupe/zoom'
 import { api, errorText } from './api'
 import { autoWbBatch } from './autowb'
+import { makeProofCopies, makeProofCopy, toggleProofSplit } from './proofing'
 import { t, tk, tp } from './i18n'
 import {
   allConflicts,
@@ -688,6 +689,54 @@ export const COMMANDS: KeyCommand[] = [
     context: 'develop',
     keys: ['Shift+J'],
     run: () => dev().setGamut(!dev().gamut)
+  },
+  {
+    id: 'view.proof',
+    label: tk('Soft proofing'),
+    group: 'View',
+    context: 'develop',
+    keys: ['S'],
+    when: () => !!dev().session,
+    run: () => void dev().setProof(!dev().proof)
+  },
+  {
+    id: 'view.proofSetup',
+    label: tk('Proof setup'),
+    group: 'View',
+    context: 'develop',
+    keys: ['Alt+S'],
+    when: () => !!dev().session,
+    run: (e) => {
+      stop(e)
+      dev().setProofSetup(!dev().proofSetup)
+    }
+  },
+  {
+    id: 'view.proofSplit',
+    label: tk('Screen / proof split'),
+    group: 'View',
+    context: 'develop',
+    keys: ['Shift+Y'],
+    when: () => !!dev().session,
+    run: () => void toggleProofSplit()
+  },
+  {
+    id: 'proof.copy',
+    label: tk('Make a proof copy'),
+    group: 'Edit',
+    context: 'develop',
+    keys: [],
+    when: () => !!dev().session,
+    run: () => void makeProofCopy()
+  },
+  {
+    id: 'library.proofCopies',
+    label: tk('Make proof copies of the selection'),
+    group: 'Library',
+    context: 'library',
+    keys: [],
+    when: () => lib().targets().length > 0,
+    run: () => void makeProofCopies(lib().targets())
   },
   {
     id: 'scopes.next',

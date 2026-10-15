@@ -29,15 +29,15 @@ export function aboveWhite(session: { isRaw: boolean; isHdr: boolean } | null): 
 
 /**
  * Whether Develop is showing a photo in HDR now (Full HDR on, a display that
- * can show it, a photo with light above white). Glass over the photo goes to
- * frost alone then: its rim's bend and saturation lift on light above white
- * glare (LiquidGlass).
+ * can show it, a photo with light above white, and no soft proof: paper has
+ * no light above white). Glass over the photo goes to frost alone then: its
+ * rim's bend and saturation lift on light above white glare (LiquidGlass).
  */
 export function useHdrShown(): boolean {
   const fullHdr = useUi((s) => s.fullHdr)
   const display = useDisplay((s) => s.display)
   const develop = useLibrary((s) => s.view === 'develop')
-  const above = useDevelop((s) => aboveWhite(s.session))
+  const above = useDevelop((s) => aboveWhite(s.session) && !s.proof)
   return develop && fullHdr && canShowHdr(display) && above
 }
 

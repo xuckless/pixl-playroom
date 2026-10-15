@@ -6,6 +6,7 @@ import type { Tip } from '../components/InfoTip'
 import { withKey } from '../lib/commands'
 import { cycleScope, type ScopeKind } from '../../../shared/scopes'
 import { useUi } from '../state/ui'
+import { useDevelop } from '../state/develop'
 import { useScopesView } from '../state/scopesView'
 import { ScopeOptions, ScopeView } from './scopes/ScopeView'
 import { SCOPE_LABEL } from './scopes/labels'
@@ -45,6 +46,19 @@ const TIPS: Partial<Record<ScopeKind, Tip>> = {
 }
 
 /**
+ * While a proof is shown the scopes (and Clipping, and the pickers) read
+ * it, as Lightroom's proof histogram does: said beside the scope's name.
+ */
+export function ProofTag(): React.JSX.Element | null {
+  const shown = useDevelop((s) => s.proof && !!s.picture?.proof && !s.picture.proof.warnOnly)
+  return shown ? (
+    <span className="proof-tag" title={t('Measuring the proof.')}>
+      {t('Proof')}
+    </span>
+  ) : null
+}
+
+/**
  * The scope at the top of the right column, as DaVinci Resolve keeps one:
  * ◀ ▶ step through the histogram, RGB parade, waveform, vectorscope, the
  * colour chart and the CIE chart; the corner button opens them at full size,
@@ -75,6 +89,7 @@ export function Scopes(): React.JSX.Element {
         >
           <Icon name="chevronRight" />
         </button>
+        <ProofTag />
         <span className="spacer" />
         <ScopeOptions kind={kind} />
         {TIPS[kind] && <InfoTip label={t(SCOPE_LABEL[kind])} tip={TIPS[kind]} />}
