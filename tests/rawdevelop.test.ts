@@ -239,6 +239,10 @@ test('the PIXL demosaic is the plan where it is offered, downloaded and switched
   assert.equal(developTag('pixl', false), 'pd')
   // Never a `-pm` variant: the model denoises as it develops.
   assert.equal(developTag('pixl', true), 'pd')
+  // Engine 0.21.0 (E64): a Bayer master moved (red and blue told the greens'
+  // line), so it is named anew and 0.20's is made again; X-Trans did not.
+  assert.equal(developTag('pixl', false, 'Bayer'), 'pdg')
+  assert.equal(developTag('pixl', false, 'XTrans'), 'pd')
 
   // The released roster (no kit): today's plan, whatever is on disk.
   const released = fakeModels(['demosaicnet-bayer', 'pmrid', ...PIXL])
@@ -253,7 +257,7 @@ test('the PIXL demosaic is the plan where it is offered, downloaded and switched
   const p = await scenePlan('Bayer', { pmrid: true })
   assert.equal(p.demosaic, 'pixl')
   assert.equal(p.pmrid, false)
-  assert.equal(p.tag, 'pd')
+  assert.equal(p.tag, 'pdg')
   // What stands in if it is refused: the plan without it.
   assert.deepEqual(p.then, { cfa: 'Bayer', demosaic: 'model', pmrid: true, tag: 'dn-pm' })
   assert.equal((await scenePlan('XTrans')).tag, 'pd')
@@ -289,7 +293,7 @@ test('the PIXL demosaic’s switch off is today’s develop', async () => {
   assert.equal((await scenePlan('Bayer', { pmrid: true })).tag, 'dn-pm')
   assert.equal((await scenePlan('XTrans')).demosaic, 'classic')
   on = true
-  assert.equal((await scenePlan('Bayer', { pmrid: true })).tag, 'pd')
+  assert.equal((await scenePlan('Bayer', { pmrid: true })).tag, 'pdg')
 })
 
 test('a PIXL demosaic develop runs its model alone, PMRID never before it', async () => {
@@ -307,7 +311,7 @@ test('a PIXL demosaic develop runs its model alone, PMRID never before it', asyn
       seen.push(scene)
       return cfa
     })
-    assert.deepEqual(done, { value: cfa, classic: false, ran: 'pd' })
+    assert.deepEqual(done, { value: cfa, classic: false, ran: cfa === 'Bayer' ? 'pdg' : 'pd' })
     assert.deepEqual(seen, [
       { demosaic: { Model: { id, provider: 'accelerated' } }, mosaic_denoise: null }
     ])
@@ -324,7 +328,7 @@ test('a refused PIXL demosaic says so, and the released develop stands in', asyn
   const a = fakeModels(['demosaicnet-bayer', 'pmrid', ...PIXL], { offers: PIXL, pixl: () => on })
   setRawModels(a.m)
   const plan = await scenePlan('Bayer', { pmrid: true })
-  assert.equal(plan.tag, 'pd')
+  assert.equal(plan.tag, 'pdg')
   const scenes: { demosaic: unknown; mosaic_denoise: unknown }[] = []
   const { said, value: done } = await errorsOf(() =>
     withScene(plan, async (scene) => {
@@ -360,7 +364,7 @@ test('a refused PIXL demosaic says so, and the released develop stands in', asyn
   on = false
   assert.equal((await scenePlan('Bayer')).tag, 'dn')
   on = true
-  assert.equal((await scenePlan('Bayer')).tag, 'pd')
+  assert.equal((await scenePlan('Bayer')).tag, 'pdg')
 })
 
 test('X-Trans: the PIXL demosaic is refused for its noise, DemosaicNet develops', async () => {
@@ -443,7 +447,7 @@ test('X-Trans: the PIXL demosaic is refused for its noise, DemosaicNet develops'
   // audit's B1): the next Fujifilm RAW is still the PIXL demosaic's, as a Bayer RAW is
   // (ensureMaster keeps the stand-in for the run, so the 1:1 view does not ask again).
   assert.equal((await scenePlan('XTrans')).tag, 'pd')
-  assert.equal((await scenePlan('Bayer')).tag, 'pd')
+  assert.equal((await scenePlan('Bayer')).tag, 'pdg')
 })
 
 test('a refusal is the model’s or the file’s by the engine’s code and field, not its words', async () => {
@@ -521,7 +525,7 @@ test('a "no" to the processor: the develop of before, by choice, and PIXL planne
   a.m.pixlDeclined = async () => declined
   setRawModels(a.m)
   const plan = await scenePlan('Bayer')
-  assert.equal(plan.tag, 'pd')
+  assert.equal(plan.tag, 'pdg')
   const { said, value: done } = await errorsOf(() =>
     withScene(plan, async (scene) => {
       const id = (scene.demosaic as { Model?: { id: string } }).Model?.id
@@ -568,7 +572,7 @@ test('a PIXL demosaic refused, then DemosaicNet refused: the classic, as before'
   )
   assert.equal(failed.said.length, 1)
   assert.match(failed.said[0], /ENOSPC/)
-  assert.equal((await scenePlan('Bayer')).tag, 'pd')
+  assert.equal((await scenePlan('Bayer')).tag, 'pdg')
 })
 
 test('with a development kit the PIXL and DemosaicNet masters stay side by side', async () => {
@@ -578,10 +582,12 @@ test('with a development kit the PIXL and DemosaicNet masters stay side by side'
   assert.deepEqual(keptMasterTags('dn-pm', false), ['dn', 'dn-pm'])
   assert.deepEqual(keptMasterTags('pd', false), ['pd', 'pd-pm'])
   assert.deepEqual(keptMasterTags('ahd-pm', false), ['ahd', 'ahd-pm'])
+  // A Bayer PIXL develop's own; 0.20's `pd` beside it goes (made again).
+  assert.deepEqual(keptMasterTags('pdg', false), ['pdg', 'pdg-pm'])
   // With a kit: flipping the switch develops nothing again; the quick `ppg` still goes.
-  for (const tag of ['pd', 'dn', 'dn-pm']) {
+  for (const tag of ['pd', 'pdg', 'dn', 'dn-pm']) {
     const kept = keptMasterTags(tag, true)
-    for (const k of ['pd', 'dn', 'dn-pm']) assert.ok(kept.includes(k), `${tag} keeps ${k}`)
+    for (const k of ['pd', 'pdg', 'dn', 'dn-pm']) assert.ok(kept.includes(k), `${tag} keeps ${k}`)
     assert.ok(!kept.includes('ppg'))
   }
   assert.ok(keptMasterTags('ahd', true).includes('pd'))
@@ -664,7 +670,7 @@ test('a frame whose noise cannot be read is told its camera’s measured noise; 
   const { scenePlan, setRawModels, withScene } = await import('../src/main/ai/rawdevelop')
   setRawModels(fakeModels(['demosaicnet-bayer', 'pmrid', ...PIXL], { offers: PIXL }).m)
   const plan = await scenePlan('Bayer')
-  assert.equal(plan.tag, 'pd')
+  assert.equal(plan.tag, 'pdg')
   const unread = Object.assign(
     new Error(
       'invalid request field `raw.demosaic.noise.noise`: the frame’s noise cannot be read: the B plane has 2 brightness levels with enough flat area — state it with MosaicNoise::Stated'
@@ -675,27 +681,48 @@ test('a frame whose noise cannot be read is told its camera’s measured noise; 
   const stated = (scene: { demosaic: unknown }): { k: number; sigma2: number } | null =>
     ((scene.demosaic as Told).Model?.noise?.Map.noise as { Stated?: { k: number; sigma2: number } })
       ?.Stated ?? null
-  // A frame it reads: its planes are kept for the camera at ISO 400.
+  // Frames it reads: their planes are kept for the camera at ISO 400 and 3200
+  // (0.21.0's MeasuredGreenFloor: red and blue carry no fit of their own).
   const fit = { bins: 25, r2: 0.9 }
-  const read = await withScene(
-    plan,
-    async () => ({
-      raw: {
-        demosaic_model: {
-          noise_planes: [
-            { plane: 'R', k: 4e-4, sigma2: 1e-5, fit },
-            { plane: 'Gr', k: 4e-4, sigma2: 1e-5, fit },
-            { plane: 'Gb', k: 4e-4, sigma2: 1e-5, fit },
-            { plane: 'B', k: 4e-4, sigma2: 1e-5, fit }
-          ]
-        }
-      }
-    }),
-    undefined,
-    { camera: 'Canon Test', iso: 400 }
+  const readAt = async (iso: number, k: number, sigma2: number): Promise<boolean> =>
+    (
+      await withScene(
+        plan,
+        async () => ({
+          raw: {
+            demosaic_model: {
+              noise_planes: [
+                { plane: 'R', k, sigma2, fit: null },
+                { plane: 'Gr', k, sigma2, fit },
+                { plane: 'Gb', k, sigma2, fit },
+                { plane: 'B', k, sigma2, fit: null }
+              ]
+            }
+          }
+        }),
+        undefined,
+        { camera: 'Canon Test', iso }
+      )
+    ).classic
+  assert.equal(await readAt(400, 4e-4, 1e-5), false)
+  // One ISO alone is not enough for a sibling at another: the released develop, and why.
+  const { said: early, value: alone } = await errorsOf(() =>
+    withScene(
+      plan,
+      async (scene) => {
+        if ((scene.demosaic as Told).Model?.id?.startsWith('pixl-')) throw unread
+        return 'dn'
+      },
+      undefined,
+      { camera: 'Canon Test', iso: 800 }
+    )
   )
-  assert.equal(read.classic, false)
-  // A sibling at ISO 800 it cannot read: developed again with the noise stated, scaled.
+  assert.equal(alone.classic, true)
+  assert.equal(alone.photoOnly, true)
+  assert.match(alone.refused ?? '', /no noise measured here at ISO 800.*not borrowed/)
+  assert.equal(early.length, 1)
+  assert.equal(await readAt(3200, 3.2e-3, 3e-4), false)
+  // A sibling at ISO 800 it cannot read: developed again with the noise stated, fitted.
   const told: ({ k: number; sigma2: number } | null)[] = []
   const done = await withScene(
     plan,
@@ -710,10 +737,27 @@ test('a frame whose noise cannot be read is told its camera’s measured noise; 
   )
   assert.equal(done.value, 'pd')
   assert.equal(done.classic, false)
-  assert.equal(done.ran, 'pd')
-  assert.match(done.statedFrom ?? '', /Canon Test at ISO 400, scaled to 800/)
+  assert.equal(done.ran, 'pdg')
+  assert.equal(done.statedFrom, 'Canon Test, fitted over ISO 400, 3200')
   assert.equal(told.length, 2)
-  assert.ok(Math.abs(told[1]!.k - 8e-4) < 1e-12 && Math.abs(told[1]!.sigma2 - 4e-5) < 1e-12)
+  const a = (3e-4 - 1e-5) / (3200 ** 2 - 400 ** 2)
+  const b = 1e-5 - a * 400 ** 2
+  assert.ok(Math.abs(told[1]!.k - 8e-4) < 1e-12)
+  assert.ok(Math.abs(told[1]!.sigma2 - (a * 800 ** 2 + b)) < 1e-12)
+  // Another camera's measurements are never borrowed.
+  const other = await errorsOf(() =>
+    withScene(
+      plan,
+      async (scene) => {
+        if ((scene.demosaic as Told).Model?.id?.startsWith('pixl-')) throw unread
+        return 'dn'
+      },
+      undefined,
+      { camera: 'Never Seen', iso: 400 }
+    )
+  )
+  assert.equal(other.value.classic, true)
+  assert.equal(other.value.statedFrom, undefined)
 
   // Nothing to state (no ISO): this photo falls back, said once…
   const { said, value: fell } = await errorsOf(() =>
@@ -730,5 +774,5 @@ test('a frame whose noise cannot be read is told its camera’s measured noise; 
   assert.equal(fell.classic, true)
   assert.match(said[0], /for this photo/)
   // …and every other photo still gets the PIXL demosaic.
-  assert.equal((await scenePlan('Bayer')).tag, 'pd')
+  assert.equal((await scenePlan('Bayer')).tag, 'pdg')
 })

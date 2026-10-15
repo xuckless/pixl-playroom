@@ -20,7 +20,7 @@
  * offers PIXL's own demosaic, which denoises as it develops: where it is
  * offered for the sensor, downloaded and "Use PIXL demosaic" is on
  * (Settings → AI models, on by default), it is the develop, alone (no PMRID
- * before it), under its own tag `pd`. Refused, the develop above stands in,
+ * before it), under its own tag (`pdg` on Bayer since 0.21.0, `pd`). Refused, the develop above stands in,
  * then the classic, and the user is told in the engine's words (the 1:1
  * view's note, the export's receipt). A refusal that is the model's own (it
  * will not load, the provider fails) plans around it until its switch is
@@ -30,6 +30,8 @@
  * code and field, never its words alone (the 0.20.0 audit's B1 and B4).
  */
 import { remember, statedNoiseFor, type NoisePlane, type Shot, type StatedNoise } from './noisebook'
+import type { Unstated } from '../../shared/rawnoise'
+import { t } from '../../shared/i18n'
 import log from 'electron-log/main'
 import { traceRegion } from '../trace'
 import type {
@@ -115,10 +117,14 @@ export function demosaicFor(cfa: RawCfa | null | undefined, model: boolean): Dem
  * What names a full-size develop's file: the demosaic, and `-pm` with PMRID.
  * The develop's other choices are in the photo's stamp (`versionStamp`).
  * The PIXL demosaic is `pd`, never with PMRID: a tag of its own, so a
- * master DemosaicNet made is not taken for its.
+ * master DemosaicNet made is not taken for its. On a Bayer sensor it is
+ * `pdg` since engine 0.21.0 (E64): the roster's `MeasuredGreenFloor` tells
+ * red and blue the greens' noise line, so 0.20's Bayer masters are made
+ * again, and the steps laid on them are marked as from an older develop
+ * (the owner, 2026-10-14). X-Trans is the same to the bit: still `pd`.
  */
-export function developTag(kind: DemosaicKind, pmrid: boolean): string {
-  if (kind === 'pixl') return 'pd'
+export function developTag(kind: DemosaicKind, pmrid: boolean, cfa: RawCfa | null = null): string {
+  if (kind === 'pixl') return cfa === 'Bayer' ? 'pdg' : 'pd'
   return `${kind === 'model' ? 'dn' : kind === 'ahd' ? 'ahd' : 'ppg'}${pmrid ? '-pm' : ''}`
 }
 
@@ -131,7 +137,7 @@ export function developTag(kind: DemosaicKind, pmrid: boolean): string {
 export function keptMasterTags(tag: string, devKit: boolean): string[] {
   const own = tag.replace(/-pm$/, '')
   const kept = [own, `${own}-pm`]
-  return devKit ? [...new Set([...kept, 'pd', 'dn', 'dn-pm'])] : kept
+  return devKit ? [...new Set([...kept, 'pd', 'pdg', 'dn', 'dn-pm'])] : kept
 }
 
 /** The develop chosen for a RAW, before its model sessions are filled in. */
@@ -196,7 +202,13 @@ export async function scenePlan(
     }
     return released
   }
-  return { cfa, demosaic: 'pixl', pmrid: false, tag: developTag('pixl', false), then: released }
+  return {
+    cfa,
+    demosaic: 'pixl',
+    pmrid: false,
+    tag: developTag('pixl', false, cfa),
+    then: released
+  }
 }
 
 /**
@@ -263,6 +275,11 @@ function codeOf(err: unknown): { code: string | null; field: string | null } {
   return { code, field }
 }
 
+/** A stop the caller asked for (`Cancelled`), not a refusal. */
+function cancelled(err: unknown): boolean {
+  return codeOf(err).code === 'Cancelled'
+}
+
 /** What a develop refused for its models says, for an error without a code. */
 const MODEL_WORDS = /raw\.(demosaic|mosaic_denoise)|onnx|session|provider|coreml/i
 
@@ -324,6 +341,16 @@ export interface SceneRun<T> {
   declined?: boolean
 }
 
+/** Why a frame's noise was not stated, for the user (`standInNote`'s words). */
+function unstatedWords(why: Unstated, shot: Shot): string {
+  return why === 'no-shot'
+    ? t('the photo names no camera or ISO to state its noise from')
+    : t(
+        '{{camera}} has no noise measured here at ISO {{iso}}, nor at two other ISOs to fit it from, and another camera’s is not borrowed',
+        { camera: shot.camera ?? '', iso: Math.round(shot.iso ?? 0) }
+      )
+}
+
 /** An engine error's message and code, for a line in the log. */
 function inWords(err: unknown): string {
   const e = err as { message?: unknown; code?: unknown } | null
@@ -364,7 +391,9 @@ export async function withScene<T>(
     if (plan.demosaic === 'pixl') remember(shot, planesOf(value))
     return { value, classic: false, ran: plan.tag }
   } catch (err) {
-    if (signal.aborted) throw err
+    // A develop stopped (its photo left: engine 0.21.0, E6) is neither the
+    // model's trouble nor the frame's: nothing is planned around, nothing said.
+    if (signal.aborted || cancelled(err)) throw err
     const trouble = modelTrouble(err)
     if (plan.demosaic === 'pixl') {
       const id = demosaicModel(plan)!
@@ -391,7 +420,11 @@ export async function withScene<T>(
       // This frame's noise could not be read (E64): stated from what its
       // camera's other frames were measured to have, and developed again.
       const unread = noiseUnread(err)
-      const stated = unread ? statedNoiseFor(shot) : null
+      const told = unread ? statedNoiseFor(shot) : null
+      const stated = told && 'noise' in told ? told : null
+      // Nothing of its own camera to state it from: never another camera's
+      // (the owner, 2026-10-14). The released develop, and the user told why.
+      if (told && 'why' in told) why = `${why}; ${unstatedWords(told.why, shot)}`
       if (stated) {
         try {
           const value = await attempt(stated.noise)
@@ -403,14 +436,14 @@ export async function withScene<T>(
           traceRegion({ step: 'stated', tag: plan.tag, from: stated.source })
           return { value, classic: false, ran: plan.tag, statedFrom: stated.source }
         } catch (again) {
-          if (signal.aborted) throw again
+          if (signal.aborted || cancelled(again)) throw again
           why = `${why}; with its noise stated from ${stated.source}: ${inWords(again)}`
         }
       }
       // A frame whose noise cannot be read is this photo's trouble: the model
       // stays planned for the rest. Anything else is the model's, for the run.
       const scope = unread
-        ? 'for this photo (no noise measured yet to state for it)'
+        ? 'for this photo (no noise of its camera measured here to state for it)'
         : 'now and for the rest of this run (its switch off and on tries again)'
       console.error(
         `PIXL demosaic: ${id} was planned (${plan.tag}) but the engine refused it; developing ${next.tag} instead, ${scope}: ${why}`

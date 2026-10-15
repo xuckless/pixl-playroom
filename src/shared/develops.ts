@@ -8,6 +8,7 @@ import { t, tk } from './i18n'
 
 export const DEVELOP_NAME: Readonly<Record<string, string>> = {
   pd: tk('PIXL demosaic'),
+  pdg: tk('PIXL demosaic'),
   dn: tk('DemosaicNet'),
   'dn-pm': tk('DemosaicNet after RAW denoise'),
   ahd: tk('AHD'),

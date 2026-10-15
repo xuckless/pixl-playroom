@@ -243,8 +243,11 @@ async function patchOverlay(
 /**
  * What a step's model clipped: an AI denoise or Enhance saw a float frame
  * clipped at 1.0, so where the frame is over it its own value stays (the
- * owner, 2026-10-08, until PIXL's own models take values over 1.0). A heal,
- * fill or remove is a replacement, made by the engine in float: never guarded.
+ * owner, 2026-10-08). PIXL Enhance reads the float frame whole since engine
+ * 0.21.0 (E70), but its step is still kept in 16 bits and laid on as an
+ * overlay, which cannot carry light above white (engine ask E79): guarded
+ * too (the owner, 2026-10-14). A heal, fill or remove is a replacement,
+ * made by the engine in float: never guarded.
  */
 function guards(step: PixelStep): boolean {
   return step.kind === 'denoise' || step.kind === 'enhance'
@@ -305,9 +308,11 @@ async function guardOf(deps: PixelDeps, from: ProxyFile): Promise<string | null>
 /**
  * What a model reads of a frame: a float frame (a RAW's Scene master, engine
  * 0.18) as a 16-bit copy, its values clipped to 0..1, since the engine
- * refuses an enhance chain on unbounded samples; the step's result is laid
- * back under the headroom guard (`guards`), so the frame's light over white
- * stays its own. A 16-bit frame is read as it is. Made once per frame file.
+ * refuses unbounded samples to an sRGB model (AI Denoise, an upscale, a
+ * deblur; PIXL Enhance alone reads the frame as it is since 0.21.0: E70,
+ * `readsFloat`); the step's result is laid back under the headroom guard
+ * (`guards`), so the frame's light over white stays its own. A 16-bit frame
+ * is read as it is. Made once per frame file.
  */
 export async function modelInput(
   engine: EngineClient,

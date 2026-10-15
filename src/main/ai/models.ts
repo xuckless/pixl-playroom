@@ -22,7 +22,7 @@ import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { createHash } from 'crypto'
 import { createReadStream, createWriteStream } from 'fs'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { join } from 'path'
 import { pipeline } from 'stream/promises'
@@ -39,7 +39,16 @@ import { ENHANCE_MODEL, FIRST_GUESS_MS_PER_MP, type EnhanceStepKind } from '../.
 import { modelSpeed, referenceOf, testFactor, type ModelSpeed } from '../../shared/modelSpeed'
 import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
 import { carryOver, keptBesides, retiredModelDirs } from './carryover'
-import { acceleratorTrouble, staticPlan } from '../../shared/modelshape'
+import {
+  acceleratorTrouble,
+  cacheTrouble,
+  compilesKeptFor,
+  compilesMoved,
+  KEPT_FOR,
+  staticPlan,
+  withCompileCache,
+  type CompilesKeptFor
+} from '../../shared/modelshape'
 import { NAFNET_DENOISE } from '../../shared/recipe'
 import { SAM3_PHRASE } from '../../shared/ai'
 import { listed } from '../../shared/borrowed'
@@ -284,7 +293,38 @@ export class ModelStore {
       log.info('models retired from disk', ...gone)
       this.emit()
     }
+    await this.clearCompiles().catch((err) =>
+      log.warn('CoreML compile cache not checked', (err as Error).message)
+    )
     return gone
+  }
+
+  /**
+   * CoreML's compiled models off the disk when the roster or the engine has
+   * moved on (OBS-4: the host owns the folder and clears it). A model whose
+   * file changed never finds its old compile anyway (it is keyed by the
+   * file's hash and the runtime's version); this keeps the folder from
+   * growing with ones nothing will load again.
+   */
+  private async clearCompiles(): Promise<void> {
+    const dir = paths.coremlCache()
+    const file = join(dir, KEPT_FOR)
+    const now = compilesKeptFor(this.roster(), this.engineStatus().version ?? null)
+    let had: CompilesKeptFor | null = null
+    try {
+      had = JSON.parse(await readFile(file, 'utf8')) as CompilesKeptFor
+    } catch {
+      // None yet: whatever is there is from before it was kept.
+    }
+    const { clear, keep } = compilesMoved(had, now)
+    if (clear) {
+      const there = await readdir(dir).catch(() => [] as string[])
+      for (const f of there)
+        if (f !== KEPT_FOR) await rm(join(dir, f), { recursive: true, force: true })
+      if (there.some((f) => f !== KEPT_FOR))
+        log.info('CoreML compiles cleared: the models or the engine changed')
+    }
+    if (JSON.stringify(keep) !== JSON.stringify(had)) await writeFile(file, JSON.stringify(keep))
   }
 
   /** Download a model's files, resuming what an earlier try left, and check each. */
@@ -610,13 +650,21 @@ export class ModelStore {
     if (!(await this.installed(id))) throw new ModelMissing(e)
     const chosen = provider ?? (await this.provider())
     const plan = staticPlan(id, e.files[0]?.dimensions ?? [], chosen)
-    const host = await this.host(plan?.provider ?? chosen, extra, plan?.dimensions)
+    // On CoreML, compiled once and kept (OBS-4), where the cache works.
+    const runsOn = withCompileCache(
+      plan?.provider ?? chosen,
+      e.files,
+      this.compileCache ? paths.coremlCache() : null
+    )
+    const host = await this.host(runsOn, extra, plan?.dimensions)
     const ref = pixlModels.ref(id, host, { dir: this.dir(id) }) as Record<string, unknown>
     return plan ? { ...ref, tiling: plan.tiling } : ref
   }
 
   /** Models the accelerator would not load this session: they run on the CPU. */
   private readonly cpuOnly = new Set<string>()
+  /** CoreML's compile cache is used (off for the session once it is refused: `cacheTrouble`). */
+  private compileCache = true
 
   /**
    * Run `make` with each of `ids` on the chosen provider, moving a model to
@@ -643,6 +691,12 @@ export class ModelStore {
         return await make(onCpu)
       } catch (err) {
         const message = String((err as Error)?.message)
+        // The compile cache refused (its folder, a model file not the roster's): without it.
+        if (!signal.aborted && this.compileCache && cacheTrouble(err)) {
+          log.warn('CoreML compile cache refused; compiling at every load this session', message)
+          this.compileCache = false
+          continue
+        }
         // A request the engine refuses for itself is no better on the CPU (modelshape.ts).
         if (signal.aborted || !acceleratorTrouble(err)) throw err
         const left = ids.filter((id) => !onCpu.has(id))

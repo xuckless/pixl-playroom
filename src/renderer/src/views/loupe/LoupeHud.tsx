@@ -1,5 +1,3 @@
-import { useEffect, useState } from 'react'
-import { estimate } from '../../../../shared/ai'
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { Spinner } from '../../fx'
 import { useDevelop } from '../../state/develop'
@@ -7,6 +5,7 @@ import { t, tk } from '../../lib/i18n'
 import { useHudNote } from './hudNote'
 import { isNamed } from '../../../../shared/versions'
 import { stepLabel } from '../../lib/stepLabel'
+import { duration } from '../modelCopy'
 import { useMastering, usePixlDemosaic } from './mastering'
 import type { PixlDemosaicState } from '../../../../shared/ipc'
 
@@ -30,27 +29,33 @@ function PixlChip({ state }: { state: PixlDemosaicState }): React.JSX.Element {
   )
 }
 
-/** A RAW's full-size develop under way: how far by the clock (it takes seconds, and says nothing). */
+/**
+ * A RAW's full-size develop under way: how far by the engine's own count
+ * (the model's windows done), a sweep until it counts anything, and about
+ * how long is left once a tenth is done ("about 4 seconds").
+ */
 function Developing({
-  since,
-  expectedMs
+  fill,
+  left
 }: {
-  since: number
-  expectedMs: number
+  fill: number | null
+  left: number | null
 }): React.JSX.Element {
-  const [progress, setProgress] = useState(0)
-  useEffect(() => {
-    const tick = (): void => setProgress(estimate(Date.now() - since, expectedMs))
-    tick()
-    const timer = setInterval(tick, 250)
-    return () => clearInterval(timer)
-  }, [since, expectedMs])
+  const percent = fill === null ? null : Math.round(fill * 100)
   return (
     <span className="hud-item">
-      <span className="activity-track hud-track" aria-hidden>
-        <i style={{ width: `${Math.round(progress * 100)}%` }} />
+      <span
+        className={`activity-track hud-track${percent === null ? ' sweep' : ''}`}
+        role="progressbar"
+        aria-label={t('Developing RAW')}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        {...(percent !== null ? { 'aria-valuenow': percent } : {})}
+      >
+        <i style={percent === null ? undefined : { width: `${percent}%` }} />
       </span>
       {t('Developing RAW')}
+      {left !== null && <span className="hud-sub t-num">{duration(left)}</span>}
     </span>
   )
 }
@@ -106,7 +111,7 @@ export function LoupeHud({ scale }: { scale: number | null }): React.JSX.Element
         </span>
       )}
       {pixl && <PixlChip state={pixl} />}
-      {developing && <Developing since={mastering.since} expectedMs={mastering.expectedMs} />}
+      {developing && <Developing fill={mastering.fill} left={mastering.leftMs} />}
       {comparingVersion && (
         <span className="hud-item accent">{t('Comparing with {{name}}', { name: versus })}</span>
       )}

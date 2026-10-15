@@ -152,12 +152,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* a RAW's full-size develop under way: its bar fills by the clock */
+/* a RAW's full-size develop under way: its bar fills by the engine's count, sweeps before it */
 .hud-track {
   width: 56px;
 }
 .hud-track i {
   transition: width 0.25s linear;
+}
+.hud-sub {
+  font-size: 11px;
+  color: var(--muted);
 }
 /* the PIXL demosaic's state for the open RAW (a development kit's) */
 .pixl-chip {

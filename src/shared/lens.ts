@@ -36,6 +36,7 @@ import type {
   LateralCaModel,
   LensCorrection,
   LensGeometry,
+  LensReport,
   ShotLens,
   Vignetting
 } from './engine-types'
@@ -806,6 +807,22 @@ export function lensCorrection(l: LensSetting): LensCorrection | null {
     outside: warps ? 'Crop' : null,
     resampler: warps ? 'Lanczos3' : null
   }
+}
+
+/**
+ * The frame a render read, before its lens correction: the report's
+ * `frame_width` × `frame_height` are of the corrected frame, which a warp's
+ * `outside: 'Crop'` makes smaller (6000 × 4000 is 5756 × 3836 at a manual
+ * distortion of 40), and its lens line names the canvas it started from.
+ */
+export function canvasOf(report: {
+  frame_width: number
+  frame_height: number
+  lens: Pick<LensReport, 'canvas_width' | 'canvas_height'> | null
+}): { width: number; height: number } {
+  return report.lens
+    ? { width: report.lens.canvas_width, height: report.lens.canvas_height }
+    : { width: report.frame_width, height: report.frame_height }
 }
 
 /** Fringe bands' width and softness, degrees: Lightroom's purple is about 270–330°. */

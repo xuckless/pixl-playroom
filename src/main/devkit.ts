@@ -27,8 +27,10 @@ export const DEV_KIT = (DEV_BUILD && process.defaultApp && process.env.PLAYROOM_
 export function providerName(p: ExecutionProvider | null | undefined): string {
   if (!p) return 'no model'
   if (typeof p === 'string') return p
-  if ('CoreMl' in p)
-    return `CoreMl (${p.CoreMl.units}${p.CoreMl.static_shapes ? ', static shapes' : ''})`
+  if ('CoreMl' in p) {
+    const shapes = p.CoreMl.static_shapes ? ', static shapes' : ''
+    return `CoreMl (${p.CoreMl.units}${shapes}${p.CoreMl.cache ? ', compile kept' : ''})`
+  }
   return Object.keys(p)[0] ?? 'unknown'
 }
 

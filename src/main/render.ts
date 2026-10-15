@@ -30,6 +30,7 @@ import {
   framingWarps,
   gradeKey,
   orientedFrame,
+  sourceFrameOf,
   type Compiled
 } from '../shared/compile'
 import { lensCorrection, MANUAL_GEOMETRY } from '../shared/lens'
@@ -47,7 +48,7 @@ import { effective } from '../shared/edits'
 import { pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
-import { askOf, scenePlan, type ScenePlan } from './ai/rawdevelop'
+import { askOf, scenePlan, withScene, type ScenePlan } from './ai/rawdevelop'
 import { takeDevelopedNote } from './devkit'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking, frameOf, layStepsOn, workingKey, type WorkingSet } from './pixels/working'
@@ -116,7 +117,8 @@ import {
   gradeShape,
   heldKey,
   inputKey,
-  measuresPhoto
+  measuresPhoto,
+  refineKey
 } from '../shared/gpudrag'
 import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
@@ -134,6 +136,7 @@ import {
   ensureProxies,
   ensureQuickMaster,
   masterCached,
+  masterStoodIn,
   pruneLensed,
   type Proxies,
   type ProxyFile
@@ -151,6 +154,7 @@ import {
   colourOf,
   isLinearRaw,
   rawDevelop,
+  rawMaster,
   RAW_DEVELOP,
   sourceOrientation,
   seedOf,
@@ -378,6 +382,9 @@ function measureOf(stride: number): Measure {
   }
 }
 
+/** A 1:1 tile's held refine planes were refused: the tile is made again without them. */
+class HeldRefused extends Error {}
+
 /** The measurement a `measure` asked for; the engine returns it whenever one was. */
 function statsOf(r: ConvertReport): ImageStats {
   if (!r.stats) throw new Error('the engine measured nothing')
@@ -436,6 +443,12 @@ class Session {
   private abort: AbortController | null = null
   /** The 1:1 region being rendered: a newer one stops it. */
   private regionAbort: AbortController | null = null
+  /**
+   * What this photo's view waits on its RAW develop with (on open and at
+   * 1:1): aborted when the photo is left, so a develop nobody else waits
+   * for stops (engine 0.21.0, E6). A pan never stops it.
+   */
+  private readonly developAbort = new AbortController()
   private pending: Kind | null = null
   /** The render running now, or the last one. */
   private current: Promise<void> = Promise.resolve()
@@ -517,6 +530,7 @@ class Session {
   ) {
     this.dir = rendersDir(row.id)
     this.heldSlot = new HeldSlot(owner.engine, `${key}#held`)
+    this.refineSlot = new HeldSlot(owner.engine, `${key}#refine`)
     this.opened = recipe
     void this.clearEarlier()
   }
@@ -649,13 +663,13 @@ class Session {
         await new Promise((r) => setTimeout(r, DEVELOP_ON_OPEN_MS))
         if (this.closed || this.developedTag || !(await this.pixlPlan())) return
         this.setPixl('developing')
-        await ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+        await ensureMaster(this.owner.bgEngine, this.row, this.file, ask, this.developAbort.signal)
       }
       // The engine refused the model: the released develop stood in, and is planned from now on.
       if (!(await this.pixlPlan())) return this.setPixl('refused')
       await this.adoptDeveloped()
     } catch (err) {
-      if (this.closed) return
+      if (this.closed || isCancelled(err)) return
       this.setPixl('refused')
       this.masterRefused(err)
     }
@@ -1583,6 +1597,13 @@ class Session {
   /** This photo's held measurements, kept in the interactive host (see `HeldSlot`). */
   private readonly heldSlot: HeldSlot
   /**
+   * The 1:1 view's held refine planes (engine 0.21.0, E62): a mask refined
+   * over the whole frame (Edge snap, the solver, Matting) and the whole
+   * photo's measurements, from the full-size render one tile made, kept
+   * apart from a drag's (`heldSlot`, of the proxy's frame). See `region`.
+   */
+  private readonly refineSlot: HeldSlot
+  /**
    * The grade shapes (shared/gpudrag.ts `gradeShape`) the engine refused on
    * the GPU this drag: the rest of the drag goes straight to the CPU. The
    * release forgets them.
@@ -2392,17 +2413,19 @@ class Session {
    * made; until then a quick classic one (PPG, about 1.2 s) at once, the
    * plan's made in the background, and the window told to ask again when it
    * is (the engine's viewing guide, 2026-10-09). The PIXL demosaic has no
-   * quick one before it: the view waits for its master (the bar in the
-   * badge says how far), or says in the window why there is none.
+   * quick one before it: its regions are developed from the RAW until the
+   * master is made (`regionFromRaw`, E66), and a 1:1 view that needs the
+   * master itself waits for it (the bar in the badge says how far), or
+   * says in the window why there is none.
    */
   private async rawMasterForView(): Promise<ProxyFile> {
     const ask = askOf(this.recipe)
     const plan = await scenePlan(this.file.raw_cfa, ask)
     const plain = (): Promise<ProxyFile> =>
-      ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+      ensureMaster(this.owner.bgEngine, this.row, this.file, ask, this.developAbort.signal)
     if (plan.demosaic === 'pixl')
       return plain().catch((err: unknown) => {
-        this.masterRefused(err)
+        if (!isCancelled(err)) this.masterRefused(err)
         throw err
       })
     // A linear DNG has no demosaic to wait for (`isLinearRaw`): its one master, at once.
@@ -2419,7 +2442,9 @@ class Session {
         const note = takeDevelopedNote(this.row.id) ?? undefined
         if (!this.closed) this.owner.send(IPC.develop.tileStale, { key, note })
       },
-      (err: unknown) => log.warn('RAW master for 1:1 not made', (err as Error).message)
+      (err: unknown) => {
+        if (!isCancelled(err)) log.warn('RAW master for 1:1 not made', (err as Error).message)
+      }
     )
     return ensureQuickMaster(this.owner.bgEngine, this.row)
   }
@@ -2432,8 +2457,46 @@ class Session {
     this.owner.send(IPC.develop.renderError, { key: this.key, message, code: 'Master' })
   }
 
+  /**
+   * The RAW develop's own frame size, once a region developed from the RAW
+   * said it (`report.frame_width`): the proxies' is the cells' times their
+   * width, within a pixel or two of it.
+   */
+  private rawFrame: { width: number; height: number } | null = null
+
+  /**
+   * Whether a 1:1 region is developed from the RAW itself until its master
+   * is made (engine 0.21.0, E66): the PIXL demosaic runs only the windows
+   * the region reads, about 1.7 s for a view against 8 s for the whole
+   * frame on an M2 Pro, and its pixels are the master's cut, to the bit
+   * (the owner, 2026-10-14: develop-on-open stays; this only fills the
+   * first 1:1 wait). The plan's, with nothing denoising the mosaic first.
+   */
+  private async regionFromRaw(): Promise<ScenePlan | null> {
+    if (!this.isRaw || this.hdrMaster || isLinearRaw(this.file)) return null
+    const ask = askOf(this.recipe)
+    const plan = await scenePlan(this.file.raw_cfa, ask)
+    if (plan.demosaic !== 'pixl' || plan.pmrid) return null
+    if (await masterCached(this.row, this.file, ask)) return null
+    // Refused for this photo (its noise unread, nothing to state it from):
+    // its stand-in master is the picture, not a region the model develops.
+    if (await masterStoodIn(this.row, this.file, ask)) return null
+    // The master goes on being made meanwhile (on open, or from here): the
+    // region's are the same pixels, so nothing moves when tiles come from it.
+    void ensureMaster(
+      this.owner.bgEngine,
+      this.row,
+      this.file,
+      ask,
+      this.developAbort.signal
+    ).catch((err: unknown) => {
+      if (!isCancelled(err)) this.masterRefused(err)
+    })
+    return plan
+  }
+
   /** A 1:1 (or smaller) render of part of the full-resolution frame. */
-  async region(req: RegionRequest): Promise<RegionResult> {
+  async region(req: RegionRequest, again = false): Promise<RegionResult> {
     const t0 = performance.now()
     // The loupe asks again as it pans and zooms: only the newest view matters.
     this.regionAbort?.abort()
@@ -2447,18 +2510,27 @@ class Session {
     // PIXL Enhance's preview (the steps' frame with a square enhanced) while it is shown.
     const stepsMaster = this.previewFrame() ?? (await this.workingMaster())
     const raw = this.isRaw
+    // Before the PIXL demosaic's master is made: the region developed from the RAW (E66).
+    const developing = stepsMaster ? null : await this.regionFromRaw()
     const src: ProxyFile = stepsMaster
       ? stepsMaster
       : this.hdrMaster
         ? this.hdrMaster
-        : raw
-          ? await this.rawMasterForView()
-          : {
+        : developing
+          ? {
               path: this.row.path,
-              input: this.info.input,
-              width: this.px.frameWidth,
-              height: this.px.frameHeight
+              input: 'Raw',
+              width: this.rawFrame?.width ?? this.px.frameWidth,
+              height: this.rawFrame?.height ?? this.px.frameHeight
             }
+          : raw
+            ? await this.rawMasterForView()
+            : {
+                path: this.row.path,
+                input: this.info.input,
+                width: this.px.frameWidth,
+                height: this.px.frameHeight
+              }
     const masterMs = Math.round(performance.now() - tMaster)
     // The source's own size: the frame its full-size render is of.
     const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
@@ -2511,11 +2583,23 @@ class Session {
     const out = frame ? '' : join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
-    const margin = await this.regionMargin(
-      compiled.grade,
-      await this.lensedSize(compiled.lens, width, height),
-      framed
-    )
+    // A mask refined over the whole frame (E62): the first tile renders the
+    // whole frame anyway (no margin short of it), so it keeps the refine's
+    // plane and the photo's measurements (`refineSlot`); every pan after it
+    // reads them, at the shift's reach, and is that render's pixels, cut.
+    const lensed = await this.lensedSize(compiled.lens, width, height)
+    const tileKey = refineKey(src, compiled)
+    // (Not while the RAW itself is developed for the region: its master comes soon.)
+    let held = developing ? undefined : this.refineSlot.use(tileKey)
+    let reach = await this.regionMargin(compiled.grade, lensed, framed, held)
+    if (held && reach.whole) {
+      // A refine the held planes have none for (a mask refined since): made again.
+      this.refineSlot.drop()
+      held = undefined
+      reach = await this.regionMargin(compiled.grade, lensed, framed)
+    }
+    const hold = reach.whole && !held && !developing
+    const margin = reach.pixels
     const request: ConvertRequest = {
       ...blankRequest(src.path, out, src.input, original),
       raw: null,
@@ -2539,18 +2623,67 @@ class Session {
       lens: compiled.lens,
       retouch: compiled.retouch,
       region: { x, y, width: w, height: h, margin },
+      hold_refines: hold,
       // A Full HDR tile is resized inside the master's float pass, which the
       // engine allows only as a linear resample.
       ...(hdr && zoom < 1 ? { linear_resample: true } : {})
     }
     const tConvert = performance.now()
-    const report = await this.owner.engine
-      .convert(request, {
-        signal,
-        frame,
-        ...(floatSdr ? { native: { sdrCompanion: TILE_COMPANION_EDGE } } : {})
-      })
-      .catch(named(compiled))
+    const native: NativeRefs = {
+      ...(floatSdr ? { sdrCompanion: TILE_COMPANION_EDGE } : {}),
+      ...(hold ? { keepHeld: this.refineSlot.id } : held ? { held: this.refineSlot.id } : {})
+    }
+    const convert = async (r: ConvertRequest): Promise<ConvertReport> => {
+      try {
+        const made = await this.owner.engine.convert(r, {
+          signal,
+          frame,
+          ...(Object.keys(native).length > 0 ? { native } : {})
+        })
+        if (hold) this.refineSlot.kept(made, tileKey)
+        return made
+      } catch (err) {
+        // Held planes refused (a mask changed: "refined for another mask") or
+        // gone with their host: the tile renders the whole frame again, and keeps them.
+        if (!held || !(err instanceof EngineError) || err.cancelled) throw err
+        const v = dragVerdict(err)
+        if (v !== 'held' && v !== 'stale') throw err
+        this.refineSlot.drop()
+        log.info('1:1 held refines let go', err.field ?? err.message)
+        if (again || this.regionAbort !== abort) throw err
+        return Promise.reject(new HeldRefused())
+      }
+    }
+    let report: ConvertReport
+    try {
+      report = await (
+        developing
+          ? withScene(
+              developing,
+              (scene) => convert({ ...request, raw: rawMaster(colourOf(this.row), scene) }),
+              signal,
+              { camera: this.row.camera, iso: this.row.iso }
+            ).then((r) => r.value)
+          : convert(request)
+      ).catch(named(compiled))
+    } catch (err) {
+      if (err instanceof HeldRefused) return this.region(req, true)
+      throw err
+    }
+    // The develop's frame was taken from the proxies' (cells × their width):
+    // once the engine says its own, the region is made again on it. (Its
+    // report's frame is after the lens correction's crop and the user's
+    // turn: `sourceFrameOf` undoes both.)
+    const developed = developing ? sourceFrameOf(report, user) : null
+    if (
+      developed &&
+      (developed.width !== src.width || developed.height !== src.height) &&
+      !again &&
+      this.regionAbort === abort
+    ) {
+      this.rawFrame = developed
+      return this.region(req, true)
+    }
     // The margin fell short of what the grade read: its edges may not meet a neighbour's.
     if (report.region?.short_by)
       log.warn('region margin short', { margin, short_by: report.region.short_by })
@@ -2573,9 +2706,11 @@ class Session {
         ? 'working master (pixel steps)'
         : this.hdrMaster
           ? 'HDR master'
-          : raw
-            ? 'RAW master'
-            : 'the original',
+          : developing
+            ? 'the RAW, developed for the region (E66)'
+            : raw
+              ? 'RAW master'
+              : 'the original',
       masterMs,
       src,
       zoom: req.zoom,
@@ -2596,7 +2731,14 @@ class Session {
         encode_ms: report.encode_ms,
         region: report.region,
         frame_width: report.frame_width,
-        frame_height: report.frame_height
+        frame_height: report.frame_height,
+        // A region developed alone: its model windows against the whole frame's (E66).
+        ...(developing
+          ? {
+              tiles: report.raw?.demosaic_model?.tiles,
+              frame_tiles: report.raw?.demosaic_model?.frame_tiles
+            }
+          : {})
       }
     })
     if (this.regionAbort === abort) this.regionAbort = null
@@ -2650,51 +2792,66 @@ class Session {
   }
 
   /** The last grade's region reach, by what it was asked for (one: tiles of one view share it). */
-  private reach: { key: string; pixels: number } | null = null
+  private reach: { key: string; pixels: number; whole: boolean } | null = null
 
   /**
    * A 1:1 tile's margin (host rule HR-0.20-1, Phase A §3.1): at least what
    * the engine says the grade reads around a pixel, asked again whenever the
    * grade changes. A smoothed op at radius 0.02 on a 4000 px short side
    * needs about 220 px, so 96 px tiles disagreed at their edges. An engine
-   * without `regionReach` keeps the fixed margin. No held measurement here
-   * (Phase A §4.4): a tile is of the full-resolution frame, which no drag's
-   * is, so it measures fresh (a cropped GPU drag passes its own: `dragReach`).
+   * without `regionReach` keeps the fixed margin. A drag's held measurement
+   * is never passed here (Phase A §4.4): a tile is of the full-resolution
+   * frame, which no drag's is. The 1:1 view's own held planes are (`held`,
+   * E62: a refine held reads only its shift). `whole`: nothing short of the
+   * whole frame covers what the grade reads (a mask refined over the whole
+   * frame, not held).
    */
   private async regionMargin(
     grade: Grade | null,
     /** The oriented frame after the lens correction: what the grade runs on. */
     frame: { width: number; height: number },
     /** The render's output at full size, before any resize. */
-    framed: { width: number; height: number }
-  ): Promise<number> {
-    const key = JSON.stringify([grade, frame.width, frame.height, framed.width, framed.height])
+    framed: { width: number; height: number },
+    held?: string
+  ): Promise<{ pixels: number; whole: boolean }> {
+    const key = JSON.stringify([
+      grade,
+      frame.width,
+      frame.height,
+      framed.width,
+      framed.height,
+      held ?? null
+    ])
     if (this.reach?.key !== key) {
       const whole = Math.max(frame.width, frame.height)
-      const pixels = await this.owner.engine
-        .regionReach({
-          grade,
-          sdr_grade: null,
-          frame_width: frame.width,
-          frame_height: frame.height,
-          output_width: framed.width,
-          output_height: framed.height
-        })
+      const r = await this.owner.engine
+        .regionReach(
+          {
+            grade,
+            sdr_grade: null,
+            frame_width: frame.width,
+            frame_height: frame.height,
+            output_width: framed.width,
+            output_height: framed.height
+          },
+          held
+        )
         .then(
           (r) => {
             // A mask snapped by a method that reads the whole frame (Edge
             // snap, the solver, Matting) has no reach short of all of it:
             // the tile is then the whole frame's render, cut (the owner,
-            // 2026-10-11: 1:1 shows the edge the export makes, at its cost).
+            // 2026-10-11: 1:1 shows the edge the export makes, at its cost),
+            // and keeps the refine's plane for the next (E62).
             if (r.pixels >= whole)
-              log.info('1:1 tiles render the whole frame', { reads: r.measured })
-            return Math.min(Math.ceil(r.pixels), whole)
+              log.info('1:1 tile renders the whole frame', { reads: r.measured })
+            return { pixels: Math.min(Math.ceil(r.pixels), whole), whole: r.pixels >= whole }
           },
-          () => 0
+          () => ({ pixels: 0, whole: false })
         )
-      this.reach = { key, pixels }
+      this.reach = { key, ...r }
     }
-    return Math.max(REGION_MARGIN, this.reach.pixels)
+    return { pixels: Math.max(REGION_MARGIN, this.reach.pixels), whole: this.reach.whole }
   }
 
   /** Per lens correction and frame size, the shrink its crop makes (1 when none). */
@@ -3118,8 +3275,10 @@ class Session {
     this.enhancePreview = null
     if (this.screen) dropFiles(this.screen.made)
     this.screen = null
-    // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5).
+    // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5),
+    // and the 1:1 view's held refines (up to 96 MB a refined mask at 24 MP).
     this.heldSlot.drop()
+    this.refineSlot.drop()
     this.owner.gpu.close(this.key)
     this.lookQueue?.close()
     for (const f of this.lookFiles.values()) void rm(f, { force: true }).catch(() => undefined)
@@ -3127,6 +3286,8 @@ class Session {
     clearTimeout(this.letGo)
     this.abort?.abort()
     this.regionAbort?.abort()
+    // Its RAW develop stops, unless something else waits for it or it is nearly done.
+    this.developAbort.abort()
     // Corrected proxies for any other correction are no longer read.
     void pruneLensed(this.row, this.key, this.lensKey(this.recipe))
     void sweepPhoto(this.dir, paths.photoCache(this.row.id))
@@ -3188,7 +3349,8 @@ export class DevelopSessions {
         if (s.row.id === e.photoId) {
           this.send(IPC.develop.master, {
             key,
-            expectedMs: e.phase === 'start' ? e.expectedMs : null
+            phase: e.phase,
+            ...(e.progress ? { progress: e.progress } : {})
           } satisfies MasterEvent)
           if (e.phase !== 'end') continue
           // With a development kit, what developed it and how long it took (devkit.ts).

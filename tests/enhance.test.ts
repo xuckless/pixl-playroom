@@ -10,6 +10,7 @@ import {
   neededModels,
   normaliseEnhance,
   planSteps,
+  readsFloat,
   reconstructParams,
   scaleOf,
   type EnhanceSettings,
@@ -237,4 +238,16 @@ test('PIXL Enhance level 2 runs at its own 1024 / 256 tiling, on CoreML too', as
   assert.deepEqual(step.conditioning, [{ Channel: { value: 2 } }])
   assert.equal(step.strength, 1)
   assert.equal(levelValues(entry, 'denoise').tiling.Fixed.overlap, 128)
+})
+
+test('PIXL Enhance alone reads a RAW’s float frame as it is; any other chain reads it clipped', () => {
+  // Engine 0.21.0 (E70): a float source goes through a chain of PixlRGB model steps only.
+  const pixl: EnhanceSettings = { ...DEFAULT_ENHANCE, pixl: 'denoise', upscale: 'off' }
+  assert.equal(readsFloat(planSteps(pixl, false)), true)
+  assert.equal(readsFloat(planSteps({ ...pixl, pixl: 'sharpen' }, false)), true)
+  // An upscale, a deblur or a JPEG restore is an sRGB model: refused on a float source.
+  assert.equal(readsFloat(planSteps({ ...pixl, upscale: 'x2' }, false)), false)
+  assert.equal(readsFloat(planSteps({ ...pixl, deblur: true }, false)), false)
+  assert.equal(readsFloat(planSteps({ ...pixl, jpeg: 'fbcnn' }, true)), false)
+  assert.equal(readsFloat([]), false)
 })

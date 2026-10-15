@@ -10,6 +10,7 @@
  * after a Version of the photo as it was. Pure, for tests.
  */
 import { normaliseEnhance, withPixl, type EnhanceSettings } from './enhance'
+import type { RawCfa } from './engine-types'
 import type { PixelStep } from './pixels'
 import type { Recipe } from './recipe'
 
@@ -21,9 +22,20 @@ export interface Pipeline {
   pixlEnhance: boolean
 }
 
-/** A RAW step's develop mark (`params.develop`) with the PIXL demosaic named: `+pd`. */
-export function pixlMark(mark: string, pixl: boolean): string {
-  return pixl ? `${mark}+pd` : mark
+/**
+ * A RAW step's develop mark (`params.develop`) with the PIXL demosaic
+ * named: `+pd`, or `+pdg` on a Bayer sensor since engine 0.21.0 (E64: its
+ * red and blue told the greens' noise line, so a Bayer master moved, and a
+ * step made on 0.20's is from an older develop). X-Trans did not move.
+ */
+export function pixlMark(mark: string, pixl: boolean, cfa: RawCfa | null = null): string {
+  if (!pixl) return mark
+  return cfa === 'Bayer' ? `${mark}+pdg` : `${mark}+pd`
+}
+
+/** Whether a step's mark names the PIXL demosaic (either generation). */
+function byPixl(develop: unknown): boolean {
+  return typeof develop === 'string' && /\+pdg?$/.test(develop)
 }
 
 export type RebuildReason = 'rawDenoise' | 'denoise' | 'staleSteps' | 'oldEnhance'
@@ -148,14 +160,7 @@ export function legacyBits(r: Recipe | null, isRaw: boolean): number {
   if (isRaw && (r.detail.rawDenoise || r.detail.ai.enabled)) bits |= LEGACY.rawDenoise
   if (r.pixels.some((s) => s.kind === 'denoise')) bits |= LEGACY.denoise
   if (r.pixels.some(oldEnhance)) bits |= LEGACY.oldEnhance
-  if (
-    isRaw &&
-    r.pixels.some(
-      (s) =>
-        s.kind !== 'denoise' &&
-        !(typeof s.params.develop === 'string' && s.params.develop.endsWith('+pd'))
-    )
-  )
+  if (isRaw && r.pixels.some((s) => s.kind !== 'denoise' && !byPixl(s.params.develop)))
     bits |= LEGACY.notPixl
   return bits
 }

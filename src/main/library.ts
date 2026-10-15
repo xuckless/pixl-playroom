@@ -41,6 +41,7 @@ import {
   type RawColour
 } from '../shared/rawcolour'
 import { EngineError, type EngineClient } from './engine/client'
+import { fillNoiseBook } from './ai/noisefill'
 import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
 import type { PlaneStore } from './planestore'
@@ -600,6 +601,8 @@ export class Library {
     const raw = row.is_raw === 1
 
     const info = await this.probe(row)
+    // The first RAW of a camera and ISO: its noise read into the book (E65).
+    if (raw) void fillNoiseBook(this.engine, row, info)
     const out = cacheFile(
       paths.thumbs(),
       `${row.id}${job.copyId ? '-' + job.copyId : ''}-${hash32(stamp).toString(16)}.jpg`

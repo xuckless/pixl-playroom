@@ -33,6 +33,7 @@ import {
   learnRates,
   pixlModelStep,
   planSteps,
+  readsFloat,
   reconstructParams,
   scaleOf,
   type EnhanceRates,
@@ -70,8 +71,8 @@ import type { ProxyFile } from './proxy'
 
 const TIFF = { Tiff: { compression: 'None' } } as const
 const ICC_ONLY = { exif: false, icc: true, xmp: false, iptc: false } as const
-import { estimate } from '../shared/ai'
 import { ENHANCE_RATE_KEY } from './ai/rates'
+import { stageBar } from './ai/stagebar'
 
 export interface EnhanceAvailability {
   available: boolean
@@ -273,25 +274,29 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
             ...common,
             framing: uprightFraming(orientation, info)
           },
-          { signal: ctx.signal }
+          { signal: ctx.signal, onProgress: counted.onProgress }
         )
       }
-      // A RAW's float frame is read clipped to 0..1 (laid back under its headroom guard).
-      // PIXL Enhance too, for now: its model space reaches above white, but the
-      // engine refuses any enhance chain on a float source (E70), and a step is
-      // kept and laid on in 16 bits, so its highlights stay the frame's own.
-      const input = await modelInput(this.engine, dir, master, heavyThreads())
+      // PIXL Enhance alone reads a RAW's float frame as it is (engine 0.21.0,
+      // E70): the highlights' real shape around white, not a clipped plateau,
+      // and no clipped copy to make. Any other chain reads it clipped to
+      // 0..1. Either way the step is kept in 16 bits and laid back under the
+      // frame's headroom guard, its light above white the frame's own.
+      const input = readsFloat(steps)
+        ? master
+        : await modelInput(this.engine, dir, master, heavyThreads())
       return this.engine.convert(
         { ...blankRequest(input.path, out, input.input), ...common },
-        { signal: ctx.signal }
+        { signal: ctx.signal, onProgress: counted.onProgress }
       )
     }
-    // The engine says nothing until it is done: the bar follows the clock.
+    // The bar follows what the engine counts (E68: the chain's windows, all
+    // laid out before the first runs); the clock only until it counts.
     const rates = await enhanceRates(this.settings)
     const expected = Math.max(1000, estimateMs(steps, master.width, master.height, rates))
     const t0 = Date.now()
     ctx.stage('enhance', 0, `${chainSubject(steps)} · ${row.name}`)
-    const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
+    const counted = stageBar(ctx.progress, expected)
     try {
       let report: ConvertReport
       try {
@@ -300,12 +305,13 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         if (ctx.signal.aborted) throw new Cancelled()
         throw err
       } finally {
-        clearInterval(tick)
+        counted.stop()
       }
       if (ctx.signal.aborted) throw new Cancelled()
       void this.settings
         .setSetting(RATE_KEY, learnRates(steps, rates, Date.now() - t0, expected))
         .catch(() => {})
+      noteClipped(report, row.name)
 
       ctx.stage('save', 0.1, t('Keeping it in the project'))
       const lossless = await storesLossless(row.is_raw === 1, () =>
@@ -415,6 +421,19 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
   }
 }
 
+/**
+ * Light past what a model's encoding reaches (PIXL Enhance: 8× white) is
+ * clamped on its way in, and counted: said in the log, not to the user.
+ */
+function noteClipped(report: ConvertReport, name: string): void {
+  const clipped = (report.enhance ?? []).reduce(
+    (sum, s) =>
+      sum + ('Model' in s ? s.Model.input_clipped : 'Upscale' in s ? s.Upscale.input_clipped : 0),
+    0
+  )
+  if (clipped > 0) log.info('enhance: samples past the model’s reach clamped', clipped, name)
+}
+
 /** The side of the square PIXL Enhance's preview makes, in the photo's own pixels. */
 export const PREVIEW_EDGE = 1024
 
@@ -423,7 +442,8 @@ export const PREVIEW_EDGE = 1024
  * square of the full-size frame about `at` (the view's centre, as a fraction
  * of the frame), with its tiles' overlap of the frame around it so the
  * square's edges are made as the whole photo's would be, then laid back on
- * the frame as a step is (16 bits, guarded on a RAW). The loupe's 1:1 view
+ * the frame as a step is (16 bits, guarded on a RAW). A RAW's float frame is
+ * read as it is, as Apply's is (`readsFloat`). The loupe's 1:1 view
  * reads the result, graded, framed and masked as Apply's step will be. The
  * upscale is not previewed: PIXL Enhance only.
  */
@@ -467,7 +487,8 @@ export async function makeEnhancePreview(
     engine.convert(
       {
         ...blankRequest(from.path, to, from.input),
-        pixel: { depth: 'Sixteen', channels: png ? 4 : 3 },
+        // The square's surround from a float frame stays float: the model reads it whole.
+        pixel: { depth: !png && from.float ? 'F32' : 'Sixteen', channels: png ? 4 : 3 },
         encode: png ? { Png: { compression: 'Fast', filter: 'Sub' } } : TIFF,
         metadata: ICC_ONLY,
         color: 'Preserve',
@@ -487,8 +508,8 @@ export async function makeEnhancePreview(
       { signal }
     )
   try {
-    // The model reads 0..1 (a RAW's frame clipped, as Apply's input is: E70).
-    const input = await modelInput(engine, dir, frame, heavyThreads())
+    // PIXL Enhance reads a RAW's float frame as it is (E70), as Apply does.
+    const input = readsFloat(steps) ? frame : await modelInput(engine, dir, frame, heavyThreads())
     const around = join(dir, `enhance-preview-${stamp}-in.tiff`)
     made.push(around)
     await cut(input, around, ox, oy, ow, oh, false)

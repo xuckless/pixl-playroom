@@ -793,8 +793,14 @@ export interface EnhancePreview {
 /** The open RAW's full-size develop (its master) under way: how long it should take, or over. */
 export interface MasterEvent {
   key: string
-  /** Milliseconds the develop is expected to take; null once it is over. */
-  expectedMs: number | null
+  /** Started, counted further (`progress`), or over. */
+  phase: 'start' | 'progress' | 'end'
+  /**
+   * What the engine has counted (engine 0.21.0, E68): the model's windows
+   * and the develop's bands done of all it has laid out so far. Its total
+   * can grow between stages (a RAW denoise, then the demosaic).
+   */
+  progress?: { done: number; total: number }
 }
 
 /**

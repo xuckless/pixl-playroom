@@ -3005,6 +3005,11 @@ export interface EngineRequestMessage {
    * and answers with the report alone.
    */
   frame?: string
+  /**
+   * 0.21.0 (E68): the host makes the call a `CancelToken` of its own and
+   * says how far it has counted (`EngineProgressMessage`) while it runs.
+   */
+  progress?: boolean
 }
 
 /** One end of the channel previews travel to the window on (the message's port). */
@@ -3202,7 +3207,18 @@ export interface EngineResponseMessage {
   error?: EngineErrorShape
 }
 
-export type HostToMain = EngineHelloMessage | EngineResponseMessage
+/**
+ * How far request `id` has counted (0.21.0, E68: its token's `progress`),
+ * sent while it runs, at most ten times a second, only when it moved.
+ */
+export interface EngineProgressMessage {
+  kind: 'progress'
+  id: number
+  done: number
+  total: number
+}
+
+export type HostToMain = EngineHelloMessage | EngineResponseMessage | EngineProgressMessage
 export type MainToHost =
   | EngineRequestMessage
   | EngineSamMessage
