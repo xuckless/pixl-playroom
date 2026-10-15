@@ -1111,6 +1111,13 @@ button.keybind-key.waiting {
   font-size: 12px;
   border-radius: 12px;
 }
+/* Only words (photos offline): the chip without the button. */
+.export-sheet span.ew-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--hair2);
+}
 .export-sheet .ew-chip.block {
   color: var(--text);
   background: color-mix(in srgb, var(--danger) 30%, transparent);

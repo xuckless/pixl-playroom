@@ -6,8 +6,10 @@
  */
 import { create } from 'zustand'
 import { normaliseExportSettings, type ExportSettings } from '../../../shared/export'
-import { blocked, exportGuards, type ExportSource } from '../../../shared/exportGuards'
-import type { ExportProgress, LibraryItem } from '../../../shared/ipc'
+import { blocked } from '../../../shared/exportGuards'
+import { selectionGuards } from '../../../shared/exportSummary'
+import type { ExportProgress } from '../../../shared/ipc'
+import { locationMode } from '../../../shared/locations'
 import { withExport } from '../lib/activity'
 import { api, errorText } from '../lib/api'
 import { t, tp } from '../lib/i18n'
@@ -34,16 +36,6 @@ interface ExportsState {
   /** The receipts shown in the open list lose their dot. */
   markSeen(): void
   dismiss(id: string): void
-}
-
-/** What the guards need of a photo. */
-export function sourceOf(it: LibraryItem): ExportSource {
-  return {
-    ext: it.ext,
-    isRaw: it.isRaw,
-    isHdr: it.hdr === 'pq' || it.hdr === 'hlg',
-    hasGainMap: it.hdr === 'gainmap'
-  }
 }
 
 export const useExports = create<ExportsState>((set, get) => ({
@@ -93,13 +85,19 @@ export const useExports = create<ExportsState>((set, get) => ({
     if (!last) return
     const lib = useLibrary.getState()
     const keys = lib.targets()
-    // A setting that would stop the export opens Export, where it is said.
+    if (keys.length === 0) return void lib.say(t('Select photos first'))
+    // What would stop the export (the settings', and the disk's: a folder
+    // that cannot be written, too little room, an original written over)
+    // opens Export, where it is said.
     const byKey = new Map(lib.items.map((i) => [i.key, i]))
-    const sources = keys.flatMap((k) => {
-      const it = byKey.get(k)
-      return it ? [sourceOf(it)] : []
-    })
-    if (blocked(exportGuards(last.settings, sources))) return lib.setDialog('export')
+    const items = keys.flatMap((k) => (byKey.has(k) ? [byKey.get(k)!] : []))
+    const beside = await api.app.locations().then(
+      (l) => locationMode(l.exports.location) === 'beside',
+      () => true
+    )
+    const disk = await api.export.check(keys, last.settings).catch(() => [])
+    if (blocked([...selectionGuards(last.settings, items, beside), ...disk]))
+      return lib.setDialog('export')
     await get().start(keys, last.settings, last.label)
   },
   markSeen() {

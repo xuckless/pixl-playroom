@@ -29,7 +29,6 @@ import {
   FORMAT_NAME,
   INTENT_INFO,
   blocked,
-  exportGuards,
   type ExportCard,
   type Guard
 } from '../../../shared/exportGuards'
@@ -38,7 +37,9 @@ import {
   SAMPLED_PAST,
   estimateExport,
   exportMakeup,
-  formatBytes
+  formatBytes,
+  isLossless,
+  selectionGuards
 } from '../../../shared/exportSummary'
 import type { ExportFacts, ExportPreset, ExportPreview } from '../../../shared/ipc'
 import { BUY_URL } from '../../../shared/licence'
@@ -376,8 +377,8 @@ export function ExportDialog(): React.JSX.Element {
   const locations = useLocations()
   const dest = locations.info?.exports.location ?? 'beside'
   const local = useMemo(
-    () => exportGuards(s, makeup.sources, dest === 'beside', makeup.unread),
-    [s, makeup, dest]
+    () => selectionGuards(s, targetItems, dest === 'beside', facts?.sample),
+    [s, targetItems, facts, dest]
   )
   // The disk's checks follow the settings, a moment after the last change.
   const asked = useRef(0)
@@ -459,6 +460,7 @@ export function ExportDialog(): React.JSX.Element {
         {mine.length > 0 && (
           <span
             className={`es-mark ${bad ? 'block' : 'warn'}`}
+            role="img"
             title={said.join('\n')}
             aria-label={said.join(' ')}
           >
@@ -473,8 +475,9 @@ export function ExportDialog(): React.JSX.Element {
     return g.length === 0 ? null : <GuardList guards={g} />
   }
   /** The first guard's card, opened and brought into view, its first field focused. */
+  const guardCard = [...blocks, ...warns].find((x) => x.card)?.card ?? null
   const goToGuard = (): void => {
-    const card = [...blocks, ...warns].find((x) => x.card)?.card
+    const card = guardCard
     if (!card) return
     setOpen((x) => ({ ...x, [card]: true }))
     requestAnimationFrame(() => {
@@ -532,16 +535,13 @@ export function ExportDialog(): React.JSX.Element {
                 </span>
               )}
               {(blocks.length > 0 || warns.length > 0) && (
-                <button
-                  className={`ew-chip ${stop ? 'block' : 'warn'}`}
-                  onClick={goToGuard}
-                  title={[...blocks, ...warns].map((g) => g.message).join('\n')}
-                >
-                  <span aria-hidden>{stop ? '!' : '▲'}</span>
-                  {stop
-                    ? t('{{count}} to fix', { count: blocks.length })
-                    : t('{{count}} to know', { count: warns.length })}
-                </button>
+                <GuardChip
+                  stop={stop}
+                  count={stop ? blocks.length : warns.length}
+                  said={[...blocks, ...warns].map((g) => g.message)}
+                  // Only what no setting changes (photos offline): nothing to go to.
+                  onGo={guardCard ? goToGuard : undefined}
+                />
               )}
             </p>
           </div>
@@ -1333,6 +1333,40 @@ function ExportPreviewBody({
   )
 }
 
+/**
+ * What the guards come to, in the summary: a button to the first one's card,
+ * or only words when none of them has a card (photos offline).
+ */
+function GuardChip({
+  stop,
+  count,
+  said,
+  onGo
+}: {
+  stop: boolean
+  count: number
+  said: string[]
+  onGo?: () => void
+}): React.JSX.Element {
+  const inner = (
+    <>
+      <span aria-hidden>{stop ? '!' : '▲'}</span>
+      {stop ? t('{{count}} to fix', { count }) : t('{{count}} to know', { count })}
+    </>
+  )
+  const className = `ew-chip ${stop ? 'block' : 'warn'}`
+  const title = said.join('\n')
+  return onGo ? (
+    <button className={className} onClick={onGo} title={title}>
+      {inner}
+    </button>
+  ) : (
+    <span className={className} title={title} aria-label={said.join(' ')} role="note">
+      {inner}
+    </span>
+  )
+}
+
 /** A card's guards, each saying what is wrong or lost. */
 function GuardList({ guards }: { guards: Guard[] }): React.JSX.Element {
   return (
@@ -1356,11 +1390,7 @@ const sharpenAmount = (a: ExportSettings['outputSharpen']['amount']): string =>
 
 /** The format and its quality, as Format & quality's folded line says them. */
 function formatLine(s: ExportSettings): string {
-  const lossless =
-    (s.format === 'avif' && s.lossless) ||
-    (s.format === 'webp' && s.webpLossless) ||
-    (s.format === 'jxl' && s.jxlLossless)
-  const detail = lossless
+  const detail = isLossless(s)
     ? t('lossless')
     : s.format === 'jpeg' || s.format === 'webp' || s.format === 'avif'
       ? `q${s.quality}`
@@ -1394,11 +1424,10 @@ function sizeText(s: ExportSettings): string {
 /** The settings in a sentence: what the person is about to do. */
 function summary(s: ExportSettings, photos: number): string {
   const name = FORMAT_NAME[s.format]
-  const format =
-    s.format === 'jpeg' || s.format === 'webp' || s.format === 'avif'
-      ? s.lossless || s.webpLossless
-        ? t('{{format}} lossless', { format: name })
-        : t('{{format}} quality {{quality}}', { format: name, quality: s.quality })
+  const format = isLossless(s)
+    ? t('{{format}} lossless', { format: name })
+    : s.format === 'jpeg' || s.format === 'webp' || s.format === 'avif'
+      ? t('{{format}} quality {{quality}}', { format: name, quality: s.quality })
       : name
   const space = COLOUR_SPACES.find((c) => c.value === s.colorSpace)?.label ?? s.colorSpace
   const values = {

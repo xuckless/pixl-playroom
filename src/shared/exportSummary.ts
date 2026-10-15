@@ -4,7 +4,7 @@
  * from the library's items and the sample main probed (`ExportFacts`).
  */
 import { estimateBytes, type ExportSettings } from './export'
-import type { ExportSource } from './exportGuards'
+import { exportGuards, type ExportSource, type Guard } from './exportGuards'
 import type { ExportFacts, HdrKind } from './ipc'
 
 /** Past this many photos the summary says its estimate is a sample's. */
@@ -57,6 +57,22 @@ export function exportMakeup(items: ExportItem[], sample: ExportFacts['sample'] 
   return { photos: items.length, hdr, offline, unread, sources }
 }
 
+/**
+ * The guards the settings raise for a selection, from what the library knows
+ * of its photos (`exportMakeup`): the sheet's, and Export with previous's
+ * before it goes ahead without the sheet. `beside`: exports are saved beside
+ * each original.
+ */
+export function selectionGuards(
+  s: ExportSettings,
+  items: ExportItem[],
+  beside: boolean,
+  sample?: ExportFacts['sample']
+): Guard[] {
+  const m = exportMakeup(items, sample)
+  return exportGuards(s, m.sources, beside, m.unread)
+}
+
 export interface Estimate {
   /** About how large one file is (the sample's mean). */
   each: number
@@ -77,13 +93,38 @@ export function estimateExport(
   written: number
 ): Estimate | null {
   if (sample.length === 0 || written === 0) return null
-  const hdrOut = (p: ExportFacts['sample'][number]): boolean =>
+  const each = estimateEach(s, sample)
+  return { each: Math.round(each), all: Math.round(each * written), sampled: sample.length }
+}
+
+/** Whether a photo's file holds HDR (or a gain map) under these settings. */
+export function writesHdr(
+  s: ExportSettings,
+  p: Pick<ExportFacts['sample'][number], 'isHdr' | 'hasGainMap'>
+): boolean {
+  return (
     (p.isHdr && (s.hdr.mode === 'keep' || s.hdr.mode === 'gainmap')) ||
     (p.hasGainMap && s.hdr.mode === 'gainmap') ||
     (!p.isHdr && !p.hasGainMap && s.hdr.mode === 'expand')
-  const each =
-    sample.reduce((n, p) => n + estimateBytes(s, p.width, p.height, hdrOut(p)), 0) / sample.length
-  return { each: Math.round(each), all: Math.round(each * written), sampled: sample.length }
+  )
+}
+
+/** The sample's mean estimate of one file (`estimateBytes`); 0 with nothing sampled. */
+export function estimateEach(s: ExportSettings, sample: ExportFacts['sample']): number {
+  if (sample.length === 0) return 0
+  return (
+    sample.reduce((n, p) => n + estimateBytes(s, p.width, p.height, writesHdr(s, p)), 0) /
+    sample.length
+  )
+}
+
+/** Whether the settings' format is written losslessly by its own Lossless switch (PNG and TIFF always are). */
+export function isLossless(s: ExportSettings): boolean {
+  return (
+    (s.format === 'avif' && s.lossless) ||
+    (s.format === 'webp' && s.webpLossless) ||
+    (s.format === 'jxl' && s.jxlLossless)
+  )
 }
 
 /** Bytes as a person reads them: 840 KB, 12 MB, 1.4 GB. */

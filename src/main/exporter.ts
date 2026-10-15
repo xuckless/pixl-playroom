@@ -20,7 +20,6 @@ import {
   buildEncode,
   buildResize,
   displayPeak,
-  estimateBytes,
   expandTemplate,
   FORMAT_EXT,
   gainMapEncode,
@@ -38,7 +37,7 @@ import {
   type ExportSettings
 } from '../shared/export'
 import { FORMAT_NAME, receiptNotes, type Guard } from '../shared/exportGuards'
-import { formatBytes } from '../shared/exportSummary'
+import { estimateEach, formatBytes } from '../shared/exportSummary'
 import {
   IPC,
   type ExportFacts,
@@ -817,13 +816,8 @@ export class Exporter {
     }
     // The room it needs: the sample's estimate for every photo, with a margin.
     const written = photos.filter((p) => p.row).length
-    const each =
-      sample.length > 0
-        ? sample.reduce(
-            (n, p) => n + estimateBytes(s, p.width, p.height, p.isHdr || p.hasGainMap),
-            0
-          ) / sample.length
-        : 0
+    // (The sheet's own estimate, so the two never disagree.)
+    const each = estimateEach(s, sample)
     const need = Math.max(
       Math.round(each * written * 1.25),
       photos.reduce((n, p) => n + (p.row?.size ?? 0), 0)

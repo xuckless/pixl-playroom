@@ -12,9 +12,13 @@ import {
   settingsKey
 } from '../src/shared/exportPresets'
 import {
+  estimateEach,
   estimateExport,
   exportMakeup,
   formatBytes,
+  isLossless,
+  selectionGuards,
+  writesHdr,
   type ExportItem
 } from '../src/shared/exportSummary'
 
@@ -142,6 +146,50 @@ test('the estimate in all is the sample’s mean for every photo written', () =>
   assert.equal(e.sampled, 2)
   assert.equal(estimateExport(s, [], 10), null)
   assert.equal(estimateExport(s, sample, 0), null)
+})
+
+test('an HDR photo tone mapped to SDR is estimated as SDR, by the sheet and the disk check alike', () => {
+  const hdr = { key: 'h', width: 4000, height: 3000, isHdr: true, hasGainMap: false }
+  const sdr = set({ format: 'avif' }, { mode: 'sdr' })
+  const keep = set({ format: 'avif' }, { mode: 'keep' })
+  assert.equal(writesHdr(sdr, hdr), false)
+  assert.equal(writesHdr(keep, hdr), true)
+  assert.equal(writesHdr(set({}, { mode: 'expand' }), { isHdr: false, hasGainMap: false }), true)
+  assert.equal(estimateEach(sdr, [hdr]), estimateBytes(sdr, 4000, 3000, false))
+  assert.ok(estimateEach(keep, [hdr]) > estimateEach(sdr, [hdr]))
+  assert.equal(estimateEach(sdr, []), 0)
+})
+
+test('lossless is the format’s own switch, never another format’s', () => {
+  // AVIF's Lossless left on says nothing of a JPEG.
+  assert.equal(isLossless(set({ format: 'jpeg', lossless: true, webpLossless: true })), false)
+  assert.equal(isLossless(set({ format: 'avif', lossless: true })), true)
+  assert.equal(isLossless(set({ format: 'webp', webpLossless: true })), true)
+  assert.equal(isLossless(set({ format: 'jxl', jxlLossless: true })), true)
+  assert.equal(isLossless(set({ format: 'webp', lossless: true })), false)
+})
+
+test('Export with previous blocks only where exports are saved beside the originals', () => {
+  const s = set({ format: 'jpeg', subfolder: '', template: '{name}' })
+  const items: ExportItem[] = [{ key: 'a', ext: 'jpg', isRaw: false, hdr: null }]
+  assert.equal(blocked(selectionGuards(s, items, true)), true)
+  // A folder of their own: the original is never in the way.
+  assert.equal(blocked(selectionGuards(s, items, false)), false)
+})
+
+test('a photo not read yet is never taken for SDR by the guards', () => {
+  const s = set({ format: 'avif' }, { mode: 'keep' })
+  const unread: ExportItem[] = [{ key: 'a', ext: 'heic', isRaw: false }]
+  assert.equal(
+    selectionGuards(s, unread, false).some((g) => g.id === 'no-hdr'),
+    false
+  )
+  // Read by the sheet's sample as SDR: then it is said.
+  const sample = [{ key: 'a', width: 10, height: 10, isHdr: false, hasGainMap: false }]
+  assert.equal(
+    selectionGuards(s, unread, false, sample).some((g) => g.id === 'no-hdr'),
+    true
+  )
 })
 
 test('bytes as a person reads them', () => {
