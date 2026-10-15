@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.1-beta](https://github.com/xuckless/pixl-playroom/compare/v0.6.0-beta...v0.6.1-beta) (2026-10-15)
+
+
+### Bug Fixes
+
+* 0.6.1-beta, a silent patch for the disposed-frame crash ([656e130](https://github.com/xuckless/pixl-playroom/commit/656e130c01a8b0ee7bdb27ddefb29f81949aed4e))
+* **engine:** a host that restarts while the window reloads no longer throws in main ([0745ce4](https://github.com/xuckless/pixl-playroom/commit/0745ce412784876b553abf81dfae305d9deb2fcb))
+* **release:** 0.6.1-beta's Release-As and silent notes ([9f9a927](https://github.com/xuckless/pixl-playroom/commit/9f9a927ae01b5b4a4cf5b6793e75a062077e2822))
+* **release:** a release with no notes of its own says one plain line ([92a47f8](https://github.com/xuckless/pixl-playroom/commit/92a47f8490a5c00f84906510aea6bcf7940371cf))
+
 ## [0.6.0-beta](https://github.com/xuckless/pixl-playroom/compare/v0.5.0-beta...v0.6.0-beta) (2026-10-15)
 
 
