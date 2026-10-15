@@ -61,8 +61,9 @@ function stateFor(setting: LanguageSetting): LanguageState {
  * after the start in English), then the menus made again in it.
  */
 function bring(to: i18n, language: Language): void {
-  void withLanguage(to, language).then(() => {
-    if (state?.language === language) listeners.forEach((f) => f())
+  const still = (): boolean => state?.language === language
+  void withLanguage(to, language, still).then(() => {
+    if (still()) listeners.forEach((f) => f())
   })
 }
 

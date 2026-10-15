@@ -83,11 +83,19 @@ export function startI18n(
   return inst
 }
 
-/** `inst` in `language`, its catalog loaded first (once) where it has one. */
-export async function withLanguage(inst: i18n, language: Language): Promise<void> {
+/**
+ * `inst` in `language`, its catalog loaded first (once) where it has one.
+ * `wanted` is asked once the catalog is in: a language chosen since (its
+ * catalog quicker to come) keeps the instance, and this one stays loaded only.
+ */
+export async function withLanguage(
+  inst: i18n,
+  language: Language,
+  wanted: () => boolean = () => true
+): Promise<void> {
   if (language !== 'en' && !inst.hasResourceBundle(language, 'translation')) {
     const catalog = await loadCatalog(language)
     if (catalog) inst.addResourceBundle(language, 'translation', catalog)
   }
-  if (inst.language !== language) await inst.changeLanguage(language)
+  if (wanted() && inst.language !== language) await inst.changeLanguage(language)
 }

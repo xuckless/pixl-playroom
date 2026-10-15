@@ -34,7 +34,7 @@ let wanted = 0
 async function apply(s: LanguageState): Promise<void> {
   const mine = ++wanted
   if (!inst) inst = startI18n(s.language, s.pseudo, await loadCatalog(s.language))
-  else await withLanguage(inst, s.language)
+  else await withLanguage(inst, s.language, () => mine === wanted)
   if (mine !== wanted) return
   document.documentElement.lang = s.language
   useLanguage.setState(s)
