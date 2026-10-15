@@ -1010,9 +1010,10 @@ export function Stars({
   onChange?: (v: number) => void
   compact?: boolean
 }): React.JSX.Element {
-  // The rating the keys last asked for, from the one shown then: keys can
-  // outrun a rating's round trip, and the next press counts on from it.
-  const asked = useRef<{ v: number; from: number } | null>(null)
+  // The ratings the keys asked for in a run of presses, the last one last:
+  // keys can outrun a rating's round trip, and the next press counts on from
+  // the last asked while what shows is still one of the run's.
+  const asked = useRef<number[]>([])
   const label = value > 0 ? tp('{{count}} star', '{{count}} stars', value) : t('Not rated')
   if (!onChange)
     return (
@@ -1024,10 +1025,14 @@ export function Stars({
         ))}
       </span>
     )
-  const now = (): number => (asked.current?.from === value ? asked.current.v : value)
+  const now = (): number => {
+    const run = asked.current
+    return run.includes(value) ? run[run.length - 1] : value
+  }
   const set = (v: number, group: HTMLElement | null): void => {
     const next = Math.max(0, Math.min(5, v))
-    asked.current = { v: next, from: value }
+    const run = asked.current.includes(value) ? asked.current : [value]
+    asked.current = [...run, next]
     onChange(next)
     group?.querySelectorAll<HTMLElement>('button')[Math.max(0, next - 1)]?.focus()
   }

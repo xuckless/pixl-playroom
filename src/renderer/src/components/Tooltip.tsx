@@ -9,8 +9,9 @@
  * - InfoTip, the (i) beside a control, which a click pins open.
  *
  * Every one opens on hover after TIP_MS and at once on keyboard focus,
- * closes on leaving, a press, a scroll or Escape (the note goes, nothing
- * else does), and is the described-by of what it describes.
+ * closes on leaving, a press, a scroll or Escape, and is the described-by
+ * of what it describes. Escape still does what it does besides (closes the
+ * dialog, leaves the tool): a note never costs a second press.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -123,8 +124,6 @@ export function TooltipHost(): React.JSX.Element | null {
   const [shown, setShown] = useState<{ el: HTMLElement; text: string } | null>(null)
   useEffect(() => {
     let held: HTMLElement | null = null
-    // Whether held's note is up (not only waiting on the pointer to rest).
-    let visible = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let described: { el: HTMLElement; was: string | null } | null = null
 
@@ -157,7 +156,6 @@ export function TooltipHost(): React.JSX.Element | null {
       }
       if (held) give(held)
       held = null
-      visible = false
       setShown(null)
     }
     const show = (el: HTMLElement, text: string): void => {
@@ -167,7 +165,6 @@ export function TooltipHost(): React.JSX.Element | null {
         described = { el, was }
         el.setAttribute('aria-describedby', was ? `${was} ${TIP_ID}` : TIP_ID)
       }
-      visible = true
       setShown({ el, text })
     }
     const begin = (el: HTMLElement, wait: number): void => {
@@ -202,14 +199,7 @@ export function TooltipHost(): React.JSX.Element | null {
       if (held && e.target === held) hide()
     }
     const key = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape' || !held) return
-      const open = visible
-      hide()
-      // A note that was showing is what this Escape closed.
-      if (open) {
-        e.stopImmediatePropagation()
-        e.preventDefault()
-      }
+      if (e.key === 'Escape' && held) hide()
     }
     const press = (): void => hide()
     window.addEventListener('pointerover', over, { passive: true })

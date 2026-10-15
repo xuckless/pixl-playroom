@@ -71,12 +71,8 @@ export function HoverHint({
         if ((e.target as HTMLElement).matches(':focus-visible')) setAnchor(control())
       }}
       onBlur={close}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape' && anchor) {
-          e.stopPropagation()
-          close()
-        }
-      }}
+      // Escape closes the note, and goes on to do what it does.
+      onKeyDown={(e) => e.key === 'Escape' && close()}
     >
       {children}
       <span id={`${id}-why`} hidden>
