@@ -63,7 +63,9 @@ the Windows release test, masks stated on the source frame), in
       notes' required fields; `pnpm run notices` after a build; new models
       onto the mirror (`publish-models.mjs --only … --bucket pixl-models`,
       then `--check`). Types restated from the guide. (6ca9bfd, 895b7d3,
-      e92fd27; run `publish-models.mjs --check` once more before the release.)
+      e92fd27. 2026-10-15: the demosaic refs' 1.0.1 files were missing from
+      the mirror (404) and are uploaded; `--check`: every file the app offers
+      is served.)
 - [x] **S** · `src/shared/engine-types.ts` diffed against the binding's
       `index.d.ts`; the dev kit restored (`pnpm engine:dev --restore`) so
       `node_modules` holds the published roster. (e92fd27; node_modules
