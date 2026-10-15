@@ -71,12 +71,15 @@ export function effectiveNow(nowMs: number, seenAtMs: number | undefined, iat?: 
   return Math.max(nowMs, seenAtMs ?? 0, (iat ?? 0) * 1000) / 1000
 }
 
-type Jws =
+export type Jws =
   | { ok: true; header: { alg: string; kid: string; typ?: string }; payload: unknown }
   | { ok: false; problem: 'malformed' | 'unknown-key' | 'signature' }
 
-/** A compact JWS signed (EdDSA) by one of `keys`, by its `kid`; its payload not yet judged. */
-function verifyJws(jws: string, keys: EntitlementKeys): Jws {
+/**
+ * A compact JWS signed (EdDSA) by one of `keys`, by its `kid`; its payload
+ * not yet judged. Also what checks the update feed's signature (feedsig.ts).
+ */
+export function verifyJws(jws: string, keys: EntitlementKeys): Jws {
   const parts = jws.split('.')
   if (parts.length !== 3) return { ok: false, problem: 'malformed' }
   const [h, p, s] = parts

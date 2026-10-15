@@ -47,6 +47,14 @@
     "vi": "Một lớp Nâng cao đọc tệp nằm ngoài thư mục LUT của Playroom sẽ bị bỏ qua",
     "zh-Hans": "读取 Playroom LUT 文件夹以外文件的高级图层已被略过"
   },
+  "Update {{version}} was refused: its feed is not signed by Pixl, so it is not installed.": {
+    "en": "Update {{version}} was refused: its feed is not signed by Pixl, so it is not installed.",
+    "fr": "La mise à jour {{version}} a été refusée : son flux n’est pas signé par Pixl, elle n’est donc pas installée.",
+    "de": "Das Update {{version}} wurde abgelehnt: Sein Feed ist nicht von Pixl signiert, daher wird es nicht installiert.",
+    "ja": "アップデート {{version}} は拒否されました。フィードが Pixl によって署名されていないため、インストールされません。",
+    "vi": "Bản cập nhật {{version}} đã bị từ chối: nguồn cập nhật của nó không được Pixl ký nên sẽ không được cài đặt.",
+    "zh-Hans": "更新 {{version}} 已被拒绝：其更新源未经 Pixl 签名，因此不会安装。"
+  },
   "LUT · {{name}} (missing)": {
     "en": "LUT · {{name}} (missing)",
     "fr": "LUT · {{name}} (introuvable)",
