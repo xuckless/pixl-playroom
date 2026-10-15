@@ -13,6 +13,7 @@ import type { GradeLayer } from '../../../shared/engine-types'
 import { migrateLook } from '../../../shared/migratelook'
 import { fromExif } from '../../../shared/orientation'
 import { newId } from '../../../shared/recipe'
+import { basePlaneId } from '../../../shared/strokes'
 import { Icon } from '../components/icons'
 import { Modal, Section } from '../components/ui'
 import { useDevelop } from '../state/develop'
@@ -171,7 +172,11 @@ export function EngineReportDialog(): React.JSX.Element | null {
                 ((c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional') &&
                   rasterGradient(c))
             )
-            .map((c) => [c.id, `<${c.kind} plane ${c.id}>`])
+            // A brush whose strokes go as they are names its plane apart.
+            .flatMap((c) => [
+              [c.id, `<${c.kind} plane ${c.id}>`],
+              ...(c.kind === 'brush' ? [[basePlaneId(c.id), `<brush plane ${c.id}>`]] : [])
+            ])
         )
       ),
       // Main hands the engine the LUTs it found in Playroom's LUT folder.

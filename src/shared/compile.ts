@@ -28,8 +28,10 @@ import type {
   GrainResponse,
   HslBands,
   HslKey,
+  Inspect,
   LensCorrection,
   Mask,
+  MaskProbe,
   Retouch,
   Vignette,
   MaskComponent,
@@ -51,6 +53,7 @@ import { compose, swapsAxes, transformPoint, userOrientation } from './orientati
 import { effectiveMode } from './masks'
 import { EDGE_SHIFT_SPAN, offsetPolygon } from './maskedge'
 import { gradientShape, rasterGradient } from './gradients'
+import { basePlaneId, brushRoute, engineStrokes, strokeRuns, type BrushRoute } from './strokes'
 import { engineEdge, engineRefine, engineShift } from './refine'
 import {
   HSL_BANDS,
@@ -247,7 +250,8 @@ export interface CompileContext {
    * The raster planes (painted brushes and drawn gradients), by component id,
    * as grey PNG paths already turned into the user-oriented frame (the main
    * process writes them), and re-warped onto the frame rendered when drawn
-   * under another lens (main/brushes.ts).
+   * under another lens (main/brushes.ts). A brush whose strokes go as they
+   * are has its plane, if any, under `basePlaneId(id)` (shared/strokes.ts).
    */
   brushPaths: Record<string, string>
   /**
@@ -340,6 +344,12 @@ export interface Compiled {
   retouch: Retouch | null
   /** Engine layer index of each local layer, for `Inspect::LayerMask`. */
   layerIndex: Record<string, number>
+  /**
+   * Where each qualifier's op sits, by its key view's name
+   * (`qualifierLayerId`), for `Inspect::QualifierKey` (0.21.0, E77). A
+   * qualifier switched off, or keying nothing, has none.
+   */
+  qualifierIndex: Record<string, QualifierAddress>
   /** What the preview could not show at this scale, and why. */
   notes: string[]
   /** The user-oriented frame, full resolution. */
@@ -347,6 +357,39 @@ export interface Compiled {
   orientedHeight: number
   /** The crop the engine was given (after auto-fit for a straighten), normalised. */
   crop: CropRect | null
+}
+
+/** A qualifier's op: its layer, and which of that layer's Qualifier ops it is (evaluation order). */
+export interface QualifierAddress {
+  layer: number
+  qualifier: number
+}
+
+/**
+ * The plane a view names (`ViewState.maskLayer`): a mask's layer, or a
+ * qualifier's key (`qualifierLayerId`). Null when the compiled grade has
+ * no such thing (the mask is empty, the qualifier is off).
+ */
+export function maskProbe(
+  c: Pick<Compiled, 'layerIndex' | 'qualifierIndex'>,
+  id: string
+): MaskProbe | null {
+  const q = c.qualifierIndex[id]
+  if (q) return { QualifierKey: { layer: q.layer, qualifier: q.qualifier } }
+  const layer = c.layerIndex[id]
+  return layer === undefined ? null : { LayerMask: { layer } }
+}
+
+/** The engine layer a probe looks into. */
+export function probeLayer(p: MaskProbe): number {
+  if ('LayerMask' in p) return p.LayerMask.layer
+  if ('GroupMask' in p) return p.GroupMask.layer
+  return p.QualifierKey.layer
+}
+
+/** The probe as a standalone inspection (a plane in place of the picture). */
+export function probeInspect(p: MaskProbe): Inspect {
+  return 'QualifierKey' in p ? { QualifierKey: p.QualifierKey } : p
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1004,8 +1047,8 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
     primaries: scalePrimaries(s.primaries, k),
     curvesVs: scaleCurvesVs(s.curvesVs, k),
     logWheels: scaleLogWheels(s.logWheels, k),
-    // Scaled where they compile, as their own layers (`qualifierLayer`).
-    qualifiers: s.qualifiers,
+    // The key stays; what it lets through scales.
+    qualifiers: s.qualifiers.map((q) => scaleQualifier(q, k)),
     // How much, not which colours: the bands' weights stay.
     density: { ...s.density, amount: m(s.density.amount) },
     colorGrade: {
@@ -1036,6 +1079,10 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
   }
 }
 
+/**
+ * A component as the engine's: one, or a brush's pieces (its plane, then
+ * each run of strokes: shared/strokes.ts), or none when it can't be drawn.
+ */
 function maskComponent(
   c: MaskComponentSetting,
   user: Orientation,
@@ -1043,8 +1090,22 @@ function maskComponent(
   /** The frame as the user turned it: what a lasso's offset is measured on. */
   frame: { width: number; height: number },
   /** A drag frame: a refine that reads the whole frame stands aside (refine.ts `refineFor`). */
-  draft = false
-): MaskComponent | null {
+  draft = false,
+  /** A brush's way to the engine (`brushRoute`). */
+  route: BrushRoute = 'plane'
+): MaskComponent[] {
+  const one = maskShape(c, user, brushPaths, frame, draft, route)
+  return Array.isArray(one) ? one : one ? [one] : []
+}
+
+function maskShape(
+  c: MaskComponentSetting,
+  user: Orientation,
+  brushPaths: Record<string, string>,
+  frame: { width: number; height: number },
+  draft: boolean,
+  route: BrushRoute
+): MaskComponent | MaskComponent[] | null {
   const smooth = c.kind === 'range' ? smoothnessFeather(c.smoothness ?? 0) : 0
   const base = {
     mode: c.mode,
@@ -1073,10 +1134,34 @@ function maskComponent(
       return shape ? { ...base, shape } : null
     }
     case 'brush': {
-      // A painted plane: written to disk by the main process.
-      const path = brushPaths[c.id]
-      if (!path) return null
-      return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
+      // One plane, written to disk by the main process: an older brush's, a
+      // model's, or a brush whose strokes can't go as they are, painted in.
+      if (route === 'plane') {
+        const path = brushPaths[c.id]
+        if (!path) return null
+        return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
+      }
+      // Its strokes as the engine's (E36): the plane under them first, then
+      // each run, painting in the brush's mode and erasing as a Subtract.
+      const pieces: MaskComponent[] = []
+      if (c.png || c.ref) {
+        const path = brushPaths[basePlaneId(c.id)]
+        if (!path) return null
+        pieces.push({
+          ...base,
+          shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } }
+        })
+      }
+      for (const run of strokeRuns(c.strokes ?? [])) {
+        const strokes = engineStrokes(run.strokes, user)
+        if (strokes.strokes.length === 0) continue
+        pieces.push({
+          ...base,
+          mode: run.erase ? 'Subtract' : base.mode,
+          shape: { Strokes: strokes }
+        })
+      }
+      return pieces
     }
     case 'polygon': {
       if (c.points.length < 3) return null
@@ -1158,12 +1243,23 @@ export function layerMask(
   frame: { width: number; height: number } = { width: 1, height: 1 },
   draft = false
 ): Mask | null {
-  // The first component always adds (as the masks panel shows it).
-  const drawn = l.components
-    .map((c, i) =>
-      maskComponent({ ...c, mode: effectiveMode(i, c.mode) }, user, brushPaths, frame, draft)
+  // The first component always adds (as the masks panel shows it). A brush
+  // whose eraser must take from it alone leads, where a union lets it.
+  const lead: MaskComponent[] = []
+  const rest: MaskComponent[] = []
+  l.components.forEach((c, i) => {
+    const route = c.kind === 'brush' ? brushRoute(l.components, i) : 'plane'
+    const made = maskComponent(
+      { ...c, mode: effectiveMode(i, c.mode) },
+      user,
+      brushPaths,
+      frame,
+      draft,
+      route
     )
-    .filter((c): c is MaskComponent => c !== null)
+    ;(route === 'lead' ? lead : rest).push(...made)
+  })
+  const drawn = [...lead, ...rest]
   // One that could not be drawn (a brush whose plane is missing, a lasso of
   // one point) leaves a Subtract or Intersect first: taken from nothing it
   // selects nothing, and the engine refuses one first, so it goes. (Made an
@@ -1602,6 +1698,17 @@ function settingsStages(
   // run before the mono conversion, so they feed the mix.
   const vs = v0 ? curvesVsV0(r.curvesVs) : curvesVsOp(r.curvesVs)
   if (vs && !bw) tail.push(vs)
+  // Resolve's qualifiers, in place (0.21.0, E77): after the primaries and
+  // the curves, before the effects, so grain never gets into a key. A
+  // black-and-white photo with masks keys its colours before the masks and
+  // the conversion, as its qualifiers' own layers did before 0.21.
+  ;(bw && finish ? look : tail).push(
+    ...qualifierOps(
+      r.qualifiers ?? [],
+      { width: oriented.width, height: oriented.height, scale: ctx.scale },
+      smoothing
+    )
+  )
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)
     tail.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })
@@ -1842,50 +1949,66 @@ function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vig
   return 'PaintOverlay'
 }
 
+/** Each qualifier's op, by its key view's name: what `qualifierIndex` is found by. */
+const qualifierOf = new WeakMap<GradeOp, string>()
+
+/**
+ * Resolve's qualifiers as the engine's own ops (0.21.0, E77): each keys the
+ * picture where it sits, its blur the key's (up to 1% of the shorter side,
+ * as a range mask's smoothness) and lets its correction through. One
+ * switched off, or keying nothing, is left out. An untouched one is still
+ * there, its correction the identity, so its key can be looked at.
+ */
+export function qualifierOps(
+  qs: QualifierSetting[],
+  keyScale: KeyScale,
+  smoothing: AdjustmentSmoothing | null
+): GradeOp[] {
+  const ops: GradeOp[] = []
+  for (const q of qs) {
+    const key = q.enabled ? qualifierKey(q) : null
+    if (!key) continue
+    const op: GradeOp = {
+      Qualifier: {
+        key: { ...key, blur_radius: smoothnessRadius(q.blur, keyScale), invert: q.invert },
+        correction: qualifierCorrection(q) ?? primary({}),
+        smoothing
+      }
+    }
+    qualifierOf.set(op, qualifierLayerId(q.id))
+    ops.push(op)
+  }
+  return ops
+}
+
+/**
+ * Where each qualifier's op landed: the n-th `Qualifier` of its layer, in
+ * evaluation order (a `Masked` group's own in their place), as
+ * `Inspect::QualifierKey` counts them. The point colours' and anything else
+ * keyed so count too; only Resolve's qualifiers are named.
+ */
+function qualifierAddresses(layers: GradeLayer[]): Record<string, QualifierAddress> {
+  const out: Record<string, QualifierAddress> = {}
+  layers.forEach((l, layer) => {
+    let n = 0
+    const visit = (ops: GradeOp[]): void => {
+      for (const op of ops) {
+        if ('Qualifier' in op) {
+          const id = qualifierOf.get(op)
+          if (id) out[id] = { layer, qualifier: n }
+          n++
+        } else if ('Masked' in op) visit(op.Masked.ops)
+      }
+    }
+    for (const st of l.stages) visit(st.ops)
+  })
+  return out
+}
+
 /**
  * Compile a recipe. `grade` is null when nothing moves a pixel, so an
  * untouched photo takes the engine's fast path.
  */
-/**
- * A qualifier as its own engine layer: its key a Range mask (inside `within`,
- * a mask layer's own mask, when it is a mask's), its correction in the look
- * stage. Null when no band of its key is on.
- */
-function qualifierLayer(
-  q: QualifierSetting,
-  within: Mask | null,
-  opacity: number
-): GradeLayer | null {
-  const key = qualifierKey(q)
-  if (!key) return null
-  const inverted = within?.invert === true
-  const range: Mask['components'][number] = {
-    shape: { Range: key },
-    // Inside an inverted mask: NOT(mask ∪ NOT key) is the key where the mask is not.
-    mode: within && !inverted ? 'Intersect' : 'Add',
-    opacity: 1,
-    invert: inverted,
-    feather: { radius: round4(smoothnessFeather(q.blur)), edge: 'Zero' },
-    refine: null,
-    smooth: 0,
-    contrast: 0,
-    shift: 0
-  }
-  return {
-    name: 'qualifier',
-    enabled: q.enabled,
-    opacity,
-    mask: {
-      components: [...(within?.components ?? []), range],
-      invert: within ? inverted !== q.invert : q.invert,
-      space: LOOK_SPACE,
-      edge: within?.edge ?? null
-    },
-    blend: { mode: 'Normal', space: 'LinearWorking' },
-    stages: lookStages([{ Primary: qualifierCorrection(q) ?? primary({}) }])
-  }
-}
-
 export function compile(recipe: Recipe, given: CompileContext): Compiled {
   // What is rendered: sections switched off at the photo's defaults, steps
   // switched off left out, and every mask and spot on the lens rendered.
@@ -1917,14 +2040,6 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
       stages: base
     })
   }
-  // Resolve's qualifiers: each its own layer after the photo's grade, its key
-  // a Range mask, so the key view (Inspect::LayerMask) is the engine's key.
-  for (const q of r.qualifiers) {
-    const layer = qualifierLayer(q, null, 1)
-    if (!layer) continue
-    layerIndex[qualifierLayerId(q.id)] = layers.length
-    layers.push(layer)
-  }
   for (const l of r.layers) {
     const mask = layerMask(l, oriented.user, ctx.brushPaths, oriented, ctx.smoothing === false)
     if (!mask) continue
@@ -1949,15 +2064,6 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
       blend: blendFor(l.blend, ctx.hdr === true),
       stages
     })
-    // A mask's own qualifiers: each keys only inside the mask (Resolve's
-    // qualifier within a window), right after the mask's own layer.
-    for (const q of l.settings.qualifiers ?? []) {
-      const scaled = scaleQualifier(q, clamp(l.amount ?? 100, 0, 200) / 100)
-      const ql = qualifierLayer(scaled, mask, clamp(l.opacity / 100, 0, 1))
-      if (!ql) continue
-      layerIndex[qualifierLayerId(q.id)] = layers.length
-      layers.push({ ...ql, enabled: l.enabled && q.enabled })
-    }
   }
   if (finish && finish.length > 0) {
     layers.push({
@@ -2028,6 +2134,7 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
     lens: lensCorrection(r.lens),
     retouch: compileRetouch(r.retouch, oriented.user, ctx.frameWidth, ctx.frameHeight),
     layerIndex,
+    qualifierIndex: qualifierAddresses(layers),
     notes,
     orientedWidth: oriented.width,
     orientedHeight: oriented.height,

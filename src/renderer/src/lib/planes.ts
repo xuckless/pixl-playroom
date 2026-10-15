@@ -1,5 +1,6 @@
+import { paintStrokes } from '../../../shared/brush'
 import { sameLensFrame, type LensFrame } from '../../../shared/lensframe'
-import type { PlaneComponent } from '../../../shared/recipe'
+import type { BrushComponent, PlaneComponent } from '../../../shared/recipe'
 import { api } from './api'
 
 /**
@@ -44,4 +45,45 @@ export async function planePngOn(
   // A plane held here (a selection being made) is not in the plane store yet.
   const ref = c.png || !c.ref ? await api.develop.putPlane(await planePng(c)) : c.ref
   return api.develop.planeOnFrame(key, ref, from, to)
+}
+
+/**
+ * A brush's plane with its strokes painted over it as the engine paints
+ * them (shared/brush.ts `paintStrokes`), at the brush's plane size: what the
+ * loupe's own mask draws until the engine's plane arrives. `png` gives the
+ * plane (re-warped onto the frame shown, when the brush is on another).
+ */
+export async function paintedBitmap(
+  c: BrushComponent,
+  opts: ImageBitmapOptions,
+  png: () => Promise<string> = () => planePng(c)
+): Promise<ImageBitmap> {
+  const w = Math.max(1, Math.round(c.width))
+  const h = Math.max(1, Math.round(c.height))
+  const plane = new Float32Array(w * h)
+  if (c.png || c.ref) {
+    const bytes = Uint8Array.from(atob(await png()), (x) => x.charCodeAt(0))
+    const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }), {
+      resizeWidth: w,
+      resizeHeight: h,
+      premultiplyAlpha: 'none',
+      colorSpaceConversion: 'none'
+    })
+    const canvas = new OffscreenCanvas(w, h)
+    const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D
+    ctx.drawImage(bmp, 0, 0)
+    bmp.close()
+    const d = ctx.getImageData(0, 0, w, h).data
+    for (let i = 0; i < plane.length; i++) plane[i] = d[i * 4] / 255
+  }
+  paintStrokes(plane, w, h, c.strokes ?? [])
+  const rgba = new Uint8ClampedArray(w * h * 4)
+  for (let i = 0; i < plane.length; i++) {
+    const v = Math.round(plane[i] * 255)
+    rgba[i * 4] = v
+    rgba[i * 4 + 1] = v
+    rgba[i * 4 + 2] = v
+    rgba[i * 4 + 3] = 255
+  }
+  return createImageBitmap(new ImageData(rgba, w, h), opts)
 }

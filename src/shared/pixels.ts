@@ -80,7 +80,7 @@ export const RAW_DEVELOP_REV = 's'
  * the Smoothing slider. 4 is engine 0.21: smoothed adjustments near zero
  * (E63, E53), and saved edits on the engine's exact colour ops (the region
  * curve, Hue vs Lum and Sat vs Sat, the Log wheels, Temp and Tint beside
- * the Primaries).
+ * the Primaries); Resolve's qualifiers as ops where they sit (E77).
  */
 export const ENGINE_RENDER_REV = 4
 

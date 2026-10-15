@@ -2,14 +2,26 @@
  * The brush, off the main thread and on the GPU. The loupe hands this worker
  * its stroke canvas (an OffscreenCanvas) and then only dab positions; here
  * each dab is a quad drawn into a half-float stroke texture, where blending
- * computes the build-up `s + a·(1 − s)` of `shared/brush.ts` exactly, and
- * Auto Mask weighs each pixel by its colour distance (Lab ΔE) from the
- * colour under the brush, read from the picture on the GPU. At the end the
- * stroke joins the plane in one pass, is read back, and leaves as a grey PNG
+ * takes the maximum of `shared/brush.ts` exactly (a stroke never builds up
+ * over itself, as the engine paints it: E36), and Auto Mask weighs each
+ * pixel by its colour distance (Lab ΔE) from the colour under the brush,
+ * read from the picture on the GPU.
+ *
+ * A stroke the engine paints as a vector (`plane: false` at its end) is only
+ * shown here while it is painted. An Auto Mask stroke joins its brush's
+ * plane in one pass at the end, is read back, and leaves as a grey PNG
  * encoded here. Where WebGL2 cannot render to float textures, the same
  * worker paints on the CPU with `shared/brush.ts`.
  */
-import { autoMaskWeight, composeStroke, deltaE, srgbToLab, stampDab } from '../../../shared/brush'
+import {
+  autoMaskWeight,
+  composeStroke,
+  deltaE,
+  paintStrokes,
+  srgbToLab,
+  stampDab,
+  type StrokeLike
+} from '../../../shared/brush'
 import { applyProjective, glMat3, type Projective } from '../../../shared/projective'
 import { encodeGreyPng } from '../lib/png'
 
@@ -18,6 +30,7 @@ export interface Dab {
   x: number
   y: number
   r: number
+  /** The dab's strength: the stroke's flow (Density) times the pen's pressure. */
   flow: number
   /** The centre in display coordinates (Auto Mask's reference colour). */
   dx: number
@@ -50,6 +63,8 @@ export type BrushIn =
       w: number
       h: number
       png: string | null
+      /** A brush's strokes, painted over `png` before the stroke joins it (baked into its plane). */
+      strokes?: StrokeLike[]
       softness: number
       erase: boolean
       /** The picture, for Auto Mask; null without it. */
@@ -62,7 +77,8 @@ export type BrushIn =
       alpha?: number
     }
   | { t: 'dabs'; dabs: Dab[] }
-  | { t: 'end'; id: number; density: number }
+  /** `plane`: the stroke joins the brush's plane, which comes back; else it is only cleared. */
+  | { t: 'end'; id: number; plane: boolean }
   | { t: 'cancel' }
 
 export type BrushOut = { t: 'done'; id: number; png: string | null; error?: string }
@@ -101,7 +117,7 @@ vec2 project(mat3 m, vec2 p) {
   return h.z > 0.0 ? h.xy / h.z : vec2(-1.0);
 }`
 
-/** One dab: flow × falloff × Auto Mask, blended onto the stroke as s + a(1 − s). */
+/** One dab: flow × falloff × Auto Mask, blended onto the stroke as max(s, a). */
 const DAB_FS = `#version 300 es
 precision highp float;
 uniform vec2 uCentre;   // plane pixels
@@ -129,18 +145,17 @@ void main() {
   o = vec4(a);
 }`
 
-/** The stroke (capped at density) united with, or taken from, the plane. */
+/** The stroke screened over, or taken from, the plane. */
 const COMPOSE_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uPlaneTex;
 uniform sampler2D uStroke;
-uniform float uCap;
 uniform bool uErase;
 out vec4 o;
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
   float plane = texelFetch(uPlaneTex, p, 0).r;
-  float s = min(texelFetch(uStroke, p, 0).r, uCap);
+  float s = clamp(texelFetch(uStroke, p, 0).r, 0.0, 1.0);
   float v = uErase ? plane * (1.0 - s) : plane + s * (1.0 - plane);
   o = vec4(v, v, v, 1.0);
 }`
@@ -195,6 +210,27 @@ async function bitmapOf(src: string | Blob, w?: number, h?: number): Promise<Ima
 
 const pngBlob = (b64: string): Blob =>
   new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: 'image/png' })
+
+/** A brush's plane as 0…1 floats at `w × h`: its PNG (or nothing), its strokes painted over. */
+async function planeOf(
+  png: string | null,
+  strokes: StrokeLike[] | undefined,
+  w: number,
+  h: number
+): Promise<Float32Array> {
+  const plane = new Float32Array(w * h)
+  if (png) {
+    const bmp = await bitmapOf(pngBlob(png), w, h)
+    const c = new OffscreenCanvas(w, h)
+    const ctx = c.getContext('2d') as OffscreenCanvasRenderingContext2D
+    ctx.drawImage(bmp, 0, 0)
+    bmp.close()
+    const d = ctx.getImageData(0, 0, w, h).data
+    for (let i = 0; i < plane.length; i++) plane[i] = d[i * 4] / 255
+  }
+  if (strokes?.length) paintStrokes(plane, w, h, strokes)
+  return plane
+}
 
 // ── GPU ──────────────────────────────────────────────────────────────────────
 
@@ -293,6 +329,7 @@ class Gpu {
   async begin(
     s: Stroke,
     png: string | null,
+    strokes: StrokeLike[] | undefined,
     picture: string | null,
     given?: ImageBitmap
   ): Promise<void> {
@@ -314,7 +351,14 @@ class Gpu {
     if (this.planeTex) gl.deleteTexture(this.planeTex)
     this.planeTex = this.texture()
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
-    if (png) {
+    if (strokes?.length) {
+      // Strokes baked in with the stroke: painted here as the engine paints them.
+      const plane = await planeOf(png, strokes, s.w, s.h)
+      const bytes = new Uint8Array(plane.length)
+      for (let i = 0; i < plane.length; i++) bytes[i] = Math.round(plane[i] * 255)
+      gl.bindTexture(gl.TEXTURE_2D, this.planeTex)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, s.w, s.h, 0, gl.RED, gl.UNSIGNED_BYTE, bytes)
+    } else if (png) {
       const bmp = await bitmapOf(pngBlob(png), s.w, s.h)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, bmp)
       bmp.close()
@@ -340,8 +384,9 @@ class Gpu {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.strokeFb)
     gl.viewport(0, 0, this.w, this.h)
     gl.enable(gl.BLEND)
-    // s' = a + s·(1 − a) = s + a·(1 − s)
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_COLOR)
+    // s' = max(s, a): a stroke never builds up over itself.
+    gl.blendEquation(gl.MAX)
+    gl.blendFunc(gl.ONE, gl.ONE)
     gl.uniform2f(this.u(p, 'uPlane'), this.w, this.h)
     gl.uniform1i(this.u(p, 'uAuto'), s.auto && this.pictureTex ? 1 : 0)
     gl.uniformMatrix3fv(this.u(p, 'uToDisplay'), false, glMat3(s.toDisplay))
@@ -357,6 +402,7 @@ class Gpu {
       gl.uniform2f(this.u(p, 'uRef'), d.dx, d.dy)
       this.draw(p, d.x - d.r - 1, d.y - d.r - 1, d.x + d.r + 1, d.y + d.r + 1, this.w, this.h)
     }
+    gl.blendEquation(gl.FUNC_ADD)
     gl.disable(gl.BLEND)
     this.show(s)
   }
@@ -388,7 +434,7 @@ class Gpu {
   }
 
   /** The plane after the stroke, as 8-bit grey rows. */
-  finish(s: Stroke, density: number): Uint8Array {
+  finish(s: Stroke): Uint8Array {
     const gl = this.gl
     const outTex = this.texture()
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, s.w, s.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
@@ -404,7 +450,6 @@ class Gpu {
     gl.activeTexture(gl.TEXTURE1)
     gl.bindTexture(gl.TEXTURE_2D, this.strokeTex)
     gl.uniform1i(this.u(p, 'uStroke'), 1)
-    gl.uniform1f(this.u(p, 'uCap'), Math.min(1, Math.max(0, density)))
     gl.uniform1i(this.u(p, 'uErase'), s.erase ? 1 : 0)
     this.draw(p, 0, 0, s.w, s.h, s.w, s.h)
     const rgba = new Uint8Array(s.w * s.h * 4)
@@ -429,19 +474,11 @@ interface Cpu {
 async function cpuBegin(
   s: Stroke,
   png: string | null,
+  strokes: StrokeLike[] | undefined,
   picture: string | null,
   given?: ImageBitmap
 ): Promise<Cpu> {
-  const plane = new Float32Array(s.w * s.h)
-  if (png) {
-    const bmp = await bitmapOf(pngBlob(png), s.w, s.h)
-    const c = new OffscreenCanvas(s.w, s.h)
-    const ctx = c.getContext('2d') as OffscreenCanvasRenderingContext2D
-    ctx.drawImage(bmp, 0, 0)
-    bmp.close()
-    const d = ctx.getImageData(0, 0, s.w, s.h).data
-    for (let i = 0; i < plane.length; i++) plane[i] = d[i * 4] / 255
-  }
+  const plane = await planeOf(png, strokes, s.w, s.h)
   let lab: Cpu['lab'] = null
   if (picture) {
     const bmp = given ?? (await bitmapOf(picture))
@@ -526,8 +563,8 @@ async function handle(m: BrushIn): Promise<void> {
         auto: m.picture !== null,
         alpha: m.alpha ?? 0.3
       }
-      if (gpu) await gpu.begin(stroke, m.png, m.picture, m.pictureBitmap)
-      else cpu = await cpuBegin(stroke, m.png, m.picture, m.pictureBitmap)
+      if (gpu) await gpu.begin(stroke, m.png, m.strokes, m.picture, m.pictureBitmap)
+      else cpu = await cpuBegin(stroke, m.png, m.strokes, m.picture, m.pictureBitmap)
       return
     }
     case 'dabs':
@@ -539,11 +576,12 @@ async function handle(m: BrushIn): Promise<void> {
       const s = stroke
       stroke = null
       try {
-        if (!s) return post({ t: 'done', id: m.id, png: null })
+        // A vector stroke: the engine paints it; here it was only shown.
+        if (!s || !m.plane) return post({ t: 'done', id: m.id, png: null })
         let grey: Uint8Array
-        if (gpu) grey = gpu.finish(s, m.density)
+        if (gpu) grey = gpu.finish(s)
         else if (cpu) {
-          const out = composeStroke(cpu.plane, cpu.stroke, m.density, s.erase)
+          const out = composeStroke(cpu.plane, cpu.stroke, s.erase)
           grey = new Uint8Array(out.length)
           for (let i = 0; i < out.length; i++) grey[i] = Math.round(out[i] * 255)
         } else return post({ t: 'done', id: m.id, png: null })

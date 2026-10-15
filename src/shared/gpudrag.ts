@@ -198,7 +198,10 @@ export function gradeInputRequest(p: GradeInputParts): ConvertRequest {
     input: p.input,
     resize: 'None',
     resampler: 'Lanczos3',
-    pixel: { depth: 'F32', channels: null },
+    // RGBA (0.21.0, E61: an opaque alpha of exactly 1, a grey source made
+    // RGB): the frame is uploaded with alpha, so every drag frame comes back
+    // as the window takes it, with no pass to lay one in.
+    pixel: { depth: 'F32', channels: 4 },
     encode: { Pixels: { sample: 'F16' } },
     metadata: ICC_ONLY,
     color,
@@ -253,8 +256,8 @@ export interface DragParts {
  * A drag frame on the GPU (Phase A §4.3, step 3): from the uploaded frame,
  * so everything before the grade is null here (it is in the frame), no
  * framing and no resize, a display `color`. It names no channels: the frame
- * has its own (`pixel.channels` is refused on a `GpuFrame`), so an opaque
- * photo comes back RGB and the host lays in the alpha (`toRgba`).
+ * has its own (`pixel.channels` is refused on a `GpuFrame`), RGBA since the
+ * upload asks for four (E61).
  */
 export function gpuDragRequest(p: DragParts): ConvertRequest {
   return {
@@ -296,11 +299,13 @@ export function gpuDragRequest(p: DragParts): ConvertRequest {
 const HALF_ONE = 0x3c00
 
 /**
- * A frame's pixels as the window takes them, RGBA: a GPU drag of an opaque
- * photo returns RGB (three bytes a pixel in 8 bits, six in half floats),
- * its SDR companion too, and what reads a frame (`deliver` in the engine
- * host, lib/frames.ts in the window) counts four or eight. Pixels that are
- * RGBA already, or of no size this knows, are returned as they are.
+ * A frame's pixels as the window takes them, RGBA: a Full HDR drag's SDR
+ * companion follows the master's render, not the frame, and may be RGB
+ * (three bytes a pixel in 8 bits, six in half floats), while what reads a
+ * frame (`deliver` in the engine host, lib/frames.ts in the window) counts
+ * four or eight. Pixels that are RGBA already, or of no size this knows,
+ * are returned as they are. The drag's own pixels are RGBA from the engine
+ * (E61).
  */
 export function toRgba(data: Uint8Array, width: number, height: number): Uint8Array {
   const px = width * height

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { readable } from '../../../lib/frames'
-import { maskJoins } from '../../../../../shared/maskpreview'
-import type { LocalLayer, MaskComponentSetting } from '../../../../../shared/recipe'
+import { maskJoins, strokesSig } from '../../../../../shared/maskpreview'
+import type { BrushComponent, LocalLayer, MaskComponentSetting } from '../../../../../shared/recipe'
 import {
   displayToBaseMatrix,
   glMat3,
   masksToRendered,
   type ViewGeometry
 } from '../../../../../shared/view'
-import { planePng, planePngOn } from '../../../lib/planes'
+import { paintedBitmap, planePng, planePngOn } from '../../../lib/planes'
 import {
   isVector,
   lensFrameKey,
@@ -101,10 +101,14 @@ async function bitmapOf(url: string, width?: number): Promise<ImageBitmap> {
   )
 }
 
-/** Painted planes, decoded, by what the component holds (its reference or its PNG). */
+/**
+ * Painted planes, decoded, by what the component holds (its reference or
+ * its PNG, and its strokes, painted over it here as the engine paints them).
+ */
 const brushBitmaps = new Map<string, ImageBitmap | Promise<ImageBitmap | null>>()
-function brushKey(c: { ref?: string; png: string }, from: LensFrame, to: LensFrame): string {
-  const own = c.ref ?? `png:${c.png.length}:${c.png.slice(-64)}`
+function brushKey(c: BrushComponent, from: LensFrame, to: LensFrame): string {
+  const plane = c.ref ?? `png:${c.png.length}:${c.png.slice(-64)}`
+  const own = c.strokes?.length ? `${plane}|${strokesSig(c.strokes)}` : plane
   // A plane on another lens frame than the one shown is shown re-warped onto it.
   return sameLensFrame(from, to) ? own : `${own}@${lensFrameKey(from)}>${lensFrameKey(to)}`
 }
@@ -296,8 +300,6 @@ export function MaskCanvas({
   // The picture, for ranges.
   const hasRange = components?.some((c) => c.kind === 'range') ?? false
   const needPicture = hasRange
-  const isHdr = useDevelop((s) => s.session?.isHdr ?? false)
-  const hdrRange = isHdr && hasRange
   useEffect(() => {
     if (!needPicture || !pictureUrl) return
     let on = true
@@ -355,13 +357,17 @@ export function MaskCanvas({
       else {
         waiting = true
         if (!got) {
-          const p = (
-            s.session ? planePngOn(s.session.key, comp, shownFrame, masksFrame) : planePng(comp)
-          )
-            .then((b64) => {
-              const bytes = Uint8Array.from(atob(b64), (x) => x.charCodeAt(0))
-              return createImageBitmap(new Blob([bytes], { type: 'image/png' }), decodeOpts)
-            })
+          // On the frame shown: its plane re-warped.
+          const photo = s.session?.key
+          const png = (): Promise<string> =>
+            photo ? planePngOn(photo, comp, shownFrame, masksFrame) : planePng(comp)
+          const made = comp.strokes?.length
+            ? paintedBitmap(comp, decodeOpts, png)
+            : png().then((b64) => {
+                const bytes = Uint8Array.from(atob(b64), (x) => x.charCodeAt(0))
+                return createImageBitmap(new Blob([bytes], { type: 'image/png' }), decodeOpts)
+              })
+          const p = made
             .then((bmp) => {
               brushBitmaps.set(key, bmp)
               if (brushBitmaps.size > 24) {
@@ -429,14 +435,10 @@ export function MaskCanvas({
     gl.setPicture(picture?.bmp ?? null, picture?.url ?? '')
 
     // Hand over to the engine once it has drawn this recipe (or at once, when
-    // the loupe has nothing to show).
+    // the loupe has nothing to show). An HDR photo's ranges too: the engine
+    // keys its plane on the values the picture's grade sees (E39).
     const agreed =
       !draft &&
-      // An HDR photo's ranges: the engine keys its plane on the HDR working
-      // values (a coverage plane needs Preserve), the picture on the tone
-      // mapped ones; the loupe keys on the picture as shown, as the picture
-      // does, so its own mask stays (ENGINE-REQUESTS E39).
-      !hdrRange &&
       gl.haveEngine &&
       mask !== null &&
       (mask.rev ?? 0) >= target.current &&
@@ -502,7 +504,6 @@ export function MaskCanvas({
   }, [
     components,
     draft,
-    hdrRange,
     isHover,
     selecting,
     layerInvert,

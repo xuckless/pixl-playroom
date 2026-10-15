@@ -20,7 +20,8 @@ export function BarRange({
   min,
   max,
   onChange,
-  suffix = ''
+  suffix = '',
+  title
 }: {
   label: string
   value: number
@@ -28,10 +29,12 @@ export function BarRange({
   max: number
   onChange: (v: number) => void
   suffix?: string
+  /** What it does, on hover. */
+  title?: string
 }): React.JSX.Element {
   const pct = ((value - min) / (max - min)) * 100
   return (
-    <label className="bar-range">
+    <label className="bar-range" title={title}>
       <span className="micro">{label}</span>
       <span className="bar-track">
         <span className="bar-fill" style={{ width: `${pct}%` }} />
@@ -146,18 +149,14 @@ function BrushBar(): React.JSX.Element {
         onChange={(softness) => setBrush({ softness })}
       />
       <BarRange
-        label={t('Flow')}
-        value={brush.flow}
-        min={1}
-        max={100}
-        onChange={(flow) => setBrush({ flow })}
-      />
-      <BarRange
         label={t('Density')}
         value={brush.density}
         min={1}
         max={100}
         onChange={(density) => setBrush({ density })}
+        title={t(
+          'How strong a stroke is: going back over it adds nothing, another stroke over it does'
+        )}
       />
       <button
         className={brush.autoMask ? 'on sm' : 'sm'}
@@ -169,7 +168,7 @@ function BrushBar(): React.JSX.Element {
       <button
         className={brush.pressure ? 'on sm' : 'sm'}
         onClick={() => setBrush({ pressure: !brush.pressure })}
-        title={t("A pen's pressure sets size and flow")}
+        title={t("A pen's pressure sets size and strength")}
       >
         {t('Pressure')}
       </button>

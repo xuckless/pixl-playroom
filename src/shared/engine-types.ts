@@ -3157,6 +3157,30 @@ export interface NativeRefs {
    * the engine does only for a Master.
    */
   sdrCompanion?: number
+  /** Raster planes prepared for this render's frame (`PlaneOp` `prepare`), passed as `maskPlanes`. */
+  planes?: string[]
+}
+
+/**
+ * Raster masks' planes prepared once per frame size (0.21.0, E37), native
+ * and kept in the host as the GPU frames are; main names them by id.
+ *
+ * - `prepare`: `request` prepared as plane `id` (kept while the request is
+ *   the same; another replaces it).
+ * - `release`: let go of planes.
+ */
+export type PlaneOp =
+  { op: 'prepare'; id: string; request: PreparedRasterRequest } | { op: 'release'; ids: string[] }
+
+/** What a `planes` call answers: a prepared plane's size and native bytes. */
+export type PlaneResult =
+  { op: 'prepare'; width: number; height: number; bytes: number } | { op: 'release' }
+
+export interface EnginePlanesMessage {
+  kind: 'planes'
+  id: number
+  call: PlaneOp
+  cancellable?: boolean
 }
 
 /**
@@ -3251,5 +3275,6 @@ export type MainToHost =
   | EngineRequestMessage
   | EngineSamMessage
   | EngineGpuMessage
+  | EnginePlanesMessage
   | EngineCancelMessage
   | EnginePortMessage

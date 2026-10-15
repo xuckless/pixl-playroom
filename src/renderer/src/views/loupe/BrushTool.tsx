@@ -1,5 +1,17 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { newId, type BrushComponent } from '../../../../shared/recipe'
+import {
+  isNeutral,
+  newId,
+  type BrushComponent,
+  type BrushStrokeSetting
+} from '../../../../shared/recipe'
+import {
+  keepsDab,
+  keptDab,
+  paintsLive,
+  withStroke,
+  type PaintedDab
+} from '../../../../shared/strokes'
 import {
   baseToDisplayMatrixNear,
   displayToBase,
@@ -24,10 +36,17 @@ import { useUi, type BrushSettings } from '../../state/ui'
 import { brushWorker } from './brushWorker'
 import { t, tk } from '../../lib/i18n'
 
-/** Painted planes are this many pixels on their long edge, in the base frame. */
+/**
+ * Painted planes (an Auto Mask stroke's), and a stroke as it shows while
+ * painted, are this many pixels on their long edge, in the base frame.
+ */
 const BRUSH_EDGE = 1024
-/** What one dab lays down at full flow (dabs overlap every eighth of a diameter). */
-const FLOW_PER_DAB = 0.35
+/**
+ * Painting into a mask that already does something renders its adjustment
+ * under the brush as the stroke goes (0.21.0: a masked layer costs only its
+ * mask's box), at most this often (`paintsLive`).
+ */
+const LIVE_MS = 100
 
 /** How strongly a stroke shows while painted: as the overlay will show it, kept visible. */
 function strokeAlpha(): number {
@@ -45,15 +64,31 @@ interface Stroke {
   pending: Dab[]
   /** The worker has the stroke (its plane is loaded): dabs may go. */
   started: boolean
+  /**
+   * The stroke as the engine paints it (E36): its kept dabs in base-frame
+   * fractions. Null for an Auto Mask stroke, which is painted into its
+   * brush's plane (the engine has no colour-weighted dab).
+   */
+  vector: BrushStrokeSetting | null
+  /** The last dab made, and whether it was kept: the stroke's end always is. */
+  lastDab: (PaintedDab & { kept: boolean }) | null
+  /** The adjustment renders under the brush as it paints. */
+  live: boolean
+  liveTimer: ReturnType<typeof setTimeout> | null
 }
 
 /**
  * Painting a mask, as in Lightroom: brushes A and B and an eraser (Alt), each
- * with its size, feather, flow and density; a pen's pressure; Auto Mask to
- * keep a stroke to similar colours. It paints the selected brush component,
- * or the mask's last, or a new one in the pending Add / Subtract /
- * Intersect mode. The painting itself runs in the brush worker, on the GPU;
- * here the pointer becomes dabs.
+ * with its size, feather and density; a pen's pressure; Auto Mask to keep a
+ * stroke to similar colours. It paints the selected brush component, or the
+ * mask's last, or a new one in the pending Add / Subtract / Intersect mode.
+ *
+ * A stroke is the engine's (0.21.0, E36): a vector, as sharp on the export
+ * as on the screen, as strong as Density says however often it passes. An
+ * Auto Mask stroke is painted into the brush's plane instead. The stroke
+ * shows in the brush worker, on the GPU, as it is painted; here the pointer
+ * becomes dabs. Painting into a mask that already does something renders
+ * its adjustment under the brush as it goes.
  */
 export const BrushLayer = memo(function BrushLayer({
   rect,
@@ -111,13 +146,52 @@ export const BrushLayer = memo(function BrushLayer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => postScreen(null), [worker, vis.x, vis.y, vis.w, vis.h, rect.w, rect.h, g])
 
+  /** A new brush for a stroke: strokes alone, its plane size the base frame's aspect. */
+  const madeBrush =
+    (s: Stroke): (() => BrushComponent) =>
+    () => ({
+      id: s.compId,
+      kind: 'brush',
+      mode: modeForNew(useDevelop.getState().recipe?.layers.find((l) => l.id === layerId)),
+      opacity: 100,
+      invert: false,
+      feather: 0,
+      width: planeW,
+      height: planeH,
+      png: ''
+    })
+
+  /** The stroke so far as the engine paints it, its last dab kept. */
+  const strokeSoFar = (s: Stroke): BrushStrokeSetting | null => {
+    const v = s.vector
+    if (!v) return null
+    const d = s.lastDab
+    const dabs = d && !d.kept ? [...v.dabs, ...keptDab(d)] : [...v.dabs]
+    return dabs.length >= 4 ? { ...v, dabs } : null
+  }
+
+  /** The adjustment under the brush: the stroke so far, rendered as a draft. */
+  const liveDraft = (s: Stroke): void => {
+    s.liveTimer = null
+    if (stroke.current !== s || !layerId) return
+    const so = strokeSoFar(s)
+    if (so) edit((r) => withStroke(r, layerId, s.compId, so, madeBrush(s)), true)
+  }
+
   const dab = (s: Stroke, q: P, pressure: number): void => {
     const set = s.set
     const pr = set.pressure ? pressure : 1
     const k = scaleAt(q)
     const r = (set.size / 2) * k * (set.pressure ? 0.25 + 0.75 * pr : 1)
-    const flow = (set.flow / 100) * FLOW_PER_DAB * pr
+    // A dab's strength: the stroke's (Density) at this pressure.
+    const flow = (set.density / 100) * pr
     const b = displayToBase(g, q)
+    if (s.vector) {
+      const d = { x: b.x, y: b.y, r: r / Math.min(planeW, planeH), p: pr }
+      const kept = keepsDab(s.vector.dabs, d, planeW, planeH)
+      if (kept) s.vector.dabs.push(...keptDab(d))
+      s.lastDab = { ...d, kept }
+    }
     s.pending.push({
       x: b.x * planeW,
       y: b.y * planeH,
@@ -151,6 +225,7 @@ export const BrushLayer = memo(function BrushLayer({
       dab(s, q, pressure)
     }
     s.last = p
+    if (s.live && !s.liveTimer) s.liveTimer = setTimeout(() => liveDraft(s), LIVE_MS)
   }
 
   /** Send what the pointer painted since the last event. */
@@ -183,6 +258,18 @@ export const BrushLayer = memo(function BrushLayer({
     if (!existing && erase) return
     const p = toDisplay(e, e.currentTarget)
     const pressure = e.pointerType === 'pen' ? e.pressure || 0.5 : 1
+    // Auto Mask weighs a stroke by the picture's colours: painted into the plane.
+    const auto = set.autoMask && d.picture !== null
+    const vector: BrushStrokeSetting | null = auto
+      ? null
+      : {
+          id: newId(),
+          dabs: [],
+          softness: Math.min(1, Math.max(0, set.softness / 100)),
+          flow: Math.min(1, Math.max(0, set.density / 100)),
+          ...(erase ? { erase: true as const } : {})
+        }
+    const live = vector !== null && paintsLive(isNeutral(layer.settings), d.report?.totalMs ?? null)
     stroke.current = {
       compId: existing?.id ?? newId(),
       isNew: !existing,
@@ -190,36 +277,44 @@ export const BrushLayer = memo(function BrushLayer({
       erase,
       set,
       pending: [],
-      started: false
+      started: false,
+      vector,
+      lastDab: null,
+      live,
+      liveTimer: null
     }
     paint(p, pressure)
     if (g.lens) postScreen(p)
+    // An Auto Mask stroke joins the brush's plane: its strokes are painted in
+    // with it, on the masks' lens frame, where the pointer's dabs land (view.ts).
     let png: string | null = null
     try {
-      // On the masks' lens frame, where the pointer's dabs land (view.ts).
-      if (existing && (existing.png || existing.ref) && d.session)
+      if (auto && existing && (existing.png || existing.ref) && d.session)
         png = await planePngOn(d.session.key, existing, recipe.masks?.lensFrame ?? null)
     } catch (err) {
       stroke.current = null
       return useLibrary.getState().say(errorText(err), 'error')
     }
-    const picture = set.autoMask && d.picture ? readable(d.picture) : null
+    const picture = auto && d.picture ? readable(d.picture) : null
     // A preview frame is no file the worker could fetch: its pixels go along.
     const pictureBitmap =
       picture && isFrame(picture) ? await framePixels(picture).catch(() => undefined) : undefined
+    // Painted live with the overlay off, the adjustment is what shows.
+    const alpha = live && !useDevelop.getState().overlay ? 0 : strokeAlpha()
     worker.post(
       {
         t: 'begin',
         w: planeW,
         h: planeH,
         png,
+        ...(auto && existing?.strokes?.length ? { strokes: existing.strokes } : {}),
         softness: set.softness,
         erase,
         picture,
         ...(pictureBitmap ? { pictureBitmap } : {}),
         // Auto Mask reads the picture where the plane's pixels show.
         toDisplay: baseToDisplayMatrixNear(g, displayToBase(g, p)),
-        alpha: strokeAlpha()
+        alpha
       },
       pictureBitmap ? [pictureBitmap] : []
     )
@@ -238,37 +333,50 @@ export const BrushLayer = memo(function BrushLayer({
       await new Promise((r) => setTimeout(r, 10))
     }
     flush()
+    // The last live draft would come after the stroke itself: it goes.
+    if (s.liveTimer) clearTimeout(s.liveTimer)
+    s.liveTimer = null
     stroke.current = null
-    if (!session) return worker.post({ t: 'cancel' })
+    if (!session || !layerId) return worker.post({ t: 'cancel' })
     try {
-      const png = await worker.finish(s.set.density / 100)
-      if (!png) return
-      const ref = await api.develop.putPlane(png)
-      rememberPlane(ref, png)
-      edit((r) => {
-        const l = r.layers.find((x) => x.id === layerId)
-        if (!l) return
-        const c = l.components.find((x) => x.id === s.compId)
-        // The recipe holds the plane by reference; the pixels stay in the plane stores.
-        if (c && c.kind === 'brush') {
-          c.png = ''
-          c.ref = ref
-          // Painted on the masks' lens frame (re-warped onto it if it was on another).
-          delete c.lensFrame
-        } else
-          l.components.push({
-            id: s.compId,
-            kind: 'brush',
-            mode: modeForNew(l),
-            opacity: 100,
-            invert: false,
-            feather: 0,
-            width: planeW,
-            height: planeH,
-            png: '',
-            ref
-          })
-      })
+      if (s.vector) {
+        // The engine paints it: the worker only shows it, and lets it go.
+        void worker.finish(false).catch(() => undefined)
+        const whole = strokeSoFar(s)
+        if (!whole) return
+        edit((r) => withStroke(r, layerId, s.compId, whole, madeBrush(s)))
+      } else {
+        const png = await worker.finish(true)
+        if (!png) return
+        const ref = await api.develop.putPlane(png)
+        rememberPlane(ref, png)
+        edit((r) => {
+          const l = r.layers.find((x) => x.id === layerId)
+          if (!l) return
+          const c = l.components.find((x) => x.id === s.compId)
+          // The recipe holds the plane by reference; the pixels stay in the
+          // plane stores. Its strokes are painted into it now, on the masks'
+          // lens frame (re-warped onto it if it was on another).
+          if (c && c.kind === 'brush') {
+            c.png = ''
+            c.ref = ref
+            delete c.strokes
+            delete c.lensFrame
+          } else
+            l.components.push({
+              id: s.compId,
+              kind: 'brush',
+              mode: modeForNew(l),
+              opacity: 100,
+              invert: false,
+              feather: 0,
+              width: planeW,
+              height: planeH,
+              png: '',
+              ref
+            })
+        })
+      }
       commit(s.erase ? tk('Brush erase') : tk('Brush stroke'))
       madeComponent(s.compId)
     } catch (err) {

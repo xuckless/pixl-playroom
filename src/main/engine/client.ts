@@ -19,6 +19,8 @@ import type {
   EngineMethod,
   GpuOp,
   GpuResult,
+  PlaneOp,
+  PlaneResult,
   GradeSpace,
   HostToMain,
   ImageStats,
@@ -102,7 +104,7 @@ export class EngineError extends Error {
 interface Pending {
   resolve: (v: unknown) => void
   reject: (e: Error) => void
-  method: EngineMethod | 'sam' | 'gpu'
+  method: EngineMethod | 'sam' | 'gpu' | 'planes'
   onProgress?: (p: Progress) => void
 }
 
@@ -450,6 +452,15 @@ export class EngineClient {
     ) as Promise<GpuResult>
   }
 
+  /**
+   * One of the prepared mask planes' calls (`PlaneOp`, 0.21.0, E37): the
+   * planes stay in the host, named by id, and a render names them in its
+   * `native.planes`.
+   */
+  planes(call: PlaneOp): Promise<PlaneResult> {
+    return this.post('planes', (id) => ({ kind: 'planes', id, call })) as Promise<PlaneResult>
+  }
+
   /** Where a heal or clone should copy from (see `retouch/suggest.rs`). */
   suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.call('suggestHealSource', [request]) as Promise<Record<string, unknown>>
@@ -589,7 +600,7 @@ export class EngineClient {
   }
 
   private post(
-    method: EngineMethod | 'sam' | 'gpu',
+    method: EngineMethod | 'sam' | 'gpu' | 'planes',
     message: (id: number, cancellable: boolean) => MainToHost,
     signal?: AbortSignal,
     onProgress?: (p: Progress) => void

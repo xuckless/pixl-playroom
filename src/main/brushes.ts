@@ -1,11 +1,14 @@
 /**
- * Raster masks on disk. A brush component lives in the recipe as a base64
- * grey PNG in the base frame (the photo upright, before the user's turns).
- * The engine reads raster masks from a PNG path in the frame it grades, so
- * each plane is written once per (content, turn) into the photo's cache, by
- * the pixels worker. Gradients reach the engine as its own shapes; only one
- * an older version gave an edge is drawn into a plane here
- * (`rasterGradient`).
+ * Raster masks on disk. A brush component lives in the recipe as strokes
+ * (engine 0.21's, E36) over a base64 grey PNG in the base frame (the photo
+ * upright, before the user's turns), or either alone. The engine reads
+ * raster masks from a PNG path in the frame it grades, so each plane is
+ * written once per (content, turn) into the photo's cache, by the pixels
+ * worker. Strokes reach the engine as its own shape where they can
+ * (shared/strokes.ts `brushRoute`): then only the plane under them is a
+ * file. Where they can't, the whole brush is painted into one plane here.
+ * Gradients reach the engine as its own shapes; only one an older version
+ * gave an edge is drawn into a plane here (`rasterGradient`).
  *
  * A painted stroke with Snap to edges is kept to the object it was painted
  * on: SAM (main/select) finds that object, and the plane written is the
@@ -23,14 +26,19 @@ import { frameMap, frameOf, remapComponent, warpPlane, type MaskFrames } from '.
 import { planeWarpFor } from './maskframe'
 import { planeEdge, snapsToObject } from '../shared/refine'
 import type { Recipe } from '../shared/recipe'
+import { basePlaneId, brushRoute, hasStrokes, strokesKey } from '../shared/strokes'
 import log from 'electron-log/main'
-import { grey8 } from './pngio'
 import { isPlaneHash } from '../shared/ids'
 import { cacheFile } from './contain'
 import { planeRef } from './planeref'
 import { exists } from './exists'
 import { paths } from './paths'
-import { pruneGradientsSometimes, writeBrushPlane, writeGradientPlane } from './planes'
+import {
+  paintedPlane,
+  pruneGradientsSometimes,
+  writeBrushPlane,
+  writeGradientPlane
+} from './planes'
 import { pixels, type PixelsJob } from './workers/pool'
 
 /** Planes being written now, by file: two renders asking for one plane share the work. */
@@ -75,9 +83,10 @@ function snapped(
   if (running) return running
   const p = (async () => {
     if (await exists(snapFile)) return snapFile
-    // The object is found on the picture as rendered: a stroke drawn under
-    // another lens asks for it where it now lies (once: the file is kept).
-    const drawn = grey8(Buffer.from(job.png, 'base64'))
+    // The stroke as painted (its plane, its strokes over it), and found on
+    // the picture as rendered: a stroke drawn under another lens asks for it
+    // where it now lies (once: the file is kept).
+    const drawn = paintedPlane(job.png, job.strokes)
     const stroke = job.warp
       ? { ...drawn, data: warpPlane(drawn.data, drawn.width, drawn.height, job.warp) }
       : drawn
@@ -106,7 +115,7 @@ function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Pr
       if (job.op === 'gradient') {
         writeGradientPlane(file, job.c, job.user)
         pruneGradientsSometimes(job.dir)
-      } else writeBrushPlane(file, job.png, job.user, job.edge, job.object, job.warp)
+      } else writeBrushPlane(file, job.png, job.user, job.edge, job.object, job.warp, job.strokes)
     })
     .finally(() => writing.delete(file))
   writing.set(file, p)
@@ -153,7 +162,7 @@ export async function brushPlanes(
   const frames = opts.frames ?? null
   const masks = recipe.masks?.lensFrame ?? null
   for (const layer of recipe.layers) {
-    for (const drawn of layer.components) {
+    for (const [i, drawn] of layer.components.entries()) {
       // A plane drawn under another lens: re-warped onto the one rendered.
       const warped = frames ? planeWarpFor(frames, frameOf(drawn, masks)) : null
       const lensKey = warped ? `-${warped.key}` : ''
@@ -179,12 +188,29 @@ export async function brushPlanes(
         out[c.id] = file
         continue
       }
-      if (c.kind !== 'brush' || !c.png) continue
+      if (c.kind !== 'brush') continue
+      if (brushRoute(layer.components, i) !== 'plane') {
+        // Its strokes go to the engine as they are (compile carries them to
+        // the lens rendered): only the plane under them is a file.
+        if (!c.png) continue
+        const file = cacheFile(dir, `brush-${planeName(c)}${lensKey}-${user}.png`)
+        work.push(ensure(file, { op: 'brush', file, png: c.png, user, ...warp }))
+        out[basePlaneId(c.id)] = file
+        continue
+      }
+      const strokes = hasStrokes(c)
+        ? { list: c.strokes, width: c.width, height: c.height }
+        : undefined
+      if (!c.png && !strokes) continue
       // Named by its plane's reference (its content hash), reused when it has
-      // one: hashing megabytes of PNG on every compile is what it saves. A
-      // snapped plane's shift is the engine's (refine), not the plane's.
+      // one: hashing megabytes of PNG on every compile is what it saves; and
+      // by its strokes, painted in (then re-warped with the plane when drawn
+      // under another lens). A snapped plane's shift is the engine's
+      // (refine), not the plane's.
       const edge = planeEdge(c)
-      const name = `brush-${planeName(c)}${edgeKey(edge)}${lensKey}`
+      const under = c.png ? planeName(c) : 'none'
+      const painted = strokes ? `-s${strokesKey(strokes.list)}` : ''
+      const name = `brush-${under}${painted}${edgeKey(edge)}${lensKey}`
       const file = cacheFile(dir, `${name}-${user}.png`)
       const job = {
         op: 'brush' as const,
@@ -192,7 +218,8 @@ export async function brushPlanes(
         png: c.png,
         user,
         ...(edge ? { edge } : {}),
-        ...warp
+        ...warp,
+        ...(strokes ? { strokes } : {})
       }
       if (snapsToObject(c) && snapper) {
         const id = c.id
