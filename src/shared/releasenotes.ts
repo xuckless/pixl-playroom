@@ -253,6 +253,73 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
             'The Loupe’s pictures are kept so they come up at once, under a limit you choose in Settings, the ones you saw longest ago going first.'
           )
         ]
+      },
+      {
+        title: tk('Export, minus the wizard'),
+        items: [
+          tk(
+            'Export is one sheet now: presets on the left, settings on the right, a summary with a size estimate below. ⌘↵ exports. The wizard has retired to a farm upstate.'
+          ),
+          tk(
+            'Built-in presets: Web 2048, Social 1080, Print TIFF 16-bit and HDR AVIF PQ. Yours can be updated, renamed, duplicated and deleted.'
+          ),
+          tk(
+            'Exports run in the background, one after another, and show in the top bar. Each keeps a receipt with Show in Finder and Retry.'
+          ),
+          tk(
+            'Export with previous (⌘⌥⇧E) does it again with the last settings, and only asks if something would stop it.'
+          ),
+          tk(
+            'An export uses the photos as they were when you pressed Export, skips originals that are offline and names them, and a full disk gets one clear message instead of forty.'
+          )
+        ]
+      },
+      {
+        title: tk('Soft proofing'),
+        items: [
+          tk(
+            'Press S in Develop to see the photo as a printer, paper or colour space will make it. ⌥S sets the profile, intent, black point and paper; ⇧Y shows Screen and Proof side by side.'
+          ),
+          tk('While you proof, the gamut warning checks against the proof’s profile.'),
+          tk(
+            'Proof copies: one click makes a virtual copy named after the paper that opens proofed, and Photo › Make Proof Copy… does a whole selection.'
+          )
+        ]
+      },
+      {
+        title: tk('Snappier'),
+        items: [
+          tk(
+            'Zoomed to 100%, the sharp view keeps up while you drag, so you can watch sharpening and noise reduction happen.'
+          ),
+          tk(
+            'Sliders, the Looks browser and big folders feel lighter, and Playroom starts a little faster because it only loads your language. Sorry, the other five.'
+          )
+        ]
+      },
+      {
+        title: tk('Kinder to hands and eyes'),
+        items: [
+          tk(
+            'Every dropdown works from the keyboard, and every slider, wheel, curve point and number follows one rule: Shift for fine, Option-click or a double-click to reset, Esc to take back a drag.'
+          ),
+          tk(
+            'Colour wheels and curve points move with the arrow keys. On a curve, Enter adds a point and Delete removes it.'
+          ),
+          tk(
+            'Messages stay long enough to read, and View → Recent Messages… (⇧⌘M) keeps everything Playroom said this session, in case you blinked.'
+          ),
+          tk(
+            'Hints name your keys the way your keyboard does: Option on a Mac, Alt everywhere else.'
+          ),
+          tk(
+            'Playroom Signature’s buttons and sliders sit on a deep purple, so they stay easy to find next to a bright HDR photo.'
+          ),
+          tk(
+            'The scopes’ ◀ ▶ stay put whatever the scope is called, so you can click straight through them.'
+          ),
+          tk('This very window turns pages now: older releases are a click to the left.')
+        ]
       }
     ],
     next: [
