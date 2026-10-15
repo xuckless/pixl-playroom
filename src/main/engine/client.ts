@@ -313,8 +313,18 @@ export class EngineClient {
     const wc = this.previewsTo
     if (!child || !wc || wc.isDestroyed()) return
     const { port1, port2 } = new MessageChannelMain()
+    // The page first: a host that restarts while the window reloads finds
+    // its frame already gone, and `postMessage` throws. That page's
+    // `did-finish-load` connects it again, so this channel is dropped.
+    try {
+      wc.postMessage(IPC.develop.previewPort, null, [port2])
+    } catch (err) {
+      log.warn(`[engine:${this.name}] preview channel not sent:`, (err as Error).message)
+      port1.close()
+      port2.close()
+      return
+    }
     child.postMessage({ kind: 'port' }, [port1])
-    wc.postMessage(IPC.develop.previewPort, null, [port2])
   }
 
   /** Resolves when no call is running here, or after `maxMs`. */
