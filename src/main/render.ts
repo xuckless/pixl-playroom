@@ -378,6 +378,9 @@ function measureOf(stride: number): Measure {
 }
 
 /** The measurement a `measure` asked for; the engine returns it whenever one was. */
+/** A 1:1 tile's held refine planes were refused: the tile is made again without them. */
+class HeldRefused extends Error {}
+
 function statsOf(r: ConvertReport): ImageStats {
   if (!r.stats) throw new Error('the engine measured nothing')
   return r.stats
@@ -522,6 +525,7 @@ class Session {
   ) {
     this.dir = rendersDir(row.id)
     this.heldSlot = new HeldSlot(owner.engine, `${key}#held`)
+    this.refineSlot = new HeldSlot(owner.engine, `${key}#refine`)
     this.opened = recipe
     void this.clearEarlier()
   }
@@ -1587,6 +1591,13 @@ class Session {
   /** This photo's held measurements, kept in the interactive host (see `HeldSlot`). */
   private readonly heldSlot: HeldSlot
   /**
+   * The 1:1 view's held refine planes (engine 0.21.0, E62): a mask refined
+   * over the whole frame (Edge snap, the solver, Matting) and the whole
+   * photo's measurements, from the full-size render one tile made, kept
+   * apart from a drag's (`heldSlot`, of the proxy's frame). See `region`.
+   */
+  private readonly refineSlot: HeldSlot
+  /**
    * The grade shapes (shared/gpudrag.ts `gradeShape`) the engine refused on
    * the GPU this drag: the rest of the drag goes straight to the CPU. The
    * release forgets them.
@@ -2562,11 +2573,25 @@ class Session {
     const out = frame ? '' : join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
-    const margin = await this.regionMargin(
-      compiled.grade,
-      await this.lensedSize(compiled.lens, width, height),
-      framed
+    // A mask refined over the whole frame (E62): the first tile renders the
+    // whole frame anyway (no margin short of it), so it keeps the refine's
+    // plane and the photo's measurements (`refineSlot`); every pan after it
+    // reads them, at the shift's reach, and is that render's pixels, cut.
+    const lensed = await this.lensedSize(compiled.lens, width, height)
+    const tileKey = String(
+      hash32(gradeKey([src.path, src.width, src.height, compiled.grade, compiled.framing]))
     )
+    // (Not while the RAW itself is developed for the region: its master comes soon.)
+    let held = developing ? undefined : this.refineSlot.use(tileKey)
+    let reach = await this.regionMargin(compiled.grade, lensed, framed, held)
+    if (held && reach.whole) {
+      // A refine the held planes have none for (a mask refined since): made again.
+      this.refineSlot.drop()
+      held = undefined
+      reach = await this.regionMargin(compiled.grade, lensed, framed)
+    }
+    const hold = reach.whole && !held && !developing
+    const margin = reach.pixels
     const request: ConvertRequest = {
       ...blankRequest(src.path, out, src.input, original),
       raw: null,
@@ -2590,27 +2615,53 @@ class Session {
       lens: compiled.lens,
       retouch: compiled.retouch,
       region: { x, y, width: w, height: h, margin },
+      hold_refines: hold,
       // A Full HDR tile is resized inside the master's float pass, which the
       // engine allows only as a linear resample.
       ...(hdr && zoom < 1 ? { linear_resample: true } : {})
     }
     const tConvert = performance.now()
-    const convert = (r: ConvertRequest): Promise<ConvertReport> =>
-      this.owner.engine.convert(r, {
-        signal,
-        frame,
-        ...(floatSdr ? { native: { sdrCompanion: TILE_COMPANION_EDGE } } : {})
-      })
-    const report = await (
-      developing
-        ? withScene(
-            developing,
-            (scene) => convert({ ...request, raw: rawMaster(colourOf(this.row), scene) }),
-            signal,
-            { camera: this.row.camera, iso: this.row.iso }
-          ).then((r) => r.value)
-        : convert(request)
-    ).catch(named(compiled))
+    const native: NativeRefs = {
+      ...(floatSdr ? { sdrCompanion: TILE_COMPANION_EDGE } : {}),
+      ...(hold ? { keepHeld: this.refineSlot.id } : held ? { held: this.refineSlot.id } : {})
+    }
+    const convert = async (r: ConvertRequest): Promise<ConvertReport> => {
+      try {
+        const made = await this.owner.engine.convert(r, {
+          signal,
+          frame,
+          ...(Object.keys(native).length > 0 ? { native } : {})
+        })
+        if (hold) this.refineSlot.kept(made, tileKey)
+        return made
+      } catch (err) {
+        // Held planes refused (a mask changed: "refined for another mask") or
+        // gone with their host: the tile renders the whole frame again, and keeps them.
+        if (!held || !(err instanceof EngineError) || err.cancelled) throw err
+        const v = dragVerdict(err)
+        if (v !== 'held' && v !== 'stale') throw err
+        this.refineSlot.drop()
+        log.info('1:1 held refines let go', err.field ?? err.message)
+        if (again || this.regionAbort !== abort) throw err
+        return Promise.reject(new HeldRefused())
+      }
+    }
+    let report: ConvertReport
+    try {
+      report = await (
+        developing
+          ? withScene(
+              developing,
+              (scene) => convert({ ...request, raw: rawMaster(colourOf(this.row), scene) }),
+              signal,
+              { camera: this.row.camera, iso: this.row.iso }
+            ).then((r) => r.value)
+          : convert(request)
+      ).catch(named(compiled))
+    } catch (err) {
+      if (err instanceof HeldRefused) return this.region(req, true)
+      throw err
+    }
     // The develop's frame was taken from the proxies' (cells × their width):
     // once the engine says its own, the region is made again on it.
     if (
@@ -2730,51 +2781,66 @@ class Session {
   }
 
   /** The last grade's region reach, by what it was asked for (one: tiles of one view share it). */
-  private reach: { key: string; pixels: number } | null = null
+  private reach: { key: string; pixels: number; whole: boolean } | null = null
 
   /**
    * A 1:1 tile's margin (host rule HR-0.20-1, Phase A §3.1): at least what
    * the engine says the grade reads around a pixel, asked again whenever the
    * grade changes. A smoothed op at radius 0.02 on a 4000 px short side
    * needs about 220 px, so 96 px tiles disagreed at their edges. An engine
-   * without `regionReach` keeps the fixed margin. No held measurement here
-   * (Phase A §4.4): a tile is of the full-resolution frame, which no drag's
-   * is, so it measures fresh (a cropped GPU drag passes its own: `dragReach`).
+   * without `regionReach` keeps the fixed margin. A drag's held measurement
+   * is never passed here (Phase A §4.4): a tile is of the full-resolution
+   * frame, which no drag's is. The 1:1 view's own held planes are (`held`,
+   * E62: a refine held reads only its shift). `whole`: nothing short of the
+   * whole frame covers what the grade reads (a mask refined over the whole
+   * frame, not held).
    */
   private async regionMargin(
     grade: Grade | null,
     /** The oriented frame after the lens correction: what the grade runs on. */
     frame: { width: number; height: number },
     /** The render's output at full size, before any resize. */
-    framed: { width: number; height: number }
-  ): Promise<number> {
-    const key = JSON.stringify([grade, frame.width, frame.height, framed.width, framed.height])
+    framed: { width: number; height: number },
+    held?: string
+  ): Promise<{ pixels: number; whole: boolean }> {
+    const key = JSON.stringify([
+      grade,
+      frame.width,
+      frame.height,
+      framed.width,
+      framed.height,
+      held ?? null
+    ])
     if (this.reach?.key !== key) {
       const whole = Math.max(frame.width, frame.height)
-      const pixels = await this.owner.engine
-        .regionReach({
-          grade,
-          sdr_grade: null,
-          frame_width: frame.width,
-          frame_height: frame.height,
-          output_width: framed.width,
-          output_height: framed.height
-        })
+      const r = await this.owner.engine
+        .regionReach(
+          {
+            grade,
+            sdr_grade: null,
+            frame_width: frame.width,
+            frame_height: frame.height,
+            output_width: framed.width,
+            output_height: framed.height
+          },
+          held
+        )
         .then(
           (r) => {
             // A mask snapped by a method that reads the whole frame (Edge
             // snap, the solver, Matting) has no reach short of all of it:
             // the tile is then the whole frame's render, cut (the owner,
-            // 2026-10-11: 1:1 shows the edge the export makes, at its cost).
+            // 2026-10-11: 1:1 shows the edge the export makes, at its cost),
+            // and keeps the refine's plane for the next (E62).
             if (r.pixels >= whole)
-              log.info('1:1 tiles render the whole frame', { reads: r.measured })
-            return Math.min(Math.ceil(r.pixels), whole)
+              log.info('1:1 tile renders the whole frame', { reads: r.measured })
+            return { pixels: Math.min(Math.ceil(r.pixels), whole), whole: r.pixels >= whole }
           },
-          () => 0
+          () => ({ pixels: 0, whole: false })
         )
-      this.reach = { key, pixels }
+      this.reach = { key, ...r }
     }
-    return Math.max(REGION_MARGIN, this.reach.pixels)
+    return { pixels: Math.max(REGION_MARGIN, this.reach.pixels), whole: this.reach.whole }
   }
 
   /** Per lens correction and frame size, the shrink its crop makes (1 when none). */
@@ -3198,8 +3264,10 @@ class Session {
     this.enhancePreview = null
     if (this.screen) dropFiles(this.screen.made)
     this.screen = null
-    // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5).
+    // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5),
+    // and the 1:1 view's held refines (up to 96 MB a refined mask at 24 MP).
     this.heldSlot.drop()
+    this.refineSlot.drop()
     this.owner.gpu.close(this.key)
     this.lookQueue?.close()
     for (const f of this.lookFiles.values()) void rm(f, { force: true }).catch(() => undefined)
