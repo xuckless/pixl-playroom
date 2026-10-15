@@ -246,6 +246,8 @@ interface Case {
   modelOn?: 'none'
   /** The masks rewritten onto the recipe's lens before rendering (a lens edit settled). */
   rebase?: boolean
+  /** A whole-frame view: the crop tool (its warp whole, the wedges empty) or Upright's guides. */
+  view?: 'crop tool' | 'guides'
 }
 
 const lens50 = (r: Recipe): void => void (r.lens.distortion = 50)
@@ -283,6 +285,27 @@ const CASES: Case[] = [
       r.geometry.crop = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }
       r.geometry.upright.vertical = 40
       r.geometry.upright.horizontal = 15
+    }
+  },
+  {
+    name: 'turn + flip + straighten 4 + crop + Upright, crop tool open',
+    view: 'crop tool',
+    edit: (r) => {
+      r.geometry.quarterTurns = 3
+      r.geometry.flipHorizontal = true
+      r.geometry.straighten = 4
+      r.geometry.crop = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }
+      r.geometry.upright.vertical = 40
+      r.geometry.upright.horizontal = 15
+    }
+  },
+  {
+    name: 'turn + Upright, Upright’s guides',
+    view: 'guides',
+    edit: (r) => {
+      r.geometry.quarterTurns = 1
+      r.geometry.upright.vertical = 40
+      r.geometry.crop = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }
     }
   },
   {
@@ -406,13 +429,19 @@ test(
       }
     }
 
-    const render = async (rec: Recipe, brushPaths: Record<string, string>): Promise<Out> => {
+    const render = async (
+      rec: Recipe,
+      brushPaths: Record<string, string>,
+      view?: Case['view']
+    ): Promise<Out> => {
       const frames = await maskFramesFor(deps, rec, false, W, H)
-      const c = compile(rec, ctxOf(brushPaths, frames))
-      return e.convert({
+      const c = compile(rec, ctxOf(brushPaths, frames, view))
+      // The crop tool shows a warp's empty wedges transparent: its alpha dropped.
+      const channels = framingTransparent(c.framing) ? 4 : 3
+      const o = await e.convert({
         ...blankRequest(src, '', 'Png'),
         sink: 'Bytes',
-        pixel: { depth: 'Eight', channels: 3 },
+        pixel: { depth: 'Eight', channels },
         encode: { Pixels: { sample: 'U8' } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy({ is_hdr: false } as never, 'DisplayP3'),
@@ -422,10 +451,16 @@ test(
         retouch: c.retouch,
         threads: 6
       })
+      if (channels === 3) return o
+      const rgb = Buffer.alloc(o.width * o.height * 3)
+      for (let i = 0; i < o.width * o.height; i++)
+        for (let j = 0; j < 3; j++) rgb[i * 3 + j] = o.output[i * 4 + j]
+      return { ...o, output: rgb }
     }
     const ctxOf = (
       brushPaths: Record<string, string>,
-      maskFrames: Awaited<ReturnType<typeof maskFramesFor>>
+      maskFrames: Awaited<ReturnType<typeof maskFramesFor>>,
+      view?: Case['view']
     ): Parameters<typeof compile>[1] => ({
       isRaw: false,
       asShot: null,
@@ -436,7 +471,9 @@ test(
       seed: 1,
       brushPaths,
       maskFrames,
-      applyCrop: true
+      // As render.ts compiles the whole-frame tools' view.
+      applyCrop: view === undefined,
+      showTransform: view !== 'guides'
     })
 
     // The marker colours as rendered, and the range's key on its marker.
@@ -596,17 +633,20 @@ test(
       const plainRecipe = structuredClone(r)
       plainRecipe.layers = []
       plainRecipe.retouch = []
-      const a = await render(plainRecipe, {})
-      const b = await render(r, brushPaths)
+      const a = await render(plainRecipe, {}, kase.view)
+      const b = await render(r, brushPaths, kase.view)
       assert.equal(a.width, b.width)
       const ow = a.width
       const oh = a.height
       // The loupe: the picture as rendered, and its lens grid when the masks are on another lens.
       const rendered = lensFrameOf(renderedLens(r, false))
       const grid = await maskGrid(deps, masksFrame, rendered, W, H)
-      const g = { ...loupeGeometry(r, false, W, H, false), lens: grid }
+      const g = {
+        ...loupeGeometry(r, false, W, H, kase.view !== undefined, kase.view === 'guides'),
+        lens: grid
+      }
       const toDisplay = baseToDisplayMatrix(g)
-      const compiled = compile(r, ctxOf(brushPaths, frames))
+      const compiled = compile(r, ctxOf(brushPaths, frames, kase.view))
       // Each mask's own point as the recipe holds it, on the masks' frame (a
       // plane on its own frame carried over, as the loupe shows it re-warped).
       const all = r.layers.flatMap((l) => l.components)
