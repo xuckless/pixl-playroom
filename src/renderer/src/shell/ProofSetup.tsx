@@ -293,6 +293,8 @@ export function ProofButton(): React.JSX.Element {
   const name = useUi((s) => profileName(s.proof.profile))
   const k = useKeyHint()
   const anchor = useRef<HTMLSpanElement>(null)
+  // Leaving Develop puts the setup away: it does not open again by itself on the way back.
+  useEffect(() => () => useDevelop.getState().setProofSetup(false), [])
   return (
     <span ref={anchor} className="proof-seg">
       <HoverHint
