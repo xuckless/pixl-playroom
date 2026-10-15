@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { absoluteWb, isIdentityCurve, LEFT_OUT } from '../../../shared/compile'
-import type { LutProfile } from '../../../shared/ipc'
+import type { CameraProfileChoices, LutProfile } from '../../../shared/ipc'
 import {
   HSL_BANDS,
   HSL_BAND_CENTRES,
@@ -13,7 +13,7 @@ import {
   TONE_BASES,
   type ToneBaseKind
 } from '../../../shared/recipe'
-import { rawColourReason } from '../../../shared/rawcolour'
+import { rawColourReason, type RawColour } from '../../../shared/rawcolour'
 import { WB_PRESETS } from '../../../shared/wb'
 import { opOf, wbFromSaved } from '../../../shared/wbconvert'
 import { AddColourControl } from '../components/AddColour'
@@ -214,9 +214,11 @@ function ProfileRow(): React.JSX.Element | null {
 
 /**
  * A RAW's camera colour: PIXL's fit for the body where its database holds it,
- * or the file's own. Choosing records it for the photo, carries the saved
- * white balance to the new as-shot white and opens the photo again; steps
- * made on the other colour are marked stale (their pixels moved).
+ * the file's own, or a DNG camera profile (engine 0.21, E21): one imported
+ * for this body, one of Adobe's found for it, or a `.dcp` imported now.
+ * Choosing records it for the photo, carries the saved white balance to the
+ * new as-shot white and opens the photo again; steps made on the other
+ * colour are marked stale (their pixels moved).
  */
 function CameraColourRow({
   session
@@ -225,16 +227,57 @@ function CameraColourRow({
 }): React.JSX.Element {
   const say = useLibrary((s) => s.say)
   const steps = useDevelop((s) => s.recipe?.pixels.length ?? 0)
+  const [profiles, setProfiles] = useState<CameraProfileChoices>({ kept: [], adobe: [] })
+  useEffect(() => {
+    let live = true
+    void api.develop
+      .cameraProfiles(session.key)
+      .then((p) => live && setProfiles(p))
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [session.key])
   const cc = session.cameraColour
+  const profile = session.cameraProfile
   const options = [
     ...(cc?.supported
       ? [{ value: 'pixl:1', label: `PIXL · ${cc.pixlCamera ?? `${cc.make} ${cc.model}`}` }]
       : []),
-    { value: 'container', label: t('Container (the file’s own)') }
+    { value: 'container', label: t('Container (the file’s own)') },
+    ...profiles.kept.map((p) => ({ value: p.colour, label: p.name })),
+    // The one in force, should the list not hold it (its body named otherwise).
+    ...(profile && session.rawColour && !profiles.kept.some((p) => p.colour === session.rawColour)
+      ? [{ value: session.rawColour, label: profile.name }]
+      : []),
+    ...profiles.adobe.map((p) => ({
+      value: `adobe:${p.path}`,
+      label: t('{{name}} (Adobe)', { name: p.name })
+    })),
+    { value: 'import', label: t('Import .dcp…') }
   ]
   const choose = async (v: string): Promise<void> => {
     try {
-      await api.develop.setRawColour(session.key, v as 'container' | 'pixl:1')
+      let colour = v as RawColour
+      if (v === 'import' || v.startsWith('adobe:')) {
+        const added = await api.develop.addCameraProfile(
+          session.key,
+          v === 'import' ? null : v.slice('adobe:'.length)
+        )
+        if (!added) return
+        if (!added.fits) {
+          say(
+            t(
+              'This profile is for the {{camera}}, not this photo’s camera: it is kept, and offered for that camera.',
+              { camera: added.camera ?? t('another camera') }
+            ),
+            'error'
+          )
+          return
+        }
+        colour = added.colour
+      }
+      await api.develop.setRawColour(session.key, colour)
       await useDevelop.getState().reopen()
       say(
         steps > 0
@@ -248,23 +291,42 @@ function CameraColourRow({
     }
   }
   return (
-    <div
-      className="row"
-      title={
-        cc?.supported
-          ? t(
-              'How this camera’s colours are read. PIXL’s is fitted to the body; the file’s own is the maker’s matrix.'
-            )
-          : (rawColourReason(session.info) ?? undefined)
-      }
-    >
-      <Select
-        label={t('Colour')}
-        value={session.rawColour ?? 'container'}
-        onChange={(v) => void choose(v)}
-        options={options}
-      />
-    </div>
+    <>
+      <div
+        className="row"
+        title={
+          cc?.supported
+            ? t(
+                'How this camera’s colours are read. PIXL’s is fitted to the body; the file’s own is the maker’s matrix; a camera profile (.dcp) is Adobe’s or your own.'
+              )
+            : (rawColourReason(session.info) ?? undefined)
+        }
+      >
+        <Select
+          label={t('Colour')}
+          value={session.rawColour ?? 'container'}
+          onChange={(v) => void choose(v)}
+          options={options}
+          tip={TIPS['wb.colour']}
+        />
+      </div>
+      {profile && (profile.toneCurve || profile.matricesOnly || profile.exposureOffset !== 0) && (
+        <p className="note small" title={profile.tables ?? undefined}>
+          {[
+            profile.toneCurve &&
+              t('Its tone curve is not applied: Playroom’s tone tools shape the picture.'),
+            profile.matricesOnly &&
+              t('A linear DNG takes its matrices only: its tables need a camera RAW.'),
+            profile.exposureOffset !== 0 &&
+              t('Its exposure offset ({{stops}} EV) is added, as Lightroom adds it.', {
+                stops: `${profile.exposureOffset > 0 ? '+' : ''}${profile.exposureOffset.toFixed(2)}`
+              })
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        </p>
+      )}
+    </>
   )
 }
 

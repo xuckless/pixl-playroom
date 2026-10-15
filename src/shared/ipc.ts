@@ -183,6 +183,10 @@ export const IPC = {
     open: 'develop:open',
     /** A RAW's camera colour chosen (returns the one in force); the session is closed for the caller to reopen. */
     setRawColour: 'develop:set-raw-colour',
+    /** The DNG camera profiles to offer for a RAW's body (`CameraProfileChoices`). */
+    cameraProfiles: 'develop:camera-profiles',
+    /** A `.dcp` imported (a path, or null to ask for one): `CameraProfileAdded`, or null when none was chosen. */
+    addCameraProfile: 'develop:add-camera-profile',
     /** Make these photos' proxies ahead (the open one's neighbours in the filmstrip). */
     warm: 'develop:warm',
     /** An unedited RAW's embedded preview while it opens (`FirstLookPicture`, or null). */
@@ -387,6 +391,23 @@ export interface AppError {
 }
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: AppError }
+
+/** The DNG camera profiles a RAW's colour can be (engine 0.21, E21). */
+export interface CameraProfileChoices {
+  /** Imported (or carried in by a photo) for this body. */
+  kept: { colour: RawColour; name: string }[]
+  /** Adobe's for this body, found where its DNG Converter or Camera Raw installs them, not imported yet. */
+  adobe: { path: string; name: string }[]
+}
+
+/** A camera profile imported: its colour, and whether it is for this photo's body. */
+export interface CameraProfileAdded {
+  colour: RawColour
+  name: string
+  fits: boolean
+  /** The camera the profile is for (its UniqueCameraModel). */
+  camera: string | null
+}
 
 /** An unedited RAW's embedded preview at about the stage's size, shown while it opens. */
 export interface FirstLookPicture {
@@ -679,8 +700,22 @@ export interface DevelopSession {
   isHdr: boolean
   /** The white the develop balanced for: PIXL's under PIXL's camera colour (`info` carries the same). */
   asShot: WhitePoint | null
-  /** A RAW's camera colour in force ('container' or 'pixl:1'); null for anything else. */
+  /** A RAW's camera colour in force ('container', 'pixl:1' or a camera profile's 'dcp:<id>'); null for anything else. */
   rawColour: RawColour | null
+  /**
+   * The camera profile `rawColour` names (engine 0.21, E21): its name, what of
+   * it ran (`tables`: the develop's own words, null when none did), whether it
+   * has a tone curve (never applied) and the stops its BaselineExposureOffset
+   * adds to the exposure.
+   */
+  cameraProfile?: {
+    name: string
+    tables: string | null
+    toneCurve: boolean
+    exposureOffset: number
+    /** A linear DNG: the profile's matrices only (its tables need a mosaic). */
+    matricesOnly: boolean
+  } | null
   /** A RAW's camera and whether PIXL's database holds it (the choice's menu); null for anything else. */
   cameraColour: {
     make: string

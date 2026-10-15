@@ -30,6 +30,7 @@ import type {
   ReachReport,
   ReachRequest,
   Rgb,
+  DcpProfile,
   SamOp,
   SamResult,
   SegmentReport,
@@ -422,6 +423,13 @@ export class EngineClient {
   /** Measure a photo's lateral chromatic aberration (see `lateral_ca.rs`). */
   suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.call('suggestLateralCa', [request]) as Promise<Record<string, unknown>>
+  }
+  /**
+   * A `.dcp` file's bytes as `CameraColour.Dcp` states it (engine 0.21, E21);
+   * refused (`InvalidRequest`, field `bytes`) when it is not a camera profile.
+   */
+  readCameraProfile(bytes: Uint8Array): Promise<DcpProfile> {
+    return this.call('readCameraProfile', [bytes]) as Promise<DcpProfile>
   }
   /** The white that makes a linear sample neutral, as the `WhiteBalance` op names it. */
   whiteBalanceFromPixel(rgb: Rgb, space: GradeSpace): Promise<WhiteBalance> {

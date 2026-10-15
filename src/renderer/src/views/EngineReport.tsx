@@ -156,6 +156,7 @@ export function EngineReportDialog(): React.JSX.Element | null {
     return compile(recipe, {
       isRaw: session.isRaw,
       asShot: session.asShot,
+      exposureOffset: session.cameraProfile?.exposureOffset ?? 0,
       sourceOrientation: session.isRaw ? 'Normal' : fromExif(session.info.orientation),
       frameWidth: session.frameWidth,
       frameHeight: session.frameHeight,

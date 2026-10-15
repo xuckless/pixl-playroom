@@ -44,7 +44,14 @@ import {
 } from '../shared/retouch'
 import { activeSteps, stackSignature, type PixelStep } from '../shared/pixels'
 import { effective } from '../shared/edits'
-import { pixlSupported, resolveRawColour } from '../shared/rawcolour'
+import {
+  dcpOf,
+  exposureOffsetOf,
+  pixlSupported,
+  profileLabel,
+  resolveRawColour,
+  type RawColour
+} from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
 import { askOf, scenePlan, type ScenePlan } from './ai/rawdevelop'
@@ -567,6 +574,7 @@ class Session {
     const compiled = compile(recipe, {
       isRaw: this.isRaw,
       asShot: this.info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(this.row)),
       sourceOrientation: 'Normal',
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,
@@ -2478,6 +2486,7 @@ class Session {
     const compiled = compile(this.recipe, {
       isRaw: raw,
       asShot: this.info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(this.row)),
       sourceOrientation:
         raw || stepsMaster || this.hdrMaster ? 'Normal' : sourceOrientation(this.info, null),
       frameWidth: src.width,
@@ -2980,6 +2989,7 @@ class Session {
         photoId: this.row.id,
         isRaw: this.isRaw,
         asShot: this.info.as_shot_white,
+        exposureOffset: exposureOffsetOf(colourOf(this.row)),
         seed: seedOf(this.row),
         master: set.master!,
         freeze: (recipe, layerId) =>
@@ -2989,6 +2999,7 @@ class Session {
               photoId: this.row.id,
               isRaw: this.isRaw,
               asShot: this.info.as_shot_white,
+              exposureOffset: exposureOffsetOf(colourOf(this.row)),
               seed: seedOf(this.row),
               master: set.master!
             },
@@ -3294,6 +3305,11 @@ export class DevelopSessions {
       isHdr: graded.is_hdr,
       asShot: info.as_shot_white,
       rawColour: row.is_raw === 1 ? resolveRawColour(row.raw_colour, info) : null,
+      cameraProfile: cameraProfileOf(
+        row.is_raw === 1 ? resolveRawColour(row.raw_colour, info) : null,
+        info,
+        px
+      ),
       cameraColour:
         row.is_raw === 1 && info.camera_colour
           ? {
@@ -3483,6 +3499,23 @@ export class DevelopSessions {
 }
 
 export { RAW_DEVELOP }
+
+/** What the develop panel and the info panel say of a photo's camera profile (E21); null for none. */
+function cameraProfileOf(
+  colour: RawColour | null,
+  info: SourceInfo,
+  px: Proxies
+): DevelopSession['cameraProfile'] {
+  const profile = dcpOf(colour)
+  if (!profile) return null
+  return {
+    name: profileLabel(profile),
+    tables: px.profileTables ?? null,
+    toneCurve: (profile.tone_curve?.length ?? 0) > 0,
+    exposureOffset: exposureOffsetOf(colour),
+    matricesOnly: isLinearRaw(info)
+  }
+}
 
 /** Files a screen-sized picture made, off the disk (they are hundreds of MB at 5K in float). */
 function dropFiles(files: string[]): void {

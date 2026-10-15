@@ -93,6 +93,11 @@ export interface Proxies {
   /** The full-resolution base frame (upright, before the user's turns). */
   frameWidth: number
   frameHeight: number
+  /**
+   * A camera profile's tables as the develop ran them (engine 0.21, E21:
+   * `RawReport.profile_tables`), for the info panel; absent when none ran.
+   */
+  profileTables?: string | null
 }
 
 const building = new Map<string, Promise<Proxies>>()
@@ -348,7 +353,8 @@ async function build(
     // The develop's frame (its cells' times their width when it was a half
     // size one): what masks and every normalised size are fractions of.
     frameWidth: frame.width,
-    frameHeight: frame.height
+    frameHeight: frame.height,
+    ...(report.raw?.profile_tables ? { profileTables: report.raw.profile_tables } : {})
   }
   await writeFile(meta, JSON.stringify(out))
   return out

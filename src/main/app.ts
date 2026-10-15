@@ -49,6 +49,7 @@ import { startLicence } from './licence'
 import { startAccount } from './account'
 import { startGate } from './gate'
 import { Library } from './library'
+import { CameraProfiles } from './cameraprofiles'
 import { OriginalEmbedder } from './project/embed'
 import { buildMenu } from './menu'
 import { onLanguage, startLanguage } from './i18n'
@@ -300,7 +301,10 @@ app.whenReady().then(() => {
   })
   onLanguage(() => setAbout(engine.getStatus()))
   const planes = new PlaneStore(index)
-  const library = new Library(index, bgEngine, planes)
+  // DNG camera profiles kept from earlier runs, known before any develop names one.
+  const profiles = new CameraProfiles(paths.cameraProfiles(), bgEngine)
+  profiles.load()
+  const library = new Library(index, bgEngine, planes, profiles)
   sessions = new DevelopSessions(library, engine, bgEngine)
   // A photo's new project gets its original carried inside it.
   const embedder = new OriginalEmbedder(index, library, bgEngine)

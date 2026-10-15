@@ -49,11 +49,13 @@ import {
   BACKGROUND_THREADS,
   heavyThreads,
   blankRequest,
+  colourOf,
   seedOf,
   sourceOrientation,
   uprightFraming,
   versionStamp
 } from './source'
+import { exposureOffsetOf } from '../shared/rawcolour'
 import { LOSSLESS_KEY } from './ai/denoise'
 import { keyOf, parseKey } from './keys'
 import { paths } from './paths'
@@ -341,6 +343,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
             photoId: row.id,
             isRaw: row.is_raw === 1,
             asShot: info.as_shot_white,
+            exposureOffset: exposureOffsetOf(colourOf(row)),
             seed: seedOf(row),
             master
           },

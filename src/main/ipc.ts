@@ -603,6 +603,22 @@ export function registerIpc(s: Services): void {
     await s.sessions.close(key)
     return now
   })
+  handle(IPC.develop.cameraProfiles, (key: string) => s.library.cameraProfiles(key))
+  handle(IPC.develop.addCameraProfile, async (key: string, path: string | null) => {
+    let file = path
+    if (!file) {
+      const w = win()
+      const opts = {
+        title: t('Import a camera profile'),
+        properties: ['openFile'] as 'openFile'[],
+        filters: [{ name: t('DNG camera profile'), extensions: ['dcp'] }]
+      }
+      const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+      if (r.canceled || !r.filePaths[0]) return null
+      file = r.filePaths[0]
+    }
+    return s.library.addCameraProfile(key, file)
+  })
   handle(
     IPC.develop.update,
     async (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>

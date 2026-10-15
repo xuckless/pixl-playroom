@@ -23,6 +23,8 @@ import {
   type Collection,
   type CrashConsent,
   type ErrorReport,
+  type CameraProfileAdded,
+  type CameraProfileChoices,
   type DevelopSession,
   type FirstLookPicture,
   type EngineStatus,
@@ -235,6 +237,9 @@ const api = {
     open: (key: string) => call<DevelopSession>(IPC.develop.open, key),
     setRawColour: (key: string, colour: RawColour) =>
       call<RawColour>(IPC.develop.setRawColour, key, colour),
+    cameraProfiles: (key: string) => call<CameraProfileChoices>(IPC.develop.cameraProfiles, key),
+    addCameraProfile: (key: string, path: string | null) =>
+      call<CameraProfileAdded | null>(IPC.develop.addCameraProfile, key, path),
     close: (key: string) => call<void>(IPC.develop.close, key),
     update: (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
       call<void>(IPC.develop.update, key, recipe, interactive, rev),

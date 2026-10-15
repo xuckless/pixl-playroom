@@ -25,6 +25,8 @@ export interface FreezeContext {
   photoId: number
   isRaw: boolean
   asShot: Parameters<typeof compile>[1]['asShot']
+  /** A camera profile's BaselineExposureOffset (`exposureOffsetOf`): the picture the mask was drawn on. */
+  exposureOffset?: number
   seed: number
   /** The working pixels at full size (the frame the step is made on). */
   master: ProxyFile
@@ -59,6 +61,7 @@ export async function freezeMask(
   const compiled = compile(r, {
     isRaw: ctx.isRaw,
     asShot: ctx.asShot,
+    exposureOffset: ctx.exposureOffset,
     sourceOrientation: 'Normal',
     frameWidth: master.width,
     frameHeight: master.height,

@@ -71,6 +71,7 @@ import {
   seedOf,
   versionStamp
 } from './source'
+import { exposureOffsetOf } from '../shared/rawcolour'
 
 interface Job {
   id: string
@@ -306,6 +307,7 @@ export class Exporter {
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(row)),
       sourceOrientation: srcOrientation,
       frameWidth: frameW,
       frameHeight: frameH,

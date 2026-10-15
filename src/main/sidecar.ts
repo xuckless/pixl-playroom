@@ -11,7 +11,8 @@
 import { existsSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs'
 import type { ColorLabel, Flag, Snapshot } from '../shared/ipc'
 import { normaliseRecipe, type Recipe } from '../shared/recipe'
-import { parseRawColour, type RawColour } from '../shared/rawcolour'
+import { dcpIdOf, parseRawColour, readProfile, type RawColour } from '../shared/rawcolour'
+import type { DcpProfile } from '../shared/engine-types'
 import { readNames, type PhotoNames } from '../shared/naming'
 
 export const SIDECAR_SUFFIX = '.playroom.json'
@@ -47,6 +48,11 @@ export interface Sidecar {
   rawColour?: RawColour | null
   /** The person chose `rawColour` (not a default worked out again): it is never moved. */
   rawColourChosen?: boolean
+  /**
+   * The camera profile a `dcp:<id>` colour names (engine 0.21, E21), as the
+   * engine states it: carried with the photo, never a path to a file.
+   */
+  cameraProfile?: DcpProfile | null
   /** What Gemma named in the photo (shared/naming.ts), where the photo has a sidecar; absent is null. */
   names?: PhotoNames | null
   /** The user said Keep to a suggested reject (shared/cullsuggest.ts); absent is false. */
@@ -115,6 +121,9 @@ export function readSidecar(
         stack: stackOf(raw.stack),
         rawColour: parseRawColour(raw.rawColour),
         rawColourChosen: raw.rawColourChosen === true,
+        cameraProfile: dcpIdOf(parseRawColour(raw.rawColour))
+          ? readProfile(raw.cameraProfile)
+          : null,
         names: readNames(raw.names),
         cullKeep: raw.cullKeep === true
       },
@@ -156,7 +165,7 @@ export function writeSidecar(photoPath: string, sidecar: Sidecar): number | null
   }
   const tmp = `${file}.tmp-${process.pid}`
   // No stack, colour or names, no keys: a sidecar stays what older builds wrote.
-  const { stack, rawColour, rawColourChosen, names, cullKeep, ...rest } = sidecar
+  const { stack, rawColour, rawColourChosen, cameraProfile, names, cullKeep, ...rest } = sidecar
   writeFileSync(
     tmp,
     JSON.stringify(
@@ -165,6 +174,7 @@ export function writeSidecar(photoPath: string, sidecar: Sidecar): number | null
         ...(stack ? { stack } : {}),
         ...(rawColour ? { rawColour } : {}),
         ...(rawColour && rawColourChosen ? { rawColourChosen } : {}),
+        ...(dcpIdOf(rawColour) && cameraProfile ? { cameraProfile } : {}),
         ...(names ? { names } : {}),
         ...(cullKeep ? { cullKeep } : {})
       },

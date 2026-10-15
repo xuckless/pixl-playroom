@@ -15,7 +15,7 @@ import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { existsSync } from 'fs'
 import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { basename, join } from 'path'
 import { compile } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
 import {
@@ -23,11 +23,14 @@ import {
   PRESERVE_ALL,
   reduceRefused,
   type ConvertRequest,
-  type SourceInfo
+  type SourceInfo,
+  type WhitePoint
 } from '../shared/engine-types'
 import { previewPlan, type PreviewPlan } from '../shared/thumbsize'
 import {
   IPC,
+  type CameraProfileAdded,
+  type CameraProfileChoices,
   type HdrKind,
   type LibraryItem,
   type LibrarySource,
@@ -39,14 +42,23 @@ import { defaultRecipe, hash32, isEdited, newId, type Recipe } from '../shared/r
 import type { VersionReason } from '../shared/versions'
 import {
   asShotFor,
+  dcpIdOf,
+  dcpOf,
   defaultRawColour,
   effectiveInfo,
+  exposureOffsetOf,
   parseRawColour,
+  profileFits,
+  profileLabel,
   rawColourLabel,
+  readProfile,
+  registerDcp,
   resolveRawColour,
   upgradesToPixl,
   type RawColour
 } from '../shared/rawcolour'
+import { whiteXy } from '../shared/wb'
+import type { CameraProfiles } from './cameraprofiles'
 import { EngineError, type EngineClient } from './engine/client'
 import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
@@ -62,8 +74,13 @@ import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import {
   BACKGROUND_THREADS,
+  binFactor,
   blankRequest,
+  cellFactor,
+  colourOf,
   displayPolicy,
+  isLinearRaw,
+  rawBinnedMaster,
   seedOf,
   sourceOrientation,
   versionStamp
@@ -126,7 +143,9 @@ export class Library {
     readonly index: IndexClient,
     private readonly engine: EngineClient,
     /** Painted planes: the index hands recipes out and takes them in by reference. */
-    readonly planes: PlaneStore
+    readonly planes: PlaneStore,
+    /** DNG camera profiles kept and found (engine 0.21, E21): what a `dcp:<id>` colour names. */
+    readonly profiles: CameraProfiles | null = null
   ) {
     index.on((e) => {
       if (e.name === 'changed') this.broadcast(IPC.library.changed, { folder: e.folder })
@@ -173,6 +192,7 @@ export class Library {
    */
   private async withColour(photo: PhotoRow, info: SourceInfo): Promise<SourceInfo> {
     if (photo.is_raw !== 1) return info
+    await this.knowProfile(photo.raw_colour)
     if (!parseRawColour(photo.raw_colour)) {
       let p = this.adopting.get(photo.id)
       if (!p) {
@@ -190,7 +210,81 @@ export class Library {
       }
       photo.raw_colour = await p
     }
-    return effectiveInfo(info, resolveRawColour(photo.raw_colour, info))
+    const colour = resolveRawColour(photo.raw_colour, info)
+    if (!dcpIdOf(colour)) return effectiveInfo(info, colour)
+    const white = await this.asShot(photo, info, colour)
+    return white === info.as_shot_white ? info : { ...info, as_shot_white: white }
+  }
+
+  /**
+   * A camera profile a photo's colour names, made known for the develop: one
+   * its sidecar or project carried in (from another machine) is read from
+   * the index, and kept here too.
+   */
+  private async knowProfile(colour: string | null | undefined): Promise<void> {
+    const id = dcpIdOf(colour)
+    if (!id || dcpOf(id)) return
+    const profile = readProfile(await this.index.cameraProfile(id).catch(() => null))
+    if (!profile) return
+    registerDcp(id, profile)
+    await this.profiles?.keep(id, profile).catch(() => undefined)
+  }
+
+  /** As-shot whites under a camera profile, by photo version and profile. */
+  private dcpWhites = new Map<string, Promise<WhitePoint | null>>()
+
+  /**
+   * The white a colour's develop balances for (where a temperature and tint
+   * start). Under a camera profile it is the one the profile's matrices find
+   * for the file's as-shot neutral: the engine's own, read off a small binned
+   * develop once per photo version and profile (kept beside its proxies).
+   * Anything else, and a linear DNG (its matrices are the profile's but its
+   * white is the file's), as `asShotFor` says.
+   */
+  private async asShot(row: PhotoRow, info: SourceInfo, c: RawColour): Promise<WhitePoint | null> {
+    if (!dcpIdOf(c) || !dcpOf(c) || isLinearRaw(info)) return asShotFor(info, c)
+    const k = `${versionOf(row)}:${c}`
+    let p = this.dcpWhites.get(k)
+    if (!p) {
+      p = this.measureWhite(row, info, c, k).catch((err) => {
+        log.info('camera profile white not measured', row.id, (err as Error).message)
+        this.dcpWhites.delete(k)
+        return info.as_shot_white
+      })
+      this.dcpWhites.set(k, p)
+    }
+    return p
+  }
+
+  private async measureWhite(
+    row: PhotoRow,
+    info: SourceInfo,
+    c: RawColour,
+    k: string
+  ): Promise<WhitePoint | null> {
+    const file = join(paths.photoCachePath(row.id), `white-${hash32(k).toString(16)}.json`)
+    try {
+      return JSON.parse(await readFile(file, 'utf8')) as WhitePoint
+    } catch {
+      // not measured yet
+    }
+    const factor = binFactor(Math.max(info.width, info.height), cellFactor(row), 256)
+    const report = await this.engine.convert({
+      ...blankRequest(row.path, '', info.input, info),
+      sink: 'Bytes',
+      raw: rawBinnedMaster(c, factor),
+      pixel: { depth: 'F32', channels: 3 },
+      encode: { Pixels: { sample: 'F32' } },
+      threads: BACKGROUND_THREADS
+    })
+    const kelvin = report.raw?.white_temperature_kelvin
+    const tint = report.raw?.white_tint
+    if (typeof kelvin !== 'number' || typeof tint !== 'number') return info.as_shot_white
+    const [x, y] = whiteXy(kelvin, tint)
+    const white: WhitePoint = { x, y, temperature_kelvin: kelvin, tint }
+    await mkdir(paths.photoCachePath(row.id), { recursive: true })
+    await writeFile(file, JSON.stringify(white)).catch(() => undefined)
+    return white
   }
 
   /** A default `container` moved to PIXL's colour (`upgradesToPixl`): recorded, whites carried. */
@@ -231,19 +325,69 @@ export class Library {
     const row = await this.photoRow(key)
     if (row.is_raw !== 1) throw new Error(t('only a RAW has a camera colour'))
     const info = await this.engineProbe(row, this.engine)
+    await this.knowProfile(row.raw_colour)
     const to = resolveRawColour(colour, info)
     const from = resolveRawColour(row.raw_colour, info)
     if (to === from && parseRawColour(row.raw_colour)) return to
+    // A camera profile goes into the index first: the photo's sidecar or
+    // project carries it with the colour that names it.
+    const id = dcpIdOf(to)
+    const profile = dcpOf(to)
+    if (id && profile) await this.index.setCameraProfile(id, JSON.stringify(profile))
     await this.index.setRawColour(row.id, to, true)
     await this.index.carryWhite(
       row.id,
-      { isRaw: true, asShot: asShotFor(info, from) },
-      { isRaw: true, asShot: asShotFor(info, to) },
+      { isRaw: true, asShot: await this.asShot(row, info, from) },
+      { isRaw: true, asShot: await this.asShot(row, info, to) },
       t('Camera colour: {{colour}}', { colour: rawColourLabel(info, to) })
     )
     // Its thumbnail's stamp names the colour: made again.
     this.queueThumb(row.id, null, true)
     return to
+  }
+
+  /**
+   * The DNG camera profiles a RAW's colour can be (engine 0.21, E21): those
+   * kept for its body, and Adobe's for it that are not kept yet.
+   */
+  async cameraProfiles(key: string): Promise<CameraProfileChoices> {
+    const row = await this.photoRow(key)
+    if (row.is_raw !== 1 || !this.profiles) return { kept: [], adobe: [] }
+    const info = await this.engineProbe(row, this.engine)
+    return {
+      kept: this.profiles
+        .forCamera(info)
+        .map((k) => ({ colour: `dcp:${k.id}` as const, name: profileLabel(k.profile) })),
+      adobe: await this.profiles.adobe(info)
+    }
+  }
+
+  /**
+   * A `.dcp` imported for a RAW (the person's file, or one of Adobe's found
+   * for it): kept as the engine reads it, never by its path. Whether it is
+   * for this photo's body is said; one that is not is kept, but offered only
+   * for its own camera. The engine refuses a file that is not a profile.
+   */
+  async addCameraProfile(key: string, path: string): Promise<CameraProfileAdded> {
+    if (!this.profiles) throw new Error(t('Camera profiles are not available'))
+    const row = await this.photoRow(key)
+    const info = await this.engineProbe(row, this.engine)
+    let kept
+    try {
+      kept = await this.profiles.import(path)
+    } catch (err) {
+      if (err instanceof EngineError && err.code === 'InvalidRequest')
+        throw new Error(
+          t('{{name}} is not a DNG camera profile Playroom can read.', { name: basename(path) })
+        )
+      throw err
+    }
+    return {
+      colour: `dcp:${kept.id}`,
+      name: profileLabel(kept.profile),
+      fits: profileFits(kept.profile, info),
+      camera: kept.profile.unique_camera_model
+    }
   }
 
   private async engineProbe(photo: PhotoRow, engine: EngineClient): Promise<SourceInfo> {
@@ -834,6 +978,7 @@ export class Library {
     const cropOf = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(row)),
       sourceOrientation: 'Normal',
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,
@@ -847,6 +992,7 @@ export class Library {
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(row)),
       sourceOrientation: 'Normal',
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,

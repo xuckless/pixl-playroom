@@ -16,6 +16,17 @@ export const TIPS = {
     expect: tk('The whole picture shifts warmer or cooler, greener or pinker.'),
     tip: tk('Pick a grey or white with the eyedropper first, then season by eye.')
   },
+  'wb.colour': {
+    what: tk(
+      'How the camera’s colours are read before anything else: PIXL’s fit for the body, the file’s own matrix, or a DNG camera profile (.dcp).'
+    ),
+    expect: tk(
+      'A camera profile, Adobe’s or one you made (a ColorChecker, dcamprof), matches the colour another app gave the photo; its tone curve is left to Playroom’s tone tools.'
+    ),
+    tip: tk(
+      'Choose it before editing: the white balance is carried across, but heals and AI steps are made again on the new colour.'
+    )
+  },
   'wb.temp': {
     what: tk('Cools (left) or warms (right) the picture.'),
     expect: tk('Daylight sits near 5500 K; tungsten rooms want around 3200 K.'),
