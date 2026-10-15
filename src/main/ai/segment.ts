@@ -43,6 +43,7 @@ import {
   type FacePart
 } from '../../shared/faceparts'
 import { renderedLens } from '../../shared/edits'
+import { lensFrameOf } from '../../shared/lensframe'
 import type { PlaneShare } from '../../shared/naming'
 import { hardenPlane } from '../../shared/refine'
 import { partPlane, pasted, personBox, squareAround } from './parts'
@@ -245,9 +246,14 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 200)
     let report: Awaited<ReturnType<EngineClient['segment']>>
     const lens = renderedLens(recipe, row.is_raw === 1)
+    // The frame it is found on: applied, the mask says so if the masks are on another.
+    const lensFrame = lensFrameOf(lens)
     if (isPartTarget(req.target)) {
       try {
-        return await this.part(ctx, req, req.target, row.id, px.proxy, lens, segmenter)
+        return {
+          ...(await this.part(ctx, req, req.target, row.id, px.proxy, lens, segmenter)),
+          lensFrame
+        }
       } finally {
         clearInterval(tick)
       }
@@ -289,6 +295,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         height: d.height,
         label,
         source: { kind: 'segment', target: req.target as 'sky' | 'vegetation' | 'water' },
+        lensFrame,
         ...(req.into ? { into: { ...req.into } } : {})
       }
     }
@@ -305,6 +312,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         height: d.height,
         label: t(SEGMENT_LABEL.depth),
         depth: true,
+        lensFrame,
         ...(req.into ? { into: { ...req.into } } : {})
       }
     }
@@ -337,6 +345,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         target: req.target as 'subject' | 'background',
         ...(req.fine ? { fine: true as const } : {})
       },
+      lensFrame,
       // Into the mask it was asked for (Add to the selected mask, a smart look's), else a new one.
       ...(req.into ? { into: { ...req.into } } : {})
     }
@@ -449,6 +458,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       height: plane!.height,
       label: text.charAt(0).toUpperCase() + text.slice(1),
       source: { kind: 'phrase', text },
+      lensFrame: lensFrameOf(lens),
       ...(req.into ? { into: { ...req.into } } : {})
     }
   }
@@ -467,6 +477,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     for (const id of [FACE_DETECTOR, FACE_LANDMARKER])
       if (!(await this.models.installed(id))) throw new ModelMissing(this.models.entry(id))
     const { row, px, recipe } = await this.frame(req.key)
+    const lens = renderedLens(recipe, row.is_raw === 1)
     const detector = await this.models.ref(FACE_DETECTOR, 'Cpu')
     const landmarks = await this.models.ref(FACE_LANDMARKER, 'Cpu')
     if (ctx.signal.aborted) throw new Cancelled()
@@ -484,7 +495,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
             gain_map: null,
             // The proxy is the base frame, upright, after the lens: what masks are placed on.
             orientation: 'Normal',
-            lens: renderedLens(recipe, row.is_raw === 1),
+            lens,
             region: region ? { ...region, margin: 0 } : null,
             detector,
             landmarks,
@@ -532,6 +543,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       height: H,
       label,
       polygon: { part, faces: outlines, face: null },
+      lensFrame: lensFrameOf(lens),
       ...(req.into ? { into: { ...req.into } } : {})
     }
   }

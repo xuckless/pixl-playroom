@@ -73,6 +73,7 @@ export class PromptRunner implements AiRunner<PromptRequest> {
         height: made.height,
         label: req.label ? t(req.label) : t('Object'),
         source: made.source,
+        lensFrame: made.lensFrame,
         ...(req.into ? { into: { ...req.into } } : {})
       }
     } catch (err) {

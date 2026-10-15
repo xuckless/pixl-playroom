@@ -24,17 +24,22 @@ import type { PlaneStore } from '../planestore'
 import type { DevelopSessions } from '../render'
 
 /**
- * The lens frame a model's mask was found on (the lens the photo renders
- * with: ai/segment.ts), when it is not the frame the photo's masks are on:
- * the mask says so, and is carried over (shared/lensframe.ts).
+ * The lens frame a model's mask was found on (the lens the photo rendered
+ * with when the model ran: ai/segment.ts; the one it renders with now if
+ * the result does not say), when it is not the frame the photo's masks are
+ * on: the mask says so, and is carried over (shared/lensframe.ts). Optics
+ * switched while the model ran leaves it on the frame it was found on.
  */
 async function foundOn(
   key: string,
   recipe: Recipe,
-  library: Library
+  library: Library,
+  found: LensFrame | undefined
 ): Promise<{ lensFrame?: LensFrame }> {
-  const row = await library.photoRow(key)
-  const made = lensFrameOf(renderedLens(recipe, row.is_raw === 1))
+  const made =
+    found !== undefined
+      ? found
+      : lensFrameOf(renderedLens(recipe, (await library.photoRow(key)).is_raw === 1))
   return sameLensFrame(made, recipe.masks?.lensFrame) ? {} : { lensFrame: made }
 }
 
@@ -49,7 +54,7 @@ export async function applyMaskResult(
   if (png === undefined) throw new Error(t('the mask went missing before it could be added'))
   const live = deps.sessions.liveRecipe(e.key)
   const recipe: Recipe = structuredClone(live ?? (await deps.library.recipe(e.key)))
-  const frame = await foundOn(e.key, recipe, deps.library)
+  const frame = await foundOn(e.key, recipe, deps.library, r.lensFrame)
   const depth: DepthComponent | null = r.depth
     ? {
         id: newId(),
@@ -130,7 +135,7 @@ async function applyFacePart(
   const [first, ...rings] = shownRings(found)
   const comp: PolygonComponent = {
     id: newId(),
-    ...(await foundOn(e.key, recipe, deps.library)),
+    ...(await foundOn(e.key, recipe, deps.library, r.lensFrame)),
     name: r.label,
     kind: 'polygon',
     mode: 'Add',

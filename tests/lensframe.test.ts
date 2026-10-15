@@ -445,3 +445,48 @@ test('the spots baked into the corrected proxies are where the lens rendered put
   const baked = compile({ ...r, retouch: placed }, ctx)
   assert.deepEqual(live.retouch, baked.retouch)
 })
+
+test('a model’s mask lands on the lens it was found on, Optics switched while it ran or not', async () => {
+  const { applyMaskResult } = await import('../src/main/ai/apply')
+  const land = async (recipe: Recipe, found?: Distortion | null): Promise<Recipe> => {
+    let kept: Recipe | null = null
+    const deps = {
+      library: { photoRow: async () => ({ is_raw: 0 }) },
+      sessions: {
+        liveRecipe: () => recipe,
+        update: (_: string, r: Recipe) => void (kept = r),
+        flush: async () => undefined
+      },
+      planes: { get: async () => 'png' }
+    }
+    await applyMaskResult(
+      {
+        key: '1',
+        result: {
+          kind: 'mask',
+          ref: 'p',
+          width: 8,
+          height: 6,
+          label: 'Subject',
+          ...(found !== undefined ? { lensFrame: found } : {})
+        }
+      } as never,
+      deps as never
+    )
+    assert.ok(kept)
+    return kept
+  }
+  const r = defaultRecipe(false)
+  r.lens.distortion = 40
+  r.masks = { lensFrame: ownLensFrame(r) }
+  const own = (x: Recipe): { lensFrame?: unknown } =>
+    x.layers[x.layers.length - 1].components[0] as { lensFrame?: unknown }
+  // Found on the lens rendered, the masks' own: nothing to say.
+  assert.equal('lensFrame' in own(await land(r, ownLensFrame(r))), false)
+  // Found with Optics off, which was switched back on before it landed.
+  assert.equal(own(await land(r, null)).lensFrame, null)
+  // An older result that does not say: the lens rendered when it lands.
+  const off = { ...r, off: { optics: true } }
+  assert.equal(own(await land(off)).lensFrame, null)
+  assert.equal('lensFrame' in own(await land(r)), false)
+})
