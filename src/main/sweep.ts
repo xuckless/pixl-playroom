@@ -11,7 +11,8 @@ const DAY = 24 * 60 * 60 * 1000
 /** Each kind of file, and how long it is kept unused (0: gone whenever swept). */
 const RENDERS: [RegExp, number][] = [
   [/^before-/, 0],
-  [/^mthumb-/, 0]
+  [/^mthumb-/, 0],
+  [/^first-/, 0]
 ]
 const CACHE: [RegExp, number][] = [
   [/^heal-/, 0],
@@ -42,7 +43,7 @@ async function sweep(dir: string, kinds: [RegExp, number][]): Promise<void> {
 
 /**
  * Sweep a photo's caches as it leaves the develop view: its renders folder
- * (`before-…`, `mthumb-…`, per visit), its cache folder (a heal's
+ * (`before-…`, `mthumb-…`, the first look's `first-…`, per visit), its cache folder (a heal's
  * leftovers, frozen masks a day old, mask planes unused for a week) and its
  * steps' overlays an older Playroom sized as PNGs.
  */

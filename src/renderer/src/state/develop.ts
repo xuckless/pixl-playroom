@@ -22,6 +22,14 @@ import { useUi } from './ui'
 import { aboveWhite, renderDisplay, useDisplay } from './display'
 import type { GuideLine } from '../../../shared/upright'
 import type { InvariantPlace } from '../../../shared/invariant'
+import {
+  lookArrived,
+  lookFaded,
+  lookOnOpen,
+  lookOnPicture,
+  wantsPreview,
+  type FirstLook
+} from '../lib/firstlook'
 
 export type Tool =
   | 'none'
@@ -96,6 +104,11 @@ interface DevelopState {
   snapshots: Snapshot[]
   /** The picture on screen: the latest render for the current view. */
   picture: RenderEvent | null
+  /**
+   * What shows while a photo opens, before its develop's first picture
+   * (lib/firstlook.ts): its thumbnail, or an unedited RAW's embedded preview.
+   */
+  firstLook: FirstLook | null
   /** The latest render for each view, so opening or closing the crop tool swaps at once. */
   pictures: Pictures
   before: RenderEvent | null
@@ -204,6 +217,8 @@ interface DevelopState {
   setCurveChannel(c: CurveChannel): void
   setTatTarget(t: DevelopState['tatTarget']): void
   setTargetEdge(n: number): void
+  /** The first look faded out over the develop's picture (the loupe's timer). */
+  firstLookGone(key: string): void
   pushView(): void
   onRendered(e: RenderEvent): void
   onError(message: string, invariant?: InvariantPlace | null): void
@@ -337,6 +352,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   snapshots: [],
   comparing: null,
   picture: null,
+  firstLook: null,
   pictures: { framed: null, crop: null },
   before: null,
   mask: null,
@@ -379,6 +395,20 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     openingKey = key
     // A slider's last frame is the photo being left's: it goes to that photo first.
     flushQueued((m) => get().onError(m))
+    // The photo at once (engine 0.21, OBS-1d): its thumbnail, then an
+    // unedited RAW's embedded preview at the stage's size, until the develop's
+    // first picture lands.
+    const item = useLibrary.getState().items.find((i) => i.key === key)
+    if (wantsPreview(item))
+      void api.develop
+        .firstLook(key, get().targetEdge)
+        .then((look) => {
+          if (!look || token !== openToken) return
+          const { firstLook, picture } = get()
+          const opening = openingKey ?? get().session?.key ?? null
+          set({ firstLook: lookArrived(firstLook, key, look.url, opening, picture !== null) })
+        })
+        .catch(() => undefined)
     // The last photo's recipe stays in view until this one's arrives, but
     // nothing edits it: every edit needs the session.
     set({
@@ -388,6 +418,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       invariant: null,
       previewing: null,
       picture: null,
+      firstLook: lookOnOpen(key, item),
       pictures: { framed: null, crop: null },
       maskThumbs: {},
       hoverLayer: null,
@@ -442,7 +473,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     } catch (err) {
       if (stale()) return
       openingKey = null
-      set({ shown: null, loading: false, error: errorText(err) })
+      set({ shown: null, loading: false, error: errorText(err), firstLook: null })
     }
   },
 
@@ -460,6 +491,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       recipe: null,
       previewing: null,
       picture: null,
+      firstLook: null,
       pictures: { framed: null, crop: null },
       before: null,
       mask: null,
@@ -682,6 +714,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     set({ tatTarget })
   },
 
+  firstLookGone(key) {
+    set({ firstLook: lookFaded(get().firstLook, key) })
+  },
+
   setTargetEdge(targetEdge) {
     if (Math.abs(targetEdge - get().targetEdge) < 64) return
     set({ targetEdge })
@@ -774,6 +810,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       set({
         pictures: next,
         picture: same ? get().picture : e,
+        // The develop's picture is here: the first look fades out over it.
+        firstLook: lookOnPicture(get().firstLook, e.key),
         stats: e.stats ?? null,
         // Drafts carry no HDR measurement; keep the last settled one meanwhile.
         hdrStats: e.kind === 'full' ? (e.hdrStats ?? null) : get().hdrStats,

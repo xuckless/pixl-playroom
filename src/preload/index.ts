@@ -24,6 +24,7 @@ import {
   type CrashConsent,
   type ErrorReport,
   type DevelopSession,
+  type FirstLookPicture,
   type EngineStatus,
   type GpuDragState,
   type ExportPreset,
@@ -289,6 +290,8 @@ const api = {
       call<void>(IPC.develop.compareWith, key, recipe),
     historyList: (key: string) => call<HistoryLog>(IPC.develop.historyList, key),
     warm: (keys: string[]) => call<void>(IPC.develop.warm, keys),
+    firstLook: (key: string, edge: number) =>
+      call<FirstLookPicture | null>(IPC.develop.firstLook, key, edge),
     historyAppend: (key: string, label: string, recipe: Recipe) =>
       call<HistoryAppend>(IPC.develop.historyAppend, key, label, recipe),
     historyAmend: (key: string, seq: number, label: string, recipe: Recipe) =>

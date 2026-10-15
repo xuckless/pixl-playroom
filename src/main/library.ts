@@ -18,7 +18,13 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { compile } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
-import { noPreview, PRESERVE_ALL, reduceRefused, type SourceInfo } from '../shared/engine-types'
+import {
+  noPreview,
+  PRESERVE_ALL,
+  reduceRefused,
+  type ConvertRequest,
+  type SourceInfo
+} from '../shared/engine-types'
 import { previewPlan, type PreviewPlan } from '../shared/thumbsize'
 import {
   IPC,
@@ -666,6 +672,50 @@ export class Library {
       color: displayPolicy(info, 'Srgb')
     }
     await this.unedited(row, info, edge, out, base, defaultRecipe(true))
+  }
+
+  /**
+   * An unedited RAW's first look while it opens (engine 0.21, OBS-1d): its
+   * embedded preview at about the stage's size (`edge`, device pixels),
+   * Display P3 as the develop's pictures are, so the photo shows at once and
+   * its develop fades in over it. Null for an edited photo (the camera's
+   * rendering would read as the edit: the renderer shows its thumbnail), for
+   * anything that is not a RAW, and for a RAW with no preview to decode.
+   * `engine`: the interactive one, beside the open's own work.
+   */
+  async firstLook(
+    key: string,
+    edge: number,
+    engine: EngineClient = this.engine
+  ): Promise<{ url: string; width: number; height: number } | null> {
+    const item = await this.index.item(key)
+    if (!item || item.edited || !item.isRaw) return null
+    const row = await this.photoRow(key)
+    if (row.is_raw !== 1) return null
+    const info = await this.probe(row, engine)
+    const plan = previewPlan(info, true, Math.max(256, Math.min(8192, Math.round(edge))))
+    if (plan === 'develop') return null
+    // Swept with the photo's other renders as it leaves Develop (sweep.ts).
+    const dir = join(paths.photoCache(row.id), 'renders')
+    await mkdir(dir, { recursive: true })
+    const stamp = `${versionOf(row)}:${edge}`
+    const out = join(dir, `first-${hash32(stamp).toString(16)}.jpg`)
+    const request = (reduce: PreviewPlan['reduce'], factor: number): ConvertRequest => ({
+      ...blankRequest(row.path, out, info.input, info),
+      raw: 'EmbeddedPreview',
+      decode_reduce: reduce,
+      resize: factor < 1 ? { Scale: { factor } } : 'None',
+      encode: { Jpeg: { quality: 90, subsampling: 'Quarter', optimize: false } },
+      pixel: { depth: 'Eight', channels: 3 },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color: displayPolicy(info, 'DisplayP3')
+    })
+    const report = await engine.convert(request(plan.reduce, plan.factor)).catch((err) => {
+      if (!(err instanceof EngineError) || !plan.reduce || !reduceRefused(err.code, err.detail))
+        throw err
+      return engine.convert(request(null, Math.min(1, edge / plan.long)))
+    })
+    return { url: cacheUrl(out, stamp), width: report.width, height: report.height }
   }
 
   /**

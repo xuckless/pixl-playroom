@@ -185,6 +185,8 @@ export const IPC = {
     setRawColour: 'develop:set-raw-colour',
     /** Make these photos' proxies ahead (the open one's neighbours in the filmstrip). */
     warm: 'develop:warm',
+    /** An unedited RAW's embedded preview while it opens (`FirstLookPicture`, or null). */
+    firstLook: 'develop:first-look',
     close: 'develop:close',
     update: 'develop:update',
     view: 'develop:view',
@@ -385,6 +387,13 @@ export interface AppError {
 }
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: AppError }
+
+/** An unedited RAW's embedded preview at about the stage's size, shown while it opens. */
+export interface FirstLookPicture {
+  url: string
+  width: number
+  height: number
+}
 
 export interface EngineStatus {
   /**

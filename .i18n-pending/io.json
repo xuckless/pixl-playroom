@@ -54,5 +54,29 @@
     "ja": "ハイライト優先は光が落ちるように暗くし、カラー優先は色を白に褪せさせずに明るくし、ペイントオーバーレイは黒または白に向かって混ぜます",
     "vi": "Ưu tiên vùng sáng làm tối như ánh sáng suy giảm; ưu tiên màu sắc làm sáng mà không làm màu bạc về phía trắng; lớp phủ tô màu pha về phía đen hoặc trắng",
     "zh-Hans": "高光优先的压暗如同光线衰减；颜色优先提亮时不会让颜色褪向白色；绘画叠加会向黑色或白色混合"
+  },
+  "Developing…": {
+    "en": "Developing…",
+    "fr": "Développement…",
+    "de": "Wird entwickelt…",
+    "ja": "現像中…",
+    "vi": "Đang xử lý…",
+    "zh-Hans": "正在显影…"
+  },
+  "The camera’s own preview, shown until PIXL’s develop is ready": {
+    "en": "The camera’s own preview, shown until PIXL’s develop is ready",
+    "fr": "L’aperçu de l’appareil lui-même, affiché jusqu’à ce que le développement PIXL soit prêt",
+    "de": "Die eigene Vorschau der Kamera, angezeigt, bis PIXLs Entwicklung fertig ist",
+    "ja": "カメラ自身のプレビュー。PIXL の現像ができるまで表示されます",
+    "vi": "Ảnh xem trước của chính máy ảnh, hiển thị cho đến khi bản xử lý của PIXL sẵn sàng",
+    "zh-Hans": "相机自带的预览，在 PIXL 显影完成前显示"
+  },
+  "The library thumbnail, shown until the develop is ready": {
+    "en": "The library thumbnail, shown until the develop is ready",
+    "fr": "La vignette de la bibliothèque, affichée jusqu’à ce que le développement soit prêt",
+    "de": "Das Miniaturbild der Bibliothek, angezeigt, bis die Entwicklung fertig ist",
+    "ja": "ライブラリのサムネイル。現像ができるまで表示されます",
+    "vi": "Ảnh thu nhỏ trong thư viện, hiển thị cho đến khi bản xử lý sẵn sàng",
+    "zh-Hans": "图库缩略图，在显影完成前显示"
   }
 }

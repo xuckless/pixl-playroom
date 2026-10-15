@@ -339,9 +339,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.restart, () => restart())
 
   handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))
-  handle(IPC.app.reportProblem, (r: ProblemInput) =>
-    sendProblemReport(r, s.engine.getStatus())
-  )
+  handle(IPC.app.reportProblem, (r: ProblemInput) => sendProblemReport(r, s.engine.getStatus()))
   handle(IPC.app.openNotices, async () => {
     const err = await shell.openPath(paths.notices())
     if (err)
@@ -721,6 +719,9 @@ export function registerIpc(s: Services): void {
     ...(log.head ? { head: s.planes.slim(log.head) } : {})
   })
   handle(IPC.develop.warm, (keys: string[]) => s.library.warm(keys))
+  handle(IPC.develop.firstLook, (key: string, edge: number) =>
+    s.library.firstLook(key, edge, s.engine)
+  )
   handle(IPC.develop.historyList, async (key: string) => slimLog(await s.index.history(key)))
   handle(IPC.develop.historyAppend, async (key: string, label: string, recipe: Recipe) => {
     // The step and the recipe the photo has now go into its project together.
