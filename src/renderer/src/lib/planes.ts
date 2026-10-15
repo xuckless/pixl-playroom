@@ -1,5 +1,12 @@
 import { paintStrokes } from '../../../shared/brush'
-import { gridPoint, remapStrokes, sameLensFrame, type LensFrame } from '../../../shared/lensframe'
+import {
+  gridPoint,
+  lensFrameKey,
+  remapStrokes,
+  sameLensFrame,
+  type LensFrame,
+  type LensGrid
+} from '../../../shared/lensframe'
 import type { BrushComponent, PlaneComponent } from '../../../shared/recipe'
 import { api } from './api'
 
@@ -29,6 +36,39 @@ export async function planePng(c: PlaneComponent): Promise<string> {
 }
 
 /**
+ * What the main process answered, by what was asked: a few kept, the newest
+ * last, so a mask redrawn with each stroke painted (a live draft, a commit)
+ * asks once for the plane re-warped and the grid, not every time. A failure
+ * is not kept.
+ */
+function keptAsk<T>(
+  store: Map<string, Promise<T>>,
+  keep: number,
+  key: string,
+  ask: () => Promise<T>
+): Promise<T> {
+  const hit = store.get(key)
+  if (hit) {
+    store.delete(key)
+    store.set(key, hit)
+    return hit
+  }
+  const p = ask()
+  store.set(key, p)
+  p.catch(() => {
+    if (store.get(key) === p) store.delete(key)
+  })
+  while (store.size > keep) store.delete(store.keys().next().value as string)
+  return p
+}
+/** Planes re-warped onto another frame (a 2048 px PNG each). */
+const rewarped = new Map<string, Promise<string>>()
+/** Grids between two frames. */
+const grids = new Map<string, Promise<LensGrid | null>>()
+const framePair = (from: LensFrame, to: LensFrame): string =>
+  `${lensFrameKey(from)}>${lensFrameKey(to)}`
+
+/**
  * A plane component's PNG on lens frame `to`: as it is, or, when it is on
  * another (its own `lensFrame`, else the masks' frame `masks`), re-warped
  * onto it by the main process. The brush paints on the masks' frame; the
@@ -44,7 +84,9 @@ export async function planePngOn(
   if (sameLensFrame(from, to)) return planePng(c)
   // A plane held here (a selection being made) is not in the plane store yet.
   const ref = c.png || !c.ref ? await api.develop.putPlane(await planePng(c)) : c.ref
-  return api.develop.planeOnFrame(key, ref, from, to)
+  return keptAsk(rewarped, 4, `${key}|${ref}|${framePair(from, to)}`, () =>
+    api.develop.planeOnFrame(key, ref, from, to)
+  )
 }
 
 /**
@@ -60,7 +102,9 @@ export async function brushOn(
 ): Promise<BrushComponent> {
   const from = c.lensFrame !== undefined ? c.lensFrame : masks
   if (!c.strokes?.length || sameLensFrame(from, to)) return c
-  const grid = await api.develop.maskGrid(key, from, to)
+  const grid = await keptAsk(grids, 8, `${key}|${framePair(from, to)}`, () =>
+    api.develop.maskGrid(key, from, to)
+  )
   if (!grid) return c
   return { ...c, strokes: remapStrokes(c.strokes, (p) => gridPoint(grid.toRendered, grid.n, p)) }
 }
