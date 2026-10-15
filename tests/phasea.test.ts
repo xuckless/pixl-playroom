@@ -29,7 +29,7 @@ import {
   REFINE_METHODS,
   strengthOf
 } from '../src/shared/refine'
-import { compileRetouch, newSpot, refineRefused, spotRefine } from '../src/shared/retouch'
+import { compileRetouch, newSpot, spotRefine } from '../src/shared/retouch'
 
 const ctx: CompileContext = {
   isRaw: false,
@@ -202,19 +202,62 @@ test('a heal’s edge: plain sends no refine; Edge snap and Matting send theirs'
   assert.ok('Matting' in (matted.steps[0] as { Heal: { refine: object } }).Heal.refine)
 })
 
-test('a heal the engine won’t refine is told from any other refusal', () => {
-  // The step itself, by the field the host reads or the message's own.
-  assert.ok(refineRefused({ field: 'retouch.steps[0]' }))
-  assert.ok(
-    refineRefused({
-      message: 'invalid request field `retouch.steps[3]`: the heal covers the whole frame'
-    })
-  )
-  // One of its fields (a source past the frame) is another matter, as is anything else.
-  assert.ok(!refineRefused({ field: 'retouch.steps[0].source_offset' }))
-  assert.ok(!refineRefused({ field: 'grade.layers[0].mask' }))
-  assert.ok(!refineRefused(new Error('the disk is full')))
-  assert.ok(!refineRefused(null))
+test('a refined heal that selects nothing is healed plain, and says so', async () => {
+  const { bakeSpot } = await import('../src/main/pixels/heal')
+  const { defaultRecipe } = await import('../src/shared/recipe')
+  // Engine 0.21.0 (E60): the refined step renders as one that changed nothing.
+  const seen: { retouch: { steps: Record<string, { refine?: unknown }>[] } | null }[] = []
+  const engine = {
+    convert: async (r: { retouch: { steps: Record<string, { refine?: unknown }>[] } | null }) => {
+      seen.push(r)
+      const refined = r.retouch !== null && 'refine' in Object.values(r.retouch.steps[0])[0]
+      return {
+        width: 100,
+        height: 100,
+        retouch: r.retouch
+          ? { space: 'Normal', steps: [{ ran: true, pixels: refined ? 0 : 412, bounds: null }] }
+          : null
+      }
+    }
+  }
+  const bake = (refine: 'matting' | undefined): ReturnType<typeof bakeSpot> => {
+    const spot = newSpot('m1', 'heal', [{ x: 0.5, y: 0.5 }], 0.05, 50, 100)
+    spot.source = { x: 0.3, y: 0.5 }
+    if (refine) spot.refine = refine
+    return bakeSpot(
+      {
+        deps: {
+          engine: engine as never,
+          cacheDir: '/nowhere',
+          blobFile: async (hash, ext) => `/nowhere/${hash}.${ext}`,
+          work: async () => ({ x: 1, y: 2, w: 10, h: 10 })
+        },
+        recipe: defaultRecipe(false),
+        lens: null,
+        photoId: 1,
+        isRaw: false,
+        asShot: null,
+        seed: 1,
+        master: { path: '/nowhere/master.png', input: 'Png', width: 6000, height: 4000 },
+        freeze: async () => null,
+        store: async () => 'b'.repeat(64)
+      },
+      spot,
+      null
+    )
+  }
+  const step = await bake('matting')
+  // With the stroke refined, without it, and with it plain again.
+  const withStroke = seen.filter((r) => r.retouch !== null)
+  assert.equal(withStroke.length, 2)
+  assert.ok('refine' in Object.values(withStroke[0].retouch!.steps[0])[0])
+  assert.ok(!('refine' in Object.values(withStroke[1].retouch!.steps[0])[0]))
+  assert.equal(step?.params.refineFoundNothing, 'matting')
+  // A plain spot, or a refine that found its edge: no second render, no note.
+  seen.length = 0
+  const plain = await bake(undefined)
+  assert.equal(seen.filter((r) => r.retouch !== null).length, 1)
+  assert.equal(plain?.params.refineFoundNothing, undefined)
 })
 
 /** The native engine, where it is built (not in CI: this check skips). */

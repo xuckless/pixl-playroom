@@ -14,5 +14,21 @@
     "ja": "{{camera}} はここで ISO {{iso}} のノイズが測定されておらず、推定に使える別の ISO 2 つでの測定もありません。他のカメラの値は借用しません",
     "vi": "{{camera}} chưa được đo độ nhiễu ở đây tại ISO {{iso}}, cũng chưa ở hai mức ISO khác để suy ra, và không mượn của máy ảnh khác",
     "zh-Hans": "{{camera}} 在此尚未测得 ISO {{iso}} 下的噪点，也没有可据以拟合的另外两个 ISO 的测量，且不借用其他相机的数据"
+  },
+  "Edge snap found no edge here, so the spot was healed plain": {
+    "en": "Edge snap found no edge here, so the spot was healed plain",
+    "fr": "L’aimantation aux contours n’a trouvé aucun contour ici : le point a été corrigé en mode simple",
+    "de": "Die Kantenausrichtung hat hier keine Kante gefunden, daher wurde die Stelle einfach repariert",
+    "ja": "エッジスナップはここでエッジを見つけられなかったため、標準で修復しました",
+    "vi": "Bám cạnh sắc không tìm thấy cạnh nào ở đây, nên điểm này được sửa vết kiểu thường",
+    "zh-Hans": "边缘吸附在此处未找到边缘，因此已按普通方式修复该点"
+  },
+  "Matting found nothing to follow here, so the spot was healed plain": {
+    "en": "Matting found nothing to follow here, so the spot was healed plain",
+    "fr": "Le détourage n’a rien trouvé à suivre ici : le point a été corrigé en mode simple",
+    "de": "Das Freistellen hat hier nichts gefunden, dem es folgen kann, daher wurde die Stelle einfach repariert",
+    "ja": "マッティングはここで追従する対象を見つけられなかったため、標準で修復しました",
+    "vi": "Tách nền không tìm thấy gì để bám theo ở đây, nên điểm này được sửa vết kiểu thường",
+    "zh-Hans": "抠像在此处未找到可跟随的细节，因此已按普通方式修复该点"
   }
 }
