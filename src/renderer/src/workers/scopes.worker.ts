@@ -50,7 +50,7 @@ self.onmessage = (e: MessageEvent<Job>): void => {
     const bins = binScopes(px, { want, mask: mask ? planeOf(mask, px.width, px.height) : null })
     const ms = performance.now() - t0
     const buffers = [bins.waveform, bins.parade, bins.vector, bins.cie]
-      .filter((b): b is Uint32Array => b !== null)
+      .filter((b): b is Float32Array => b !== null)
       .map((b) => b.buffer as ArrayBuffer)
     post({ id, bins, ms }, buffers)
   } catch (err) {

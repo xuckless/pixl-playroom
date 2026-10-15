@@ -2,9 +2,10 @@
  * The expanded scope's numbers, before and after, and the accessibility
  * views: how the photo's tone and colour measure (range, contrast, clipping,
  * cast), how a person with a colour-vision deficiency would see it and which
- * hues would fall together, and its dominant colours with their values.
- * Gamut coverage needs the engine to measure it (TODO.md, ENGINE REQUEST) and
- * is shown as waiting.
+ * hues would fall together, its dominant colours with their values, and
+ * how much of it each colour space holds, measured by the engine on the
+ * grade before the screen's gamut cuts it (E76), asked only while this tab
+ * shows a settled picture.
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { ImageStats } from '../../../../shared/engine-types'
@@ -17,11 +18,14 @@ import {
   scopeMetrics,
   simulateVision,
   visionFilterValues,
+  type GamutCoverage,
   type ScopeMetrics,
   type VisionKind
 } from '../../../../shared/scopemetrics'
+import { api } from '../../lib/api'
 import { bandOfHue } from '../../lib/helpers'
 import { t, tk } from '../../lib/i18n'
+import { useDevelop } from '../../state/develop'
 import type { HslBand } from '../../../../shared/recipe'
 
 const KINDS: VisionKind[] = ['protan', 'deutan', 'tritan']
@@ -189,23 +193,7 @@ export function MetricsPanel({
           </table>
         </section>
 
-        <section className="metrics-card wait">
-          <h4>{t('Gamut coverage')}</h4>
-          <table>
-            <tbody>
-              {['sRGB', 'Display P3', 'Rec.2020', 'PixlRGB', tk('Outside the visible range')].map(
-                (g) => (
-                  <Row key={g} label={t(g)} now="—" />
-                )
-              )}
-            </tbody>
-          </table>
-          <p className="muted small">
-            {t(
-              'Waiting for the engine: how much of the photo each space holds needs its own measurement, which Playroom has asked for.'
-            )}
-          </p>
-        </section>
+        <Coverage />
       </div>
 
       <section className="metrics-card wide">
@@ -323,6 +311,73 @@ export function MetricsPanel({
         )}
       </section>
     </div>
+  )
+}
+
+/** The spaces the coverage is told in, narrowest first, and what each share is. */
+const SPACES: { label: string; of: (c: GamutCoverage) => number }[] = [
+  { label: 'sRGB', of: (c) => c.srgb },
+  { label: 'Display P3', of: (c) => c.p3 },
+  { label: 'Rec.2020', of: (c) => c.rec2020 },
+  { label: 'PixlRGB', of: (c) => c.pixlrgb },
+  { label: tk('Outside the visible range'), of: (c) => c.outside }
+]
+
+/**
+ * The engine's gamut coverage of the photo as graded, measured again each
+ * time the picture settles (a drag's frames ask nothing); the last numbers
+ * stand, dimmed, while the next are measured.
+ */
+function useCoverage(): { value: GamutCoverage | null; busy: boolean } {
+  const key = useDevelop((s) => s.session?.key ?? null)
+  const settled = useDevelop((s) => (s.picture?.kind === 'full' ? s.picture.url : null))
+  /** The last answer, and the photo and picture it answered. */
+  const [got, setGot] = useState<{
+    key: string
+    picture: string
+    value: GamutCoverage | null
+  } | null>(null)
+  useEffect(() => {
+    if (!key || !settled) return
+    let live = true
+    const answer = (c: GamutCoverage | null): void => {
+      // Unmeasured (the engine refused, or a newer ask stopped it): this photo's last numbers stand.
+      if (live)
+        setGot((g) => ({
+          key,
+          picture: settled,
+          value: c ?? (g?.key === key ? g.value : null)
+        }))
+    }
+    void api.develop.gamutCoverage(key).then(answer, () => answer(null))
+    return () => {
+      live = false
+    }
+  }, [key, settled])
+  const mine = got?.key === key ? got : null
+  return { value: mine?.value ?? null, busy: settled !== null && mine?.picture !== settled }
+}
+
+function Coverage(): React.JSX.Element {
+  const { value, busy } = useCoverage()
+  return (
+    <section className={`metrics-card${busy || !value ? ' wait' : ''}`}>
+      <h4>{t('Gamut coverage')}</h4>
+      <table>
+        <tbody>
+          {SPACES.map((g) => (
+            <Row key={g.label} label={t(g.label)} now={value ? pct(g.of(value)) : '—'} />
+          ))}
+        </tbody>
+      </table>
+      <p className="muted small">
+        {value
+          ? t(
+              'The share of the photo’s colours each space holds, measured on the edit before it is fitted to this screen: what an export to that space keeps exactly.'
+            )
+          : t('Measuring the photo’s colours…')}
+      </p>
+    </section>
   )
 }
 

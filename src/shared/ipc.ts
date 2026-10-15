@@ -13,6 +13,7 @@ import type {
   WhitePoint
 } from './engine-types'
 import type { ExportSettings } from './export'
+import type { ScopeKind } from './scopes'
 import type { Step } from './history'
 import type { BasicSetting, Recipe, RecipeGroup } from './recipe'
 import type { SmartGroup } from './smart'
@@ -192,6 +193,10 @@ export const IPC = {
     region: 'develop:region',
     sample: 'develop:sample',
     autoTone: 'develop:auto-tone',
+    /** The settled picture's waveform, parade and vectorscope, measured by the engine (E76). */
+    scopes: 'develop:scopes',
+    /** The graded picture's gamut coverage (Metrics), measured before its egress (E76). */
+    gamutCoverage: 'develop:gamut-coverage',
     autoWb: 'develop:auto-wb',
     /** A painted plane (grey PNG, base64) into the plane store; its reference back. */
     putPlane: 'develop:put-plane',
@@ -725,6 +730,11 @@ export interface ViewState {
    * 8-bit files. Absent or false: as before.
    */
   float?: boolean
+  /**
+   * The gamut warning (E22, soft proofing): also render, beside a settled
+   * SDR picture, where its colours fall outside the export's colour space.
+   */
+  gamut?: boolean
 }
 
 export interface RenderReport {
@@ -746,7 +756,7 @@ export interface RenderEvent {
   seq: number
   /** The renderer's number for the recipe this was rendered from (see `develop.update`). */
   rev?: number
-  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom'
+  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom' | 'gamut'
   url: string
   /**
    * Full HDR's settled picture: its SDR companion as a file, for what reads
@@ -772,6 +782,8 @@ export interface RenderEvent {
   hdrStats?: ImageStats
   /** A headroom plane: how many stops above white its full scale stands for. */
   stops?: number
+  /** A gamut warning's plane: the space it proofs against (the export's). */
+  gamutTo?: ExportSettings['colorSpace']
   /**
    * A Full HDR render: the display's ceiling over SDR white (the master's
    * `display.headroom`), where its light stops: what the clipping overlay
@@ -779,6 +791,18 @@ export interface RenderEvent {
    */
   ceiling?: number
   report?: RenderReport
+}
+
+/**
+ * The settled picture's scopes from the engine (E76): which picture (its
+ * `url`, as the window shows it), read through which mask plane (a mask
+ * event's `url`, the scopes "in mask"), for which scopes.
+ */
+export interface ScopesRequest {
+  key: string
+  url: string
+  mask: string | null
+  want: ScopeKind[]
 }
 
 /**

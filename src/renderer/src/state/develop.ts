@@ -134,6 +134,10 @@ interface DevelopState {
   headroom: boolean
   /** The engine's headroom plane for the view on screen. */
   headroomPlane: RenderEvent | null
+  /** The gamut warning (soft proofing): colour what the export's colour space can't hold. */
+  gamut: boolean
+  /** The engine's gamut warning plane for the view on screen. */
+  gamutPlane: RenderEvent | null
   /** How the loupe looks at the picture: fitted, or zoomed about a point. */
   zoom: ZoomView
   hslFocus: HslBand | null
@@ -192,6 +196,7 @@ interface DevelopState {
   setOverlay(on: boolean): void
   setCompare(c: Compare): void
   setClipping(on: boolean): void
+  setGamut(on: boolean): void
   setZoom(z: ZoomView): void
   setHslFocus(b: HslBand | null): void
   setHslTab(tab: DevelopState['hslTab']): void
@@ -358,6 +363,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   clipping: false,
   headroom: false,
   headroomPlane: null,
+  gamut: false,
+  gamutPlane: null,
   zoom: FIT,
   hslFocus: null,
   hslTab: 'all',
@@ -400,6 +407,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       stats: null,
       hdrStats: null,
       headroomPlane: null,
+      gamutPlane: null,
       report: null,
       noise: null,
       layerId: null,
@@ -628,6 +636,11 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     get().pushView()
   },
 
+  setGamut(gamut) {
+    set({ gamut, gamutPlane: gamut ? get().gamutPlane : null })
+    get().pushView()
+  },
+
   async reopen() {
     const s = get().session
     if (!s) return
@@ -717,7 +730,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       targetEdge,
       // Settled SDR pictures in float once the window is known to draw F16
       // frames (asked once; the view goes again when the answer comes).
-      float: floatCanvasKnown() === true
+      float: floatCanvasKnown() === true,
+      // The engine measures the gamut warning on an SDR picture only: main
+      // renders none while Full HDR shows the photo.
+      gamut: get().gamut
     }
     if (floatCanvasKnown() === null) void floatCanvasReady().then((ok) => ok && get().pushView())
     set({ rendering: true })
@@ -731,6 +747,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     else if (e.kind === 'headroom') {
       if (get().headroom && Boolean(e.cropMode) === wholeFrameTool(get().tool))
         set({ headroomPlane: e })
+    } else if (e.kind === 'gamut') {
+      if (get().gamut && Boolean(e.cropMode) === wholeFrameTool(get().tool)) set({ gamutPlane: e })
     } else if (e.kind === 'mask') {
       const { keyView, qualifierId } = get()
       if (keyView && qualifierId) {

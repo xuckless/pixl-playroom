@@ -1,4 +1,5 @@
 import { chartBounds } from './cie'
+import type { ScopeReport, ScopeSpec } from './engine-types'
 
 /**
  * Scope maths shared by the renderer's charts and the tests.
@@ -70,13 +71,18 @@ export function areaPath(
   return `M0,${h} L${pts.join(' L')} L${w},${h} Z`
 }
 
-// ── Resolve's scopes, from the preview's pixels ─────────────────────────────
+// ── Resolve's scopes ────────────────────────────────────────────────────────
 //
 // The waveform, parade, vectorscope and the CIE chart's density are binned
-// from the picture on screen (the worker in renderer/workers/scopes.worker.ts
-// runs these), not measured by the engine: preview resolution, Display P3.
-// The histogram and the hue chart stay the engine's own measurements. Exact
-// full-resolution scopes are engine request E76.
+// from the picture on screen while it moves (the worker in
+// renderer/workers/scopes.worker.ts runs these): preview resolution, Display
+// P3. Once an SDR picture settles, the engine measures the waveform, parade
+// and vectorscope of the settled picture itself (E76, `engineBins` below)
+// on the same grids, so the two agree and the settled scopes are exact.
+// Both read luma and Cb/Cr through BT.709's weights, as the engine's
+// histogram and vectorscope do (Resolve's convention on a Rec.709
+// timeline). The histogram and the hue chart stay the engine's own
+// measurements.
 
 /** The scopes the right column and the expanded viewer cycle through. */
 // The colour chart is Playroom's own highlight: next to the histogram, one
@@ -92,8 +98,13 @@ export function cycleScope(kind: ScopeKind, step: 1 | -1): ScopeKind {
   return SCOPE_KINDS[(i + step + SCOPE_KINDS.length) % SCOPE_KINDS.length]
 }
 
-/** Display P3's luma weights (the values are P3): Kr, Kg, Kb. */
-export const LUMA_P3 = [0.2289746, 0.6917385, 0.0792869] as const
+/**
+ * BT.709's luma weights, Kr, Kg, Kb: what the engine's luma histogram, its
+ * waveform and its vectorscope (`matrix: 'Bt709'`) weigh encoded values by.
+ * The values are Display P3's, so a primary sits a little off where a
+ * Rec.709 picture's would: one convention for every scope, as Resolve's.
+ */
+export const LUMA_709 = [0.2126, 0.7152, 0.0722] as const
 
 /** The sRGB transfer, sign kept (what an extended Display P3 value is encoded with). */
 export function oetf(v: number): number {
@@ -109,7 +120,7 @@ export function eotf(e: number): number {
 
 /** Encoded luma, and the colour-difference pair a vectorscope plots (each −0.5…0.5). */
 export function cbcr(r: number, g: number, b: number): { y: number; cb: number; cr: number } {
-  const [kr, kg, kb] = LUMA_P3
+  const [kr, kg, kb] = LUMA_709
   const y = kr * r + kg * g + kb * b
   return { y, cb: (b - y) / (2 * (1 - kb)), cr: (r - y) / (2 * (1 - kr)) }
 }
@@ -185,29 +196,37 @@ export interface ScopeOptions {
   budget?: number
   want?: readonly ScopeKind[]
   /**
-   * A mask plane over the same pixels (RGBA, its first channel read): only
-   * pixels it holds at half or more are counted (the scopes "in mask").
+   * A mask plane over the same pixels (RGBA, its first channel read): each
+   * pixel counts by how much the mask holds it, a feathered edge in part
+   * (the scopes "in mask", weighed as the engine's `weights` weigh them).
    */
   mask?: Uint8ClampedArray | null
 }
 
-/** Counts behind the scopes binned from pixels. */
+/**
+ * Counts behind the scopes, binned here from pixels or measured by the
+ * engine (`engineBins`): each cell a sum of weights, whole pixels unless a
+ * mask holds some in part.
+ */
 export interface ScopeBins {
   columns: number
   levels: number
   /** The encoded value at the waveform's top row: 1, or above it where the picture has headroom. */
   top: number
   /** columns × levels, row 0 is black. */
-  waveform: Uint32Array | null
+  waveform: Float32Array | null
   /** Red, green and blue waveforms, each columns × levels. */
-  parade: Uint32Array | null
+  parade: Float32Array | null
   vectorSize: number
   /** vectorSize², x = Cb, y = Cr (row 0 is +0.5). */
-  vector: Uint32Array | null
+  vector: Float32Array | null
   cieSize: number
   /** cieSize² over `chartBounds()`, row 0 at the top (high v′). */
-  cie: Uint32Array | null
+  cie: Float32Array | null
+  /** What was counted: pixels, or their weight in a mask. */
   pixels: number
+  /** Measured by the engine on the settled picture (E76), not binned from the preview. */
+  exact?: boolean
 }
 
 /** The waveform's top: 1, or the next half stop over the picture's brightest channel. */
@@ -224,6 +243,15 @@ function linearTable(top: number, bytes: boolean): Float32Array {
   return t
 }
 
+/**
+ * The bin `t` (0…1) falls in among `n`, the last closed at its top, or -1
+ * outside: the engine's own rule (E76), so a settled scope and the drag's
+ * bins put a value in the same cell.
+ */
+function cell(t: number, n: number): number {
+  return t >= 0 && t <= 1 ? Math.min(n - 1, Math.floor(t * n)) : -1
+}
+
 export function binScopes(px: ScopePixels, o: ScopeOptions = {}): ScopeBins {
   const want = new Set(o.want ?? BINNED_SCOPES)
   const columns = Math.max(1, Math.min(o.columns ?? 512, px.width))
@@ -238,11 +266,11 @@ export function binScopes(px: ScopePixels, o: ScopeOptions = {}): ScopeBins {
   if (scale === 1)
     for (let i = 0; i < d.length; i += 4 * stride) top = Math.max(top, d[i], d[i + 1], d[i + 2])
   top = waveformTop(top)
-  const waveform = want.has('waveform') ? new Uint32Array(columns * levels) : null
+  const waveform = want.has('waveform') ? new Float32Array(columns * levels) : null
   const parade =
-    want.has('parade') || want.has('waveform') ? new Uint32Array(3 * columns * levels) : null
-  const vector = want.has('vectorscope') ? new Uint32Array(vectorSize * vectorSize) : null
-  const cie = want.has('cie') ? new Uint32Array(cieSize * cieSize) : null
+    want.has('parade') || want.has('waveform') ? new Float32Array(3 * columns * levels) : null
+  const vector = want.has('vectorscope') ? new Float32Array(vectorSize * vectorSize) : null
+  const cie = want.has('cie') ? new Float32Array(cieSize * cieSize) : null
   const B = chartBounds()
   const plane = columns * levels
   // Linear values for the CIE chart from a table: bytes exactly, floats in
@@ -254,37 +282,40 @@ export function binScopes(px: ScopePixels, o: ScopeOptions = {}): ScopeBins {
     const k = Math.round(v * linStep)
     return k < lin!.length ? lin![k] : eotf(v)
   }
+  // The engine's level: the value as a fraction of the top, the top closed.
   const row = (v: number): number =>
-    v <= 0 ? 0 : v >= top ? levels - 1 : Math.floor((v / top) * (levels - 1) + 0.5)
-  const [kr, kg, kb] = LUMA_P3
+    v <= 0 ? 0 : v >= top ? levels - 1 : Math.min(levels - 1, Math.floor((v / top) * levels))
+  const [kr, kg, kb] = LUMA_709
   let pixels = 0
   for (let y = 0; y < px.height; y += stride) {
     for (let x = 0; x < px.width; x += stride) {
       const i = (y * px.width + x) * 4
-      if (o.mask && o.mask[i] < 128) continue
+      const w = o.mask ? o.mask[i] / 255 : 1
+      if (w === 0) continue
       const r = d[i] * scale
       const g = d[i + 1] * scale
       const b = d[i + 2] * scale
-      pixels++
+      pixels += w
       const col = Math.min(columns - 1, Math.floor((x * columns) / px.width))
       if (parade) {
-        parade[row(r) * columns + col]++
-        parade[plane + row(g) * columns + col]++
-        parade[2 * plane + row(b) * columns + col]++
+        parade[row(r) * columns + col] += w
+        parade[plane + row(g) * columns + col] += w
+        parade[2 * plane + row(b) * columns + col] += w
       }
-      if (waveform) waveform[row(kr * r + kg * g + kb * b) * columns + col]++
+      if (waveform) waveform[row(kr * r + kg * g + kb * b) * columns + col] += w
       if (vector) {
         const c = cbcr(r, g, b)
-        const vx = Math.floor((c.cb + 0.5) * vectorSize)
-        const vy = Math.floor((0.5 - c.cr) * vectorSize)
-        if (vx >= 0 && vx < vectorSize && vy >= 0 && vy < vectorSize) vector[vy * vectorSize + vx]++
+        const vx = cell(c.cb + 0.5, vectorSize)
+        const vy = cell(c.cr + 0.5, vectorSize)
+        // Cr up: the engine counts its rows from the bottom, these from the top.
+        if (vx >= 0 && vy >= 0) vector[(vectorSize - 1 - vy) * vectorSize + vx] += w
       }
       if (cie) {
         const uv = uvOfLinear(linear(r), linear(g), linear(b))
         if (uv) {
           const cx = Math.floor(((uv.u - B.u0) / (B.u1 - B.u0)) * cieSize)
           const cy = Math.floor((1 - (uv.v - B.v0) / (B.v1 - B.v0)) * cieSize)
-          if (cx >= 0 && cx < cieSize && cy >= 0 && cy < cieSize) cie[cy * cieSize + cx]++
+          if (cx >= 0 && cx < cieSize && cy >= 0 && cy < cieSize) cie[cy * cieSize + cx] += w
         }
       }
     }
@@ -303,6 +334,81 @@ export function binScopes(px: ScopePixels, o: ScopeOptions = {}): ScopeBins {
   }
 }
 
+// ── The settled picture's scopes, measured by the engine (E76) ───────────────
+
+/** The binned scopes the engine measures exactly; the CIE chart (linear light) stays binned here. */
+export const ENGINE_SCOPES: readonly ScopeKind[] = ['parade', 'waveform', 'vectorscope']
+/** The engine's grids: as the preview's bins, a waveform panel's 512 columns at most. */
+export const ENGINE_COLUMNS = 512
+export const ENGINE_LEVELS = 256
+export const ENGINE_VECTOR = 256
+
+/**
+ * What the engine is asked for to draw `want` from a picture `width` pixels
+ * wide read at `stride`, or null when it draws none of them. The waveform
+ * never has more columns than the frame sampled (the engine refuses one
+ * that would leave a strip empty); the vectorscope is BT.709's over every
+ * encoded colour (±0.5), as `binScopes` bins it.
+ */
+export function engineScopeSpec(
+  want: readonly ScopeKind[],
+  width: number,
+  stride = 1
+): ScopeSpec | null {
+  const wave = want.includes('waveform') || want.includes('parade')
+  const vector = want.includes('vectorscope')
+  const across = Math.ceil(width / stride)
+  if ((!wave && !vector) || across < 1) return null
+  return {
+    waveform: wave
+      ? {
+          columns: Math.min(ENGINE_COLUMNS, across),
+          levels: ENGINE_LEVELS,
+          planes: 'LumaAndChannels'
+        }
+      : null,
+    vectorscope: vector ? { size: ENGINE_VECTOR, matrix: 'Bt709', extent: 0.5 } : null
+  }
+}
+
+/**
+ * The engine's scopes as the charts take them: its luma waveform and the
+ * channels' as the parade (a grey picture's one channel in all three), and
+ * its vectorscope with the rows turned over (the engine's row 0 is Cr's
+ * bottom, the chart's its top). Float64 counts become Float32, half the
+ * size over IPC and exact to 2²⁴ in a cell.
+ */
+export function engineBins(r: ScopeReport, pixels: number): ScopeBins {
+  const w = r.waveform
+  const v = r.vectorscope
+  let parade: Float32Array | null = null
+  if (w && w.channels.length > 0) {
+    const plane = w.columns * w.levels
+    parade = new Float32Array(3 * plane)
+    for (let k = 0; k < 3; k++)
+      parade.set(w.channels[Math.min(k, w.channels.length - 1)], k * plane)
+  }
+  let vector: Float32Array | null = null
+  if (v) {
+    const n = v.size
+    vector = new Float32Array(n * n)
+    for (let y = 0; y < n; y++) vector.set(v.counts.subarray((n - 1 - y) * n, (n - y) * n), y * n)
+  }
+  return {
+    columns: w?.columns ?? 1,
+    levels: w?.levels ?? 1,
+    top: 1,
+    waveform: w?.luma ? Float32Array.from(w.luma) : null,
+    parade,
+    vectorSize: v?.size ?? 1,
+    vector,
+    cieSize: 1,
+    cie: null,
+    pixels,
+    exact: true
+  }
+}
+
 /**
  * Counts painted as light: log density, so a few pixels still show and a
  * crowd does not burn out. Adds onto `out` (RGBA bytes, `w × h`), so several
@@ -310,7 +416,7 @@ export function binScopes(px: ScopePixels, o: ScopeOptions = {}): ScopeBins {
  */
 export function paintDensity(
   out: Uint8ClampedArray,
-  counts: Uint32Array,
+  counts: ArrayLike<number>,
   w: number,
   h: number,
   colour: readonly [number, number, number],

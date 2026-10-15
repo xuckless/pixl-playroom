@@ -32,6 +32,7 @@ import {
   type MetaTextPatch,
   type Preset,
   type RegionRequest,
+  type ScopesRequest,
   type Prefs,
   type Snapshot,
   type UpdateChannel,
@@ -707,6 +708,8 @@ export function registerIpc(s: Services): void {
   )
   handle(IPC.develop.sample, (key: string, x: number, y: number) => s.sessions.sample(key, x, y))
   handle(IPC.develop.autoTone, (key: string) => s.sessions.autoTone(key))
+  handle(IPC.develop.scopes, (req: ScopesRequest) => s.sessions.scopes(req))
+  handle(IPC.develop.gamutCoverage, (key: string) => s.sessions.gamutCoverage(key))
   handle(IPC.develop.autoWb, (key: string) => s.sessions.autoWb(key))
   handle(IPC.develop.noise, (key: string) => s.sessions.noise(key))
   handle(IPC.develop.putPlane, (png: string) => {
