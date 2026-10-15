@@ -617,6 +617,32 @@ test('a scan finds profiles in nested folders, the same file once, and finds a m
   }
 })
 
+test('the setup lists a profile chosen with Browse… (outside the folders scanned) while its file is there', async () => {
+  const { proofProfiles, resetProfiles } = await import('../src/main/iccprofiles')
+  const root = mkdtempSync(join(tmpdir(), 'proof-named-'))
+  try {
+    resetProfiles()
+    const lab = join(root, 'Lab Lustre.icc')
+    writeFileSync(lab, iccBytes('prtr', 'RGB', 2, { type: 'desc', text: 'Lab Lustre' }))
+    writeFileSync(join(root, 'notes.icc'), 'words, not a profile')
+    const listed = await proofProfiles([lab, lab, join(root, 'notes.icc'), join(root, 'gone.icc')])
+    const ours = listed.filter((f) => f.path.startsWith(root))
+    assert.deepEqual(
+      ours.map((f) => [f.name, f.use]),
+      [['Lab Lustre', 'proof']]
+    )
+    // Recent drops it once its file is gone.
+    rmSync(lab)
+    assert.equal((await proofProfiles([lab])).filter((f) => f.path === lab).length, 0)
+    // A network path named (a copy's sidecar) is not looked at.
+    writeFileSync(lab, iccBytes('prtr', 'RGB', 2, { type: 'desc', text: 'Lab Lustre' }))
+    assert.equal((await proofProfiles([`/${lab}`])).filter((f) => f.path === `/${lab}`).length, 0)
+  } finally {
+    resetProfiles()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('a proof’s network path (a sidecar’s or a project’s word) is never looked at unless chosen', async () => {
   const { chooseProfile, profileBytes, resetProfiles } = await import('../src/main/iccprofiles')
   const root = mkdtempSync(join(tmpdir(), 'proof-unc-'))

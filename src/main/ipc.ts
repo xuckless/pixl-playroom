@@ -110,7 +110,7 @@ import { openTopMenu, popupMenu, setMenuSpec, topMenus } from './menu'
 import { languageState, setLanguage } from './i18n'
 import { isLanguageSetting, t, type LanguageSetting, tk } from '../shared/i18n'
 import { normaliseProof } from '../shared/proof'
-import { chooseProfile, readProfile, scanProfiles } from './iccprofiles'
+import { chooseProfile, proofProfiles, readProfile } from './iccprofiles'
 import type { CopyOptions } from './indexer/service'
 import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
 import { accountStatus, cancelSignIn, signIn, signOut } from './account'
@@ -735,7 +735,13 @@ export function registerIpc(s: Services): void {
   handle(IPC.develop.gamutCoverage, (key: string) => s.sessions.gamutCoverage(key))
   // Soft proofing: the profiles found (scanned again as the setup opens), one
   // chosen from a file, and settings tried on the engine before they are used.
-  handle(IPC.develop.proofProfiles, () => scanProfiles())
+  handle(IPC.develop.proofProfiles, (named: unknown) =>
+    proofProfiles(
+      Array.isArray(named)
+        ? named.filter((p): p is string => typeof p === 'string').slice(0, 16)
+        : []
+    )
+  )
   handle(IPC.develop.proofBrowse, async (): Promise<ProofBrowsed | null> => {
     const w = win()
     const opts = {

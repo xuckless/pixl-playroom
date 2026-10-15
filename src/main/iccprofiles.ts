@@ -101,6 +101,18 @@ async function walk(dir: string, depth: number, into: string[]): Promise<void> {
   }
 }
 
+/** A file read as a profile, or null: read again only when its size or time changed. */
+async function scannedProfile(path: string): Promise<FoundProfile | null> {
+  const st = await stat(path).catch(() => null)
+  if (!st) return null
+  const was = scanned.get(path)
+  if (was && was.size === st.size && was.mtime === st.mtimeMs) return was.found
+  const r = await readProfile(path)
+  const found = 'found' in r ? r.found : null
+  scanned.set(path, { size: st.size, mtime: st.mtimeMs, found })
+  return found
+}
+
 /**
  * Every profile in the folders (`profileFolders`), the same one once: the
  * scan the proof setup asks for as it opens. One scan at a time; a second
@@ -112,16 +124,7 @@ export function scanProfiles(folders: string[] = profileFolders()): Promise<Foun
     for (const f of folders) await walk(f, 0, files)
     const out: FoundProfile[] = []
     for (const path of files) {
-      const st = await stat(path).catch(() => null)
-      if (!st) continue
-      const was = scanned.get(path)
-      if (was && was.size === st.size && was.mtime === st.mtimeMs) {
-        if (was.found) out.push(was.found)
-        continue
-      }
-      const r = await readProfile(path)
-      const found = 'found' in r ? r.found : null
-      scanned.set(path, { size: st.size, mtime: st.mtimeMs, found })
+      const found = await scannedProfile(path)
       if (found) out.push(found)
     }
     lastScan = mergeBySha(out)
@@ -148,6 +151,23 @@ export function chooseProfile(path: string): void {
  * found by its SHA-256 in the folders scanned.
  */
 const mayRead = (path: string): boolean => chosen.has(path) || isSafeLocalPath(path)
+
+/**
+ * The setup's list: every profile the scan finds, and those named outside
+ * its folders (Recent's, the proof in force: a file once chosen with
+ * Browse…) where they still are, each once.
+ */
+export async function proofProfiles(named: readonly string[] = []): Promise<FoundProfile[]> {
+  const found = await scanProfiles()
+  const known = new Set(found.map((f) => f.path))
+  const more: FoundProfile[] = []
+  for (const path of new Set(named)) {
+    if (known.has(path) || !mayRead(path)) continue
+    const f = await scannedProfile(path)
+    if (f) more.push(f)
+  }
+  return mergeBySha([...found, ...more])
+}
 
 /** A profile's bytes as the engine takes them, by SHA-256: the last few used. */
 const kept = new Map<string, number[]>()

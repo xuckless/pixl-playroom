@@ -140,11 +140,14 @@ function ProofPopover({
   const [listOpen, setListOpen] = useState(false)
   const [error, setError] = useState<string | null>(issue ? issueText(issue) : null)
   const [busy, setBusy] = useState(false)
-  // Scanned again each time the setup opens (no watching).
+  // Scanned again each time the setup opens (no watching), with Recent's
+  // files and the proof in force wherever they are (one chosen with Browse…).
   useEffect(() => {
     let live = true
+    const { proof, proofRecent } = useUi.getState()
+    const named = [proof.profile, ...proofRecent].flatMap((r) => (isBuiltin(r) ? [] : [r.path]))
     api.develop
-      .proofProfiles()
+      .proofProfiles(named)
       .then((f) => live && setFound(f))
       .catch(() => live && setFound([]))
     return () => {

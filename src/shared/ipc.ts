@@ -205,7 +205,10 @@ export const IPC = {
     scopes: 'develop:scopes',
     /** The graded picture's gamut coverage (Metrics), measured before its egress (E76). */
     gamutCoverage: 'develop:gamut-coverage',
-    /** The ICC profiles on this computer, scanned again (the proof setup opening): `FoundProfile[]`. */
+    /**
+     * The ICC profiles on this computer, scanned again (the proof setup
+     * opening), with those at the paths named (Recent's): `FoundProfile[]`.
+     */
     proofProfiles: 'develop:proof-profiles',
     /** A profile chosen from a file (Browse…, Locate…): `ProofBrowsed`, or null when none was chosen. */
     proofBrowse: 'develop:proof-browse',

@@ -260,7 +260,8 @@ const api = {
     autoTone: (key: string) => call<BasicSetting>(IPC.develop.autoTone, key),
     scopes: (req: ScopesRequest) => call<ScopeBins | null>(IPC.develop.scopes, req),
     gamutCoverage: (key: string) => call<GamutCoverage | null>(IPC.develop.gamutCoverage, key),
-    proofProfiles: () => call<FoundProfile[]>(IPC.develop.proofProfiles),
+    /** `named`: profiles' paths to list wherever they are (Recent's, the proof in force). */
+    proofProfiles: (named: string[] = []) => call<FoundProfile[]>(IPC.develop.proofProfiles, named),
     proofBrowse: () => call<ProofBrowsed | null>(IPC.develop.proofBrowse),
     proofCheck: (key: string, settings: ProofSettings) =>
       call<ProofCheck>(IPC.develop.proofCheck, key, settings),
