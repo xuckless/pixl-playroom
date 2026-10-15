@@ -6,7 +6,7 @@ import type { DuplicateGroup, LibraryItem } from '../../../shared/ipc'
 import { GlassSelect } from '../components/GlassSelect'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
-import { Stars } from '../components/ui'
+import { Slider, Stars } from '../components/ui'
 import { Ambient, Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
@@ -438,7 +438,6 @@ export function Toolbar(): React.JSX.Element {
   // A photo kept only while it has the focus (sticky hide) is not counted as shown.
   const count = useShownCount()
   const total = useLibrary((s) => s.items.length)
-  const pct = ((thumbSize - 100) / 260) * 100
   return (
     <nav className={`toolbar tool-bar library-bar${dupes ? ' dupes' : ''}`}>
       <button
@@ -475,7 +474,7 @@ export function Toolbar(): React.JSX.Element {
           }}
         >
           <Icon name="stack" />
-          {t('Subfolders')}
+          <span className="lbl">{t('Subfolders')}</span>
         </button>
       )}
       <span className="vsep" />
@@ -496,20 +495,20 @@ export function Toolbar(): React.JSX.Element {
         <DuplicateControls />
       ) : (
         mode === 'grid' && (
-          <label className="bar-range size-range" title={t('Thumbnail size')}>
-            <Icon name="library" />
-            <span className="bar-track">
-              <span className="bar-fill" style={{ width: `${pct}%` }} />
-              <input
-                type="range"
-                min={100}
-                max={360}
-                value={thumbSize}
-                onChange={(e) => setThumbSize(Number(e.target.value))}
-                onKeyDown={(e) => e.stopPropagation()}
-              />
-            </span>
-          </label>
+          <span className="bar-range size-range">
+            <Slider
+              label={t('Size')}
+              title={t('Thumbnail size')}
+              value={thumbSize}
+              min={100}
+              max={360}
+              def={180}
+              format={(v) => String(Math.round(v))}
+              onChange={(v) => setThumbSize(Math.round(v))}
+              onCommit={() => undefined}
+              adjusts={false}
+            />
+          </span>
         )
       )}
       <span className="count t-num">
@@ -533,7 +532,9 @@ export function Toolbar(): React.JSX.Element {
         title={withKey(t('Develop the photo shown'), 'library.develop')}
         onClick={goDevelop}
       >
-        {t('Develop')} <span className="kbd">{keyHint('library.develop')}</span>
+        <Icon name="presets" />
+        <span className="lbl">{t('Develop')}</span>{' '}
+        <span className="kbd">{keyHint('library.develop')}</span>
       </button>
       <LiquidGlass
         as="button"

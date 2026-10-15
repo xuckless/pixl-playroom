@@ -6,7 +6,7 @@ import {
   type FlagFilter
 } from '../../../../shared/filter'
 import { GlassSelect } from '../../components/GlassSelect'
-import { Segmented } from '../../components/ui'
+import { Segmented, Slider } from '../../components/ui'
 import type { ColorLabel } from '../../../../shared/ipc'
 import { keywordLabel, keywordPaths } from '../../../../shared/keywords'
 import { cameraName } from '../../../../shared/smart'
@@ -461,35 +461,30 @@ export function DuplicateControls(): React.JSX.Element | null {
     void openSource({ ...shown, ...patch })
   return (
     <>
-      <label
-        className="bar-range dup-range"
-        title={t(
-          'How different two pictures may be and still count as similar (0: only identical pictures)'
-        )}
-      >
-        <span className="micro">{t('Similar')}</span>
-        <span className="bar-track">
-          <span className="bar-fill" style={{ width: `${(level / 16) * 100}%` }} />
-          <input
-            type="range"
-            min={0}
-            max={16}
-            value={level}
-            aria-label={t('Similarity threshold')}
-            onChange={(e) => {
-              const v = Number(e.target.value)
-              setThreshold(v)
-              if (timer.current) clearTimeout(timer.current)
-              timer.current = setTimeout(() => {
-                setThreshold(null)
-                reopen({ threshold: v })
-              }, 350)
-            }}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
-        </span>
-        <span className="bar-value t-num">{level}</span>
-      </label>
+      <span className="bar-range dup-range">
+        <Slider
+          label={t('Similar')}
+          title={t(
+            'How different two pictures may be and still count as similar (0: only identical pictures)'
+          )}
+          value={level}
+          min={0}
+          max={16}
+          def={6}
+          format={(v) => String(Math.round(v))}
+          onChange={(raw) => {
+            const v = Math.round(raw)
+            setThreshold(v)
+            if (timer.current) clearTimeout(timer.current)
+            timer.current = setTimeout(() => {
+              setThreshold(null)
+              reopen({ threshold: v })
+            }, 350)
+          }}
+          onCommit={() => undefined}
+          adjusts={false}
+        />
+      </span>
       <Segmented
         label={t('Where to look')}
         value={shown.folder !== null ? 'folder' : 'library'}

@@ -208,7 +208,8 @@ export function DevelopToolbar(): React.JSX.Element {
         title={withKey(t('Library'), 'develop.library')}
       >
         <Icon name="library" />
-        {t('Library')} {k('develop.library') && <span className="kbd">{k('develop.library')}</span>}
+        <span className="lbl">{t('Library')}</span>{' '}
+        {k('develop.library') && <span className="kbd">{k('develop.library')}</span>}
       </button>
       <span className="vsep" />
       <button
@@ -275,7 +276,7 @@ export function DevelopToolbar(): React.JSX.Element {
         title={withKey(t('Virtual copy'), 'virtualCopy')}
       >
         <Icon name="copy" />
-        {t('Copy')}
+        <span className="lbl">{t('Copy')}</span>
       </button>
       <LiquidGlass
         as="button"

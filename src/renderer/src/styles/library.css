@@ -58,10 +58,11 @@
   display: flex;
   margin: 4px 2px 10px;
 }
-.size-range .icon-svg {
-  width: 14px;
-  height: 14px;
-  color: var(--muted);
+/* The toolbar's sliders, Develop's own, sized for the bar. */
+.library-bar .bar-range .slider {
+  width: 150px;
+  height: 26px;
+  margin: 0;
 }
 .library-bar .count {
   color: var(--text);
@@ -1167,9 +1168,23 @@
     display: none;
   }
 }
-@media (max-width: 1100px) {
+@media (max-width: 1240px) {
+  .library-bar {
+    gap: 6px;
+  }
+  .library-bar .seg.lg button {
+    padding: 0 9px;
+  }
   .library-bar .lbl {
     display: none;
+  }
+  /* The stars and the dots say what they are; their tooltips keep the words. */
+  .fb-stars .fb-label,
+  .fb-labels .fb-label {
+    display: none;
+  }
+  .filter-bar {
+    gap: 12px;
   }
 }
 @media (max-width: 1500px) {
