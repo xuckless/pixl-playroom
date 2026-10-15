@@ -1,4 +1,5 @@
 import { memo, type CSSProperties } from 'react'
+import type { LocalLayer } from '../../../../shared/recipe'
 import type { ViewGeometry } from '../../../../shared/view'
 import { useDevelop, wholeFrameTool } from '../../state/develop'
 import { planeFits } from '../../state/maskplanes'
@@ -34,6 +35,9 @@ function useFreshThumb(id: string | null): string | undefined {
     return e && planeFits(e, { whole: false, geometryRev: s.geometryRev }) ? e.url : undefined
   })
 }
+
+/** No masks, one array: a selector's result must keep its identity between calls. */
+const NO_LAYERS: LocalLayer[] = []
 
 /** Golden-angle hues, so every mask in "show all" gets its own colour. */
 const hueFor = (i: number, base: number): number => (base + i * 137.5) % 360
@@ -204,7 +208,7 @@ function SelectedOverlay(): React.JSX.Element | null {
   const overlay = useDevelop((s) => s.overlay)
   const thumbs = useDevelop((s) => s.maskThumbs)
   const geometryRev = useDevelop((s) => s.geometryRev)
-  const layers = useDevelop((s) => s.recipe?.layers ?? [])
+  const layers = useDevelop((s) => s.recipe?.layers ?? NO_LAYERS)
   const o = useUi((s) => s.maskOverlay)
   if (!overlay) return null
   if (o.showAll) {
