@@ -2,7 +2,10 @@
    shipped as Calm pro), the default: Lightroom and Capture One calm, in
    blacks. Layered near-black surfaces over the OLED-black workspace, quiet
    lines, short motion that only explains, no glass and no glow. The accent
-   is the purple every theme keeps. */
+   is the purple every theme keeps.
+   Controls (buttons, sliders, segments, menus, fields) sit on a deep purple
+   base with lavender edges and bright ink, so they hold their own beside a
+   bright HDR picture; the workspace stays OLED black. */
 :root[data-theme='calm'] {
   /* Layered blacks on the OLED-black workspace: each step a whisper above
      the one under it, slightly cool, never grey. Lines separate them. */
@@ -17,10 +20,18 @@
   --hair3: rgb(var(--fg-rgb) / 0.16);
 
   /* Ink stays bright on black; even the quietest (hints, units) reads at
-     4.5:1 on a card (WCAG AA). */
-  --text: #e8e8ec;
-  --text2: #a8a8b0;
-  --muted: #7c7c84;
+     4.5:1 on a control's purple (WCAG AA). */
+  --text: #f2f0f8;
+  --text2: #c4c0d2;
+  --muted: #918ca3;
+
+  /* The controls' deep, muted purple, and their soft lavender edges. */
+  --ctl: #15121e;
+  --ctl-hover: #1c1828;
+  --ctl-on: #2a2340;
+  --ctl-line: rgb(190 180 240 / 0.2);
+  --ctl-line-hover: rgb(190 180 240 / 0.34);
+  --ctl-ink: var(--text);
 
   /* No glow: the accent marks, it does not shine. */
   --glow: transparent;
@@ -52,21 +63,39 @@
 :root[data-theme='calm'] .card.open {
   border-color: var(--hair3);
 }
-:root[data-theme='calm'] .slider {
-  background: var(--s3);
-}
-:root[data-theme='calm'] .sl-fill {
-  background: color-mix(in srgb, var(--acc) 32%, transparent);
-  box-shadow: none;
-}
-:root[data-theme='calm'] .sl-knob {
-  background: var(--s4);
-  border-color: var(--hair3);
-  box-shadow: none;
-}
 :root[data-theme='calm'] .rail-item.on {
   background: color-mix(in srgb, var(--acc) 12%, transparent);
 }
 :root[data-theme='calm'] .rail-item .dot {
   box-shadow: none;
+}
+
+/* ── Controls on deep purple (their base comes from --ctl in primitives) ── */
+/* Sliders: the purple bar, a clear accent fill, a light knob that finds the eye. */
+:root[data-theme='calm'] .slider:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--acc);
+}
+:root[data-theme='calm'] .sl-zero,
+:root[data-theme='calm'] .sl-ticks i {
+  background: var(--ctl-line-hover);
+}
+:root[data-theme='calm'] .sl-fill {
+  background: color-mix(in srgb, var(--acc) 38%, var(--ctl));
+  box-shadow: none;
+}
+:root[data-theme='calm'] .sl-knob {
+  background: #3b3456;
+  border-color: rgb(214 208 240 / 0.6);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-theme='calm'] .slider:hover .sl-knob {
+  background: #473f66;
+  border-color: rgb(226 222 245 / 0.8);
+}
+:root[data-theme='calm'] .slider.dragging .sl-knob {
+  background: var(--acc);
+  border-color: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
 }

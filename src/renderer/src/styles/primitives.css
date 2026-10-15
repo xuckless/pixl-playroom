@@ -70,10 +70,11 @@
   gap: 7px;
   height: 28px;
   padding: 0 11px;
-  background: transparent;
-  border: 1px solid var(--hair2);
+  /* A theme may give its controls a base of their own (--ctl, --ctl-line). */
+  background: var(--ctl, transparent);
+  border: 1px solid var(--ctl-line, var(--hair2));
   border-radius: var(--r);
-  color: var(--text2);
+  color: var(--ctl-ink, var(--text2));
   font-weight: 500;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -89,8 +90,8 @@
 :where(button):hover:not(:disabled),
 .btn:hover {
   color: var(--text);
-  border-color: var(--hair3);
-  background: rgb(var(--fg-rgb) / 0.03);
+  border-color: var(--ctl-line-hover, var(--hair3));
+  background: var(--ctl-hover, rgb(var(--fg-rgb) / 0.03));
   transform: translateY(-1px);
 }
 :where(button):active:not(:disabled) {
@@ -130,6 +131,7 @@ button.icon {
   width: 28px;
   padding: 0;
   border-color: transparent;
+  background: transparent;
 }
 button.icon:hover:not(:disabled) {
   border-color: var(--hair2);
@@ -139,6 +141,7 @@ button.icon.lg {
 }
 button.ghost {
   border-color: transparent;
+  background: transparent;
 }
 button.ghost:hover:not(:disabled) {
   border-color: var(--hair2);
@@ -247,9 +250,12 @@ button.on:not(.icon):not(.chip)::after {
   display: inline-flex;
   align-items: stretch;
   height: 28px;
-  border: 1px solid var(--hair2);
+  border: 1px solid var(--ctl-line, var(--hair2));
   border-radius: var(--r);
-  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.04), rgb(var(--fg-rgb) / 0.01));
+  background: var(
+    --ctl,
+    linear-gradient(180deg, rgb(var(--fg-rgb) / 0.04), rgb(var(--fg-rgb) / 0.01))
+  );
   box-shadow: inset 0 1px 0 rgb(var(--fg-rgb) / 0.06);
   overflow: hidden;
   flex: none;
@@ -258,10 +264,10 @@ button.on:not(.icon):not(.chip)::after {
 .seg button {
   height: auto;
   border: none;
-  border-right: 1px solid var(--hair);
+  border-right: 1px solid var(--ctl-line, var(--hair));
   border-radius: 0;
   padding: 0 11px;
-  color: var(--muted);
+  color: var(--ctl-ink, var(--muted));
   background: transparent;
   letter-spacing: 0.03em;
 }
@@ -279,10 +285,13 @@ button.on:not(.icon):not(.chip)::after {
 .tabs button.on,
 .seg button.on {
   color: #fff;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--acc) 32%, transparent),
-    rgba(123, 104, 216, 0.16)
+  background: var(
+    --ctl-on,
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--acc) 32%, transparent),
+      rgba(123, 104, 216, 0.16)
+    )
   );
   text-shadow: 0 0 12px var(--glow);
   box-shadow: none;
@@ -311,8 +320,8 @@ button.on:not(.icon):not(.chip)::after {
 :where(input:not([type='range']):not([type='checkbox']):not([type='radio'])),
 :where(select),
 :where(textarea) {
-  background: var(--s1);
-  border: 1px solid var(--hair2);
+  background: var(--ctl, var(--s1));
+  border: 1px solid var(--ctl-line, var(--hair2));
   border-radius: var(--r);
   color: var(--text);
   padding: 0 9px;
@@ -461,8 +470,8 @@ input[type='checkbox']:disabled {
   height: 26px;
   margin: 3px 0;
   border-radius: var(--r);
-  background: rgb(var(--fg-rgb) / 0.035);
-  box-shadow: inset 0 0 0 1px var(--hair);
+  background: var(--ctl, rgb(var(--fg-rgb) / 0.035));
+  box-shadow: inset 0 0 0 1px var(--ctl-line, var(--hair));
   cursor: ew-resize;
   touch-action: none;
   user-select: none;
@@ -472,7 +481,7 @@ input[type='checkbox']:disabled {
     box-shadow 0.25s var(--ease);
 }
 .slider:hover {
-  background: rgb(var(--fg-rgb) / 0.05);
+  background: var(--ctl-hover, rgb(var(--fg-rgb) / 0.05));
 }
 /* A solid ring, 3:1 against every theme's surfaces (WCAG 1.4.11). */
 .slider:focus-visible {
@@ -1058,7 +1067,10 @@ input[type='checkbox']:disabled {
   gap: 8px;
   min-width: 0;
   padding: 0 8px 0 10px;
-  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.05), rgb(var(--fg-rgb) / 0.015));
+  background: var(
+    --ctl,
+    linear-gradient(180deg, rgb(var(--fg-rgb) / 0.05), rgb(var(--fg-rgb) / 0.015))
+  );
   box-shadow: inset 0 1px 0 rgb(var(--fg-rgb) / 0.06);
 }
 .glass-select .gs-prefix {
