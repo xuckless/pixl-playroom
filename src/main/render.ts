@@ -22,6 +22,7 @@ import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { mkdir, readdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
+import { createHash } from 'crypto'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
 import {
   compile,
@@ -29,7 +30,10 @@ import {
   framingTransparent,
   framingWarps,
   gradeKey,
+  maskProbe,
   orientedFrame,
+  probeInspect,
+  probeLayer,
   type Compiled
 } from '../shared/compile'
 import { lensCorrection, MANUAL_GEOMETRY } from '../shared/lens'
@@ -65,6 +69,8 @@ import type {
   Retouch,
   Transform,
   ImageStats,
+  InspectPlane,
+  MaskProbe,
   Measure,
   NativeRefs,
   NoiseEstimate,
@@ -118,7 +124,7 @@ import {
 } from '../shared/gpudrag'
 import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
-import { CICP_DISPLAY_P3, encodePng8, pngToFloats } from './pngio'
+import { CICP_DISPLAY_P3, encodeGreyPng, encodePng8, pngToFloats } from './pngio'
 import { pixels } from './workers/pool'
 import { traceRegion } from './trace'
 import { cacheUrl } from './protocol'
@@ -1117,6 +1123,7 @@ class Session {
     const abort = new AbortController()
     this.abort = abort
     const { signal } = abort
+    this.besideSent = null
     try {
       // A settled edit bakes its lens correction in the background.
       if (kind === 'full') this.bake()
@@ -1132,6 +1139,7 @@ class Session {
         kind === 'draft' &&
         this.view.maskLive &&
         this.view.maskLayer &&
+        this.besideSent !== this.view.maskLayer &&
         !this.closed &&
         !this.previewing
       )
@@ -1153,7 +1161,9 @@ class Session {
             log.warn(`${what} render failed`, e.code, e.message)
           }
         }
-        if (this.view.maskLayer) await beside('mask', () => this.renderMask('full', signal))
+        // The picture carried the mask's plane (E38), or it is drawn on its own.
+        if (this.view.maskLayer && this.besideSent !== this.view.maskLayer)
+          await beside('mask', () => this.renderMask('full', signal))
         if (this.view.before) await beside('before', () => this.renderBefore(signal))
         if (this.view.headroom) await beside('headroom', () => this.renderHeadroom(signal))
         if (this.view.maskThumbs) await beside('mask thumbs', () => this.renderMaskThumbs(signal))
@@ -1429,6 +1439,9 @@ class Session {
     }
     // A warp shown whole (the crop tool) keeps its empty corners: PNG with alpha.
     const alpha = framingTransparent(compiled.framing)
+    // The selected mask's plane from this same render (0.21.0, E38), where a
+    // plane would follow it: no second render for the overlay.
+    const besideProbe = this.besideProbe(kind, compiled, alpha, preview !== null)
     // A draft (a slider moving) goes to the window as pixels, straight from
     // the engine: no file written, served and decoded for a picture that is
     // replaced a moment later. The settled picture stays a file: the mask's
@@ -1490,7 +1503,8 @@ class Session {
         threads: interactiveThreads(),
         // A warp shown whole counts its empty corners (as black) rather than
         // risk measuring nothing when little of the picture is left.
-        measure: measureOf(kind === 'draft' ? 2 : 1)
+        measure: measureOf(kind === 'draft' ? 2 : 1),
+        ...(besideProbe ? { inspect: { Beside: { mask: besideProbe.probe, depth: 'Eight' } } } : {})
       },
       { signal, frame, ...(floatSdr ? { native: { sdrCompanion: COMPANION_EDGE } } : {}) },
       keyHeld
@@ -1573,6 +1587,81 @@ class Session {
         this.recentFull.delete(this.recentFull.keys().next().value as string)
     }
     this.owner.send(IPC.develop.rendered, event)
+    if (besideProbe && report.beside)
+      await this.sendBeside(kind, report.beside, besideProbe.layerId, rev, signal)
+  }
+
+  /**
+   * The mask plane a picture render can carry (E38): the selected mask's (or
+   * the key view's) when one follows this picture (any settled one, a draft
+   * while a range is live), on the CPU, for the photo's own recipe, and not
+   * a warp shown whole (a plane has no alpha). Null: `renderMask` draws it.
+   */
+  private besideProbe(
+    kind: Kind,
+    compiled: Compiled,
+    alpha: boolean,
+    preview: boolean
+  ): { layerId: string; probe: MaskProbe } | null {
+    const layerId = this.view.maskLayer
+    if (!layerId || preview || alpha || !compiled.grade) return null
+    if (kind === 'draft' && !this.view.maskLive) return null
+    const probe = maskProbe(compiled, layerId)
+    return probe ? { layerId, probe } : null
+  }
+
+  /** The mask the last picture carried (`besideProbe`): its bytes' hash, its file. */
+  private lastBeside: { hash: string; out: string } | null = null
+  /** This run's picture carried the selected mask: the plane needs no render of its own. */
+  private besideSent: string | null = null
+
+  /**
+   * The plane beside the picture (E38) sent as the mask overlay, as
+   * `renderMask` sends its own: written once as a grey PNG (the overlay's
+   * URL, and the weights the masked hue chart measures with), not again
+   * while its bytes are the same, and measured again only on a new picture.
+   */
+  private async sendBeside(
+    kind: Kind,
+    plane: InspectPlane,
+    layerId: string,
+    rev: number,
+    signal: AbortSignal
+  ): Promise<void> {
+    const hash = `${plane.width}x${plane.height}:${createHash('sha1').update(plane.data).digest('hex')}`
+    const same = this.lastBeside?.hash === hash && this.lastBeside.out === this.lastMaskOut
+    let out = this.lastMaskOut
+    if (!same) {
+      out = this.nextFile('mask', 'png')
+      await writeFile(out, encodeGreyPng(plane.data, plane.width, plane.height, 1))
+      this.lastBeside = { hash, out }
+    }
+    const statsFor = kind === 'full' ? this.lastFull : null
+    const maskStats =
+      statsFor === null
+        ? undefined
+        : same && statsFor === this.maskStatsFor
+          ? this.lastMask?.maskStats
+          : await this.measureMask(out, signal)
+    if (statsFor !== null) this.maskStatsFor = statsFor
+    // What `renderMask` keeps no longer names the plane shown.
+    this.maskSig = ''
+    this.lastMaskOut = out
+    this.besideSent = layerId
+    if (this.closed) return
+    this.lastMask = {
+      key: this.key,
+      seq: this.seq,
+      rev,
+      kind: 'mask',
+      layerId,
+      cropMode: this.view.cropMode,
+      url: cacheUrl(out, `${this.seq}-m`),
+      width: plane.width,
+      height: plane.height,
+      ...(maskStats ? { maskStats } : {})
+    }
+    this.owner.send(IPC.develop.rendered, this.lastMask)
   }
 
   // ── the GPU drag path (Phase A §4.3) and held measurements (§4.4) ──
@@ -2082,35 +2171,61 @@ class Session {
     }
   }
 
+  /**
+   * The colour a mask's plane is rendered under: the picture's own (0.21.0,
+   * E39), so a range keys the values the grade sees there (an HDR photo's
+   * tone-mapped ones). A Full HDR picture's master without its companion
+   * (an inspection plane has no SDR rendition).
+   */
+  private maskColor(
+    display: ViewState['display'] | null
+  ): Pick<ConvertRequest, 'color' | 'gain_map'> {
+    if (!display) return { color: displayPolicy(this.info, 'DisplayP3'), gain_map: null }
+    const m = masterFor(display)
+    return {
+      color:
+        typeof m === 'object' && 'Master' in m ? { Master: { ...m.Master, companion: null } } : m,
+      gain_map: null
+    }
+  }
+
   private async renderMask(kind: Kind, signal: AbortSignal): Promise<void> {
     const src = kind === 'draft' ? this.viewPx().draft : this.source('full')
     const rev = this.rev
+    const display = this.view.display ?? null
+    // Compiled as the picture is, under its colour (E39).
     const compiled = await this.compileFor(
       this.recipe,
       src,
       !this.view.cropMode,
-      true,
-      kind !== 'draft'
+      false,
+      kind !== 'draft',
+      display !== null
     )
     const layerId = this.view.maskLayer ?? undefined
-    const index = layerId ? compiled.layerIndex[layerId] : undefined
+    // A mask's layer, or a qualifier's key where it sits (E77).
+    const probe = layerId && compiled.grade ? maskProbe(compiled, layerId) : null
     const send = (e: Omit<RenderEvent, 'key' | 'seq' | 'rev' | 'kind' | 'layerId'>): void => {
       if (this.closed) return
       this.lastMask = { key: this.key, seq: this.seq, rev, kind: 'mask', layerId, ...e }
       this.owner.send(IPC.develop.rendered, this.lastMask)
     }
-    if (index === undefined || !compiled.grade || framingTransparent(compiled.framing)) {
-      // Nothing left in the mask (its last component undone or deleted), or a
-      // warp shown whole, which a one-channel plane cannot carry: the
-      // overlay is told, or it would go on showing the old plane.
+    if (!probe || !compiled.grade || framingTransparent(compiled.framing)) {
+      // Nothing left in the mask (its last component undone or deleted), a
+      // qualifier switched off, or a warp shown whole, which a one-channel
+      // plane cannot carry: the overlay is told, or it would go on showing
+      // the old plane.
       this.maskSig = EMPTY
       send({ cropMode: this.view.cropMode, url: '', width: 0, height: 0 })
       return
     }
     const measure = kind === 'full'
+    const colour = this.maskColor(display)
     // The plane is the mask's own shapes over the frame; only a colour or
-    // luminance range also depends on the picture the layers before it make.
+    // luminance range also depends on the picture the layers before it make,
+    // and a qualifier's key on what comes before it in its own layer too.
     // The mask layer's own sliders, and anything after it, do not move it.
+    const index = probeLayer(probe)
     const layer = compiled.grade.layers[index]
     const keyed = layer.mask?.components.some((c) => 'Range' in c.shape) ?? false
     const sig = String(
@@ -2118,12 +2233,17 @@ class Session {
         gradeKey([
           src.path,
           layerId,
-          index,
+          probe,
           layer.mask,
-          keyed ? compiled.grade.layers.slice(0, index) : null,
+          'QualifierKey' in probe
+            ? compiled.grade.layers.slice(0, index + 1)
+            : keyed
+              ? compiled.grade.layers.slice(0, index)
+              : null,
           compiled.framing,
           compiled.lens,
-          compiled.retouch
+          compiled.retouch,
+          colour
         ])
       )
     )
@@ -2151,13 +2271,12 @@ class Session {
           pixel: { depth: 'Eight', channels: 1 },
           encode: { Png: { compression: 'Fast', filter: 'Sub' } },
           metadata: STRIP_ALL,
-          color: 'Preserve',
+          ...colour,
           grade: compiled.grade,
           framing: compiled.framing,
           lens: compiled.lens,
           retouch: compiled.retouch,
-          inspect: { LayerMask: { layer: index } },
-          hdr: this.hdrWorking
+          inspect: probeInspect(probe)
         },
         { signal }
       )
@@ -2180,11 +2299,12 @@ class Session {
    * thumbnails and the "show all" overlay. A thumbnail is redrawn only when
    * what shapes its mask changed (not its sliders), and the loop yields to a
    * newer edit waiting behind it. Always SDR, Full HDR or not: a mask is
-   * shown by its shape, not its light.
+   * shown by its shape, not its light; an HDR photo's ranges key the values
+   * its SDR picture's grade sees (E39).
    */
   private async renderMaskThumbs(signal: AbortSignal): Promise<void> {
     const src = this.viewPx().draft
-    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
+    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
     // A warp shown whole has transparent corners a plane cannot carry; the
     // thumbnails wait for the crop tool to close.
     if (framingTransparent(compiled.framing)) return
@@ -2240,13 +2360,12 @@ class Session {
             pixel: { depth: 'Eight', channels: 1 },
             encode: { Png: { compression: 'Fast', filter: 'Sub' } },
             metadata: STRIP_ALL,
-            color: 'Preserve',
+            ...this.maskColor(null),
             grade: compiled.grade,
             framing: compiled.framing,
             lens: compiled.lens,
             retouch: compiled.retouch,
-            inspect: { LayerMask: { layer: index } },
-            hdr: this.hdrWorking
+            inspect: { LayerMask: { layer: index } }
           },
           { signal }
         )

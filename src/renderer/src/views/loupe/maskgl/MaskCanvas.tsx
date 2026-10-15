@@ -257,8 +257,6 @@ export function MaskCanvas({
   // The picture, for ranges.
   const hasRange = components?.some((c) => c.kind === 'range') ?? false
   const needPicture = hasRange
-  const isHdr = useDevelop((s) => s.session?.isHdr ?? false)
-  const hdrRange = isHdr && hasRange
   useEffect(() => {
     if (!needPicture || !pictureUrl) return
     let on = true
@@ -381,14 +379,10 @@ export function MaskCanvas({
     gl.setPicture(picture?.bmp ?? null, picture?.url ?? '')
 
     // Hand over to the engine once it has drawn this recipe (or at once, when
-    // the loupe has nothing to show).
+    // the loupe has nothing to show). An HDR photo's ranges too: the engine
+    // keys its plane on the values the picture's grade sees (E39).
     const agreed =
       !draft &&
-      // An HDR photo's ranges: the engine keys its plane on the HDR working
-      // values (a coverage plane needs Preserve), the picture on the tone
-      // mapped ones; the loupe keys on the picture as shown, as the picture
-      // does, so its own mask stays (ENGINE-REQUESTS E39).
-      !hdrRange &&
       gl.haveEngine &&
       mask !== null &&
       (mask.rev ?? 0) >= target.current &&
@@ -454,7 +448,6 @@ export function MaskCanvas({
   }, [
     components,
     draft,
-    hdrRange,
     isHover,
     selecting,
     layerInvert,
