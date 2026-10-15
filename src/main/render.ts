@@ -2184,6 +2184,9 @@ class Session {
    */
   private async renderMaskThumbs(signal: AbortSignal): Promise<void> {
     const src = this.viewPx().draft
+    // The recipe they are drawn from: the overlay shows none from before a
+    // framing or lens change (renderer state/maskplanes.ts).
+    const rev = this.rev
     const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
     // A warp shown whole has transparent corners a plane cannot carry; the
     // thumbnails wait for the crop tool to close.
@@ -2200,6 +2203,7 @@ class Session {
           this.owner.send(IPC.develop.rendered, {
             key: this.key,
             seq: this.seq,
+            rev,
             kind: 'mask-thumb',
             layerId: layer.id,
             cropMode: this.view.cropMode,
@@ -2256,6 +2260,7 @@ class Session {
       this.owner.send(IPC.develop.rendered, {
         key: this.key,
         seq: this.seq,
+        rev,
         kind: 'mask-thumb',
         layerId: layer.id,
         cropMode: this.view.cropMode,
@@ -2272,6 +2277,7 @@ class Session {
         this.owner.send(IPC.develop.rendered, {
           key: this.key,
           seq: this.seq,
+          rev,
           kind: 'mask-thumb',
           layerId: id,
           cropMode: this.view.cropMode,

@@ -9,6 +9,7 @@ import { useUi, type OverlayMode } from '../../../state/ui'
 import { BASE_EDGE, MaskGl, type Join, type ViewMode } from './MaskGl'
 import { useMaskDraft, useMaskGlBroken } from './state'
 import { useAiJobs } from '../../../state/jobs'
+import { nextTarget, type Watched } from './handover'
 
 /** The canvas is at most this many device pixels on its long edge (the tint is soft). */
 const MAX_EDGE = 2048
@@ -190,18 +191,23 @@ export function MaskCanvas({
   // edit, and the edit is sent as the next number.
   useEffect(() => {
     if (isHover) return
-    const s0 = useDevelop.getState()
-    let id = s0.layerId
-    let shape = shapeOf(s0.recipe?.layers.find((l) => l.id === id))
+    const watched = (s: ReturnType<typeof useDevelop.getState>): Watched => ({
+      layerId: s.layerId,
+      ...shapeOf(s.recipe?.layers.find((l) => l.id === s.layerId)),
+      geometryRev: s.geometryRev
+    })
+    let was = watched(useDevelop.getState())
     return useDevelop.subscribe((s) => {
-      const next = shapeOf(s.recipe?.layers.find((l) => l.id === s.layerId))
-      if (next.components === shape.components && next.invert === shape.invert && s.layerId === id)
+      const now = watched(s)
+      if (
+        now.components === was.components &&
+        now.invert === was.invert &&
+        now.layerId === was.layerId &&
+        now.geometryRev === was.geometryRev
+      )
         return
-      // A different mask selected shows the engine's plane as soon as it
-      // has one for it; an edit waits for the engine to draw that edit.
-      target.current = s.layerId === id ? lastSentRev() + 1 : 0
-      id = s.layerId
-      shape = next
+      target.current = nextTarget(was, now, target.current, lastSentRev())
+      was = now
       stats.target = target.current
     })
   }, [isHover])

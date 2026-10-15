@@ -5,7 +5,7 @@ import { effective, sectionsOff, SECTION_FIELDS } from '../src/shared/edits'
 import { activeSteps, type PixelStep } from '../src/shared/pixels'
 import { defaultRecipe, editsInHdr, normaliseRecipe, EDIT_SECTIONS } from '../src/shared/recipe'
 import { CARD_IDS } from '../src/shared/cards'
-import { viewGeometry } from '../src/shared/view'
+import { loupeGeometry } from '../src/shared/view'
 
 const ctx: CompileContext = {
   isRaw: false,
@@ -127,7 +127,7 @@ test('crop and heal switched off: the full frame and no spots', () => {
   assert.equal(e.geometry.quarterTurns, 1)
   assert.deepEqual(e.retouch, [])
   // The loupe lays out what is rendered.
-  const g = viewGeometry(r, 6000, 4000, false)
+  const g = loupeGeometry(r, false, 6000, 4000, false)
   assert.equal(g.crop, null)
   assert.equal(g.straighten, 0)
 })

@@ -1,6 +1,7 @@
 import { memo, type CSSProperties } from 'react'
 import type { ViewGeometry } from '../../../../shared/view'
 import { useDevelop, wholeFrameTool } from '../../state/develop'
+import { planeFits } from '../../state/maskplanes'
 import { useUi, type OverlayMode } from '../../state/ui'
 import { MaskCanvas } from './maskgl/MaskCanvas'
 import { useMaskGlBroken } from './maskgl/state'
@@ -20,6 +21,18 @@ const MASK_DRAWING: ReadonlySet<string> = new Set([
 /** Whether the masks window is up and unfolded (its overlay shows only then). */
 function useMasksShown(): boolean {
   return useUi((s) => s.masksWin.open)
+}
+
+/**
+ * A mask's thumbnail as the overlay may show it: drawn for the framed
+ * picture as it is now, not for the crop tool's whole frame or the framing
+ * before an edit (it would sit off its subject until the next one).
+ */
+function useFreshThumb(id: string | null): string | undefined {
+  return useDevelop((s) => {
+    const e = id ? s.maskThumbs[id] : undefined
+    return e && planeFits(e, { whole: false, geometryRev: s.geometryRev }) ? e.url : undefined
+  })
 }
 
 /** Golden-angle hues, so every mask in "show all" gets its own colour. */
@@ -147,7 +160,7 @@ function HoverOverlay(): React.JSX.Element | null {
   const layerId = useDevelop((s) => s.layerId)
   const overlay = useDevelop((s) => s.overlay)
   const mask = useDevelop((s) => s.mask)
-  const thumb = useDevelop((s) => (s.hoverLayer ? s.maskThumbs[s.hoverLayer]?.url : undefined))
+  const thumb = useFreshThumb(hoverLayer)
   const layers = useDevelop((s) => s.recipe?.layers)
   const o = useUi((s) => s.maskOverlay)
   if (!hoverLayer || !layers) return null
@@ -190,6 +203,7 @@ function SelectedOverlay(): React.JSX.Element | null {
   const layerId = useDevelop((s) => s.layerId)
   const overlay = useDevelop((s) => s.overlay)
   const thumbs = useDevelop((s) => s.maskThumbs)
+  const geometryRev = useDevelop((s) => s.geometryRev)
   const layers = useDevelop((s) => s.recipe?.layers ?? [])
   const o = useUi((s) => s.maskOverlay)
   if (!overlay) return null
@@ -197,7 +211,9 @@ function SelectedOverlay(): React.JSX.Element | null {
     return (
       <>
         {layers.map((l, i) => {
-          const t = l.id === layerId && mask ? mask.url : thumbs[l.id]?.url
+          const thumb = thumbs[l.id]
+          const fresh = thumb && planeFits(thumb, { whole: false, geometryRev })
+          const t = l.id === layerId && mask ? mask.url : fresh ? thumb.url : undefined
           if (!t || !l.enabled) return null
           return (
             <MaskPlane

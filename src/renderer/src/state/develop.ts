@@ -14,7 +14,8 @@ import type {
 } from '../../../shared/ipc'
 import { amendLog, appendToLog, canRedo, replay } from '../../../shared/history'
 import { normaliseRecipe, sameValue, type HslBand, type Recipe } from '../../../shared/recipe'
-import { FIT, type ZoomView } from '../../../shared/view'
+import { FIT, maskPlacementKey, type ZoomView } from '../../../shared/view'
+import { nextGeometryRev, planeFits } from './maskplanes'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
 import { useLibrary } from './library'
@@ -100,6 +101,12 @@ interface DevelopState {
   pictures: Pictures
   before: RenderEvent | null
   mask: RenderEvent | null
+  /**
+   * The first recipe number drawn with the masks placed as they are now (the
+   * framing and the lens, `maskPlacementKey`): a mask plane or thumbnail
+   * from before it is of another picture and is not shown (`planeFits`).
+   */
+  geometryRev: number
   /** The selected qualifier's key plane, while its key view is on (`keyView`). */
   keyMask: RenderEvent | null
   report: RenderReport | null
@@ -340,6 +347,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   pictures: { framed: null, crop: null },
   before: null,
   mask: null,
+  geometryRev: 0,
   report: null,
   stats: null,
   hdrStats: null,
@@ -581,8 +589,15 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     const { pictures, picture } = get()
     const whole = wholeFrameTool(tool)
     const shown = whole ? pictures.crop : pictures.framed
-    // The whole-frame tools work on the whole fitted frame.
-    set({ tool, picture: shown ?? picture, ...(whole ? { zoom: FIT } : {}) })
+    // The whole-frame tools work on the whole fitted frame. The mask planes
+    // on hand were drawn for the other view: the next ones are this one's.
+    set({
+      tool,
+      picture: shown ?? picture,
+      mask: null,
+      keyMask: null,
+      ...(whole ? { zoom: FIT } : {})
+    })
     get().pushView()
   },
 
@@ -732,6 +747,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       if (get().headroom && Boolean(e.cropMode) === wholeFrameTool(get().tool))
         set({ headroomPlane: e })
     } else if (e.kind === 'mask') {
+      // A plane drawn for the other view, or before the framing or lens
+      // changed, would sit off its subject over the picture on screen.
+      if (!planeFits(e, { whole: wholeFrameTool(get().tool), geometryRev: get().geometryRev }))
+        return
       const { keyView, qualifierId } = get()
       if (keyView && qualifierId) {
         // The key view's plane: kept apart from the masks'.
@@ -850,3 +869,33 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     }
   }
 }))
+
+/** The masks' placement (`maskPlacementKey`) and the recipe number it last changed at. */
+let placement: { key: string | null; rev: number } = { key: null, rev: 0 }
+/** The photo `placement` is of: another photo's first recipe is no change. */
+let placementOf: string | null = null
+
+// A framing or lens change drops the mask planes on hand at once: the
+// loupe's own mask (drawn through the new geometry) shows until the
+// engine's plane for the edit arrives.
+useDevelop.subscribe((s, prev) => {
+  if (s.recipe === prev.recipe && s.session === prev.session) return
+  if (!s.session || !s.recipe) {
+    placement = { key: null, rev: 0 }
+    placementOf = null
+    return
+  }
+  const { isRaw, frameWidth, frameHeight } = s.session
+  const key = maskPlacementKey(s.recipe, isRaw, frameWidth, frameHeight)
+  if (placementOf !== s.session.key) {
+    // A photo just opened: its renders count from its own first edit.
+    placementOf = s.session.key
+    placement = { key, rev: 0 }
+    if (s.geometryRev !== 0) useDevelop.setState({ geometryRev: 0 })
+    return
+  }
+  const next = nextGeometryRev(placement, key, lastSentRev())
+  if (next === placement) return
+  placement = next
+  useDevelop.setState({ geometryRev: next.rev, mask: null, keyMask: null })
+})

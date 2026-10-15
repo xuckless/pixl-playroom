@@ -25,8 +25,8 @@ import {
   fitRect,
   normalisedIn,
   panBy,
+  loupeGeometry,
   scaleOf,
-  viewGeometry,
   zoomAt,
   zoomedRect,
   type Rect,
@@ -198,22 +198,24 @@ export function Loupe(): React.JSX.Element {
   // Visualise Spots, while the Heal tool is the one showing.
   const spots = useUi((s) => s.drawer === 'heal' && !!s.heal.visualise)
   const spotLevel = useUi((s) => s.heal.spotLevel ?? 50)
-  // On the geometry alone (a slider elsewhere keeps it), so what takes `g`
-  // stays memoised through a drag.
+  // On the geometry and the sections switched off alone (a slider elsewhere
+  // keeps them), so what takes `g` stays memoised through a drag. The
+  // picture as rendered: what `compile` reads, not the raw geometry.
   const geometry = useDevelop((s) => s.recipe?.geometry)
-  const g = useMemo(
-    () =>
-      session && geometry
-        ? viewGeometry(
-            { geometry },
-            session.frameWidth,
-            session.frameHeight,
-            tool === 'crop',
-            tool === 'upright-guide'
-          )
-        : null,
-    [session, geometry, tool]
-  )
+  const off = useDevelop((s) => s.recipe?.off)
+  const g = useMemo(() => {
+    const recipe = useDevelop.getState().recipe
+    return session && geometry && off && recipe
+      ? loupeGeometry(
+          recipe,
+          session.isRaw,
+          session.frameWidth,
+          session.frameHeight,
+          tool === 'crop',
+          tool === 'upright-guide'
+        )
+      : null
+  }, [session, geometry, off, tool])
 
   // Where the picture sits in the loupe. In the crop tool the frame comes
   // from the geometry, which a render cannot change, so the crop box and the

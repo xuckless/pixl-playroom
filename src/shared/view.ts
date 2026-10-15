@@ -13,6 +13,8 @@
  */
 import type { CropRect, Orientation, Transform } from './engine-types'
 import { effectiveCrop, orientedFrame } from './compile'
+import { effective } from './edits'
+import { lensCorrection } from './lens'
 import { inverse, swapsAxes, transformPoint } from './orientation'
 import type { Recipe } from './recipe'
 import { canvasToFrame, frameToCanvas, uprightTransform } from './upright'
@@ -31,7 +33,7 @@ export interface ViewGeometry {
 }
 
 export function viewGeometry(
-  r: Pick<Recipe, 'geometry'> & { off?: Recipe['off'] },
+  r: Pick<Recipe, 'geometry'>,
   frameWidth: number,
   frameHeight: number,
   cropMode: boolean,
@@ -39,19 +41,59 @@ export function viewGeometry(
   guides = false
 ): ViewGeometry {
   const o = orientedFrame(r, frameWidth, frameHeight)
-  // As `edits.ts` `effective` renders it: crop and straighten, or Upright, switched off.
-  const cropOff = r.off?.crop === true
-  const uprightOff = r.off?.geometry === true
   return {
     width: o.width,
     height: o.height,
     user: o.user,
-    crop: cropOff ? null : effectiveCrop(r, o.width, o.height),
-    straighten: cropOff ? 0 : r.geometry.straighten,
-    transform:
-      guides || uprightOff ? null : uprightTransform(r.geometry.upright, o.width, o.height),
+    crop: effectiveCrop(r, o.width, o.height),
+    straighten: r.geometry.straighten,
+    transform: guides ? null : uprightTransform(r.geometry.upright, o.width, o.height),
     whole: cropMode || guides
   }
+}
+
+/**
+ * The loupe's geometry: the picture as it is rendered, so from the recipe
+ * `compile` reads (`edits.ts` `effective`). Crop & straighten switched off
+ * are no crop and no straighten, Geometry switched off no Upright, and the
+ * crop is then fitted as the engine's is (an Upright still auto-crops with
+ * Crop off). One source of truth with the render: a view of its own once
+ * drifted from it by hundreds of pixels.
+ */
+export function loupeGeometry(
+  r: Recipe,
+  isRaw: boolean,
+  frameWidth: number,
+  frameHeight: number,
+  cropMode: boolean,
+  guides = false
+): ViewGeometry {
+  return viewGeometry(effective(r, isRaw), frameWidth, frameHeight, cropMode, guides)
+}
+
+/**
+ * What places every mask on the picture as rendered: the framing (turns,
+ * straighten, crop, Upright, as switched on) and the lens's geometry, as
+ * the engine is given them (rounded as `compile` rounds them). A change to
+ * it leaves every mask plane on hand drawn for another picture; anything
+ * else (a guide moved, an aspect lock on a drawn crop) leaves them as they are.
+ */
+export function maskPlacementKey(
+  r: Recipe,
+  isRaw: boolean,
+  frameWidth: number,
+  frameHeight: number
+): string {
+  const e = effective(r, isRaw)
+  const g = viewGeometry(e, frameWidth, frameHeight, false)
+  const round4 = (v: number): number => Math.round(v * 1e4) / 1e4
+  return JSON.stringify([
+    g.user,
+    g.crop && [g.crop.x, g.crop.y, g.crop.width, g.crop.height].map(round4),
+    round4(g.straighten),
+    g.transform,
+    lensCorrection(e.lens)?.distortion ?? null
+  ])
 }
 
 export interface P {
