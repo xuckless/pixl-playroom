@@ -86,6 +86,7 @@ const MAPS: FrameMaps = {
 }
 
 const near = (a: P, b: P, e: number): boolean => Math.hypot(a.x - b.x, a.y - b.y) < e
+const round5 = (v: number): number => Math.round(v * 1e5) / 1e5
 
 test('an ST map read back, and inverted by Newton’s method, inside the frame and past it', () => {
   const f = barrel(0.12)
@@ -532,8 +533,10 @@ test('brush strokes are points: each dab carried, its radius by the scale an are
     for (let k = 0; k < s.dabs.length; k += 4) {
       const centre = { x: s.dabs[k], y: s.dabs[k + 1] }
       const d = moved[i].dabs
-      assert.deepEqual({ x: d[k], y: d[k + 1] }, ab(centre))
-      assert.equal(d[k + 2], s.dabs[k + 2] * areaScale(ab, centre))
+      // Kept as the recipe keeps a dab: to five places.
+      const q = ab(centre)
+      assert.deepEqual({ x: d[k], y: d[k + 1] }, { x: round5(q.x), y: round5(q.y) })
+      assert.equal(d[k + 2], round5(s.dabs[k + 2] * areaScale(ab, centre)))
       assert.notEqual(d[k + 2], s.dabs[k + 2])
       // The pen's pressure stays.
       assert.equal(d[k + 3], s.dabs[k + 3])
@@ -550,6 +553,39 @@ test('brush strokes are points: each dab carried, its radius by the scale an are
   for (const [i, s] of viaGrid.entries())
     for (let k = 0; k < s.dabs.length; k++)
       assert.ok(Math.abs(s.dabs[k] - moved[i].dabs[k]) < 3e-4, `${i}:${k}`)
+})
+
+test('a render keeps strokes it carried: the same dabs again, new ones and new maps carried anew', () => {
+  const r = withMasks(FRAME_A)
+  r.layers[0].components = [strokesBrush('kept', false)]
+  r.retouch = []
+  const strokesOf = (x: Recipe): Extract<MaskComponentSetting, { kind: 'brush' }>['strokes'] =>
+    (x.layers[0].components[0] as Extract<MaskComponentSetting, { kind: 'brush' }>).strokes
+  const ab = frameMap(MAPS, FRAME_A, FRAME_B)
+  const first = placeMasks(r, { to: FRAME_B, maps: MAPS }, 'render')
+  assert.deepEqual(strokesOf(first), remapStrokes(strokesOf(r)!, ab))
+  // The same strokes as another recipe (each update crosses IPC as a copy): kept.
+  const again = placeMasks(structuredClone(r), { to: FRAME_B, maps: MAPS }, 'render')
+  assert.deepEqual(strokesOf(again), strokesOf(first))
+  assert.equal(strokesOf(again)![0].dabs, strokesOf(first)![0].dabs)
+  // A dab moved: that stroke is carried again, the other is kept.
+  const edited = structuredClone(r)
+  strokesOf(edited)![0].dabs[0] = 0.4
+  const third = placeMasks(edited, { to: FRAME_B, maps: MAPS }, 'render')
+  assert.deepEqual(strokesOf(third), remapStrokes(strokesOf(edited)!, ab))
+  assert.notEqual(strokesOf(third)![0].dabs, strokesOf(first)![0].dabs)
+  assert.equal(strokesOf(third)![1].dabs, strokesOf(first)![1].dabs)
+  // Other maps for the same frames (another photo's aspect): carried by them.
+  const other: FrameMaps = { ...MAPS, [lensFrameKey(FRAME_B)]: sampled(barrel(-0.2)) }
+  const fourth = placeMasks(r, { to: FRAME_B, maps: other }, 'render')
+  assert.deepEqual(
+    strokesOf(fourth),
+    remapStrokes(strokesOf(r)!, frameMap(other, FRAME_A, FRAME_B))
+  )
+  assert.notDeepEqual(strokesOf(fourth), strokesOf(first))
+  // A rebase writes the carried dabs as the recipe keeps them: five places.
+  const rebased = placeMasks(r, { to: FRAME_B, maps: MAPS }, 'rebase')
+  for (const s of strokesOf(rebased)!) for (const v of s.dabs) assert.equal(v, round5(v))
 })
 
 test('strokes are mapped to the lens rendered; over a plane they stay on its frame until then', () => {
