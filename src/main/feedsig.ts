@@ -28,7 +28,9 @@ import { verifyJws, type EntitlementKeys } from './account/entitlement'
  * is out. While none is built in, a feed is read unchecked and the log says
  * so (the first release holding a key starts the checks).
  */
-export const FEED_KEYS: EntitlementKeys = {}
+export const FEED_KEYS: EntitlementKeys = {
+  'feed-1': '4zLX31HHtWDghLVxinlAW3hQrmPOrUnIeVuiMeO4NSE'
+}
 
 /** The JWS header's `typ`: a feed signature is never a token or a key set. */
 export const FEED_TYPE = 'pixl-feed'
