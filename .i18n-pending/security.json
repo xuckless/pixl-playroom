@@ -55,6 +55,14 @@
     "vi": "Bản cập nhật {{version}} đã bị từ chối: nguồn cập nhật của nó không được Pixl ký nên sẽ không được cài đặt.",
     "zh-Hans": "更新 {{version}} 已被拒绝：其更新源未经 Pixl 签名，因此不会安装。"
   },
+  "Gemma’s server is not the one downloaded: remove Gemma and download it again": {
+    "en": "Gemma’s server is not the one downloaded: remove Gemma and download it again",
+    "fr": "Le serveur de Gemma n’est pas celui qui a été téléchargé : supprimez Gemma et téléchargez-le à nouveau",
+    "de": "Der Server von Gemma ist nicht der heruntergeladene: Entfernen Sie Gemma und laden Sie es erneut herunter",
+    "ja": "Gemma のサーバーがダウンロードしたものと一致しません。Gemma を削除して、もう一度ダウンロードしてください",
+    "vi": "Máy chủ của Gemma không phải bản đã tải về: hãy gỡ Gemma và tải lại",
+    "zh-Hans": "Gemma 的服务器与下载的不一致：请移除 Gemma 后重新下载"
+  },
   "LUT · {{name}} (missing)": {
     "en": "LUT · {{name}} (missing)",
     "fr": "LUT · {{name}} (introuvable)",
