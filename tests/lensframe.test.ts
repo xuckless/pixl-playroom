@@ -20,6 +20,8 @@ import {
   rebaseNeed,
   retagMasks,
   sameLensFrame,
+  spotFramesKey,
+  spotsOn,
   stForward,
   stInverse,
   warpPlane,
@@ -403,4 +405,43 @@ test('a plane re-warped reads each pixel where the map says it was', () => {
         n++
       }
   assert.ok(Math.abs(sx / n - 30) < 0.1, `${sx / n}`)
+})
+
+test('the spots baked into the corrected proxies are where the lens rendered puts their content', () => {
+  // A render from the lens-corrected set leaves the spots out (they are in
+  // its pixels): spots drawn under another lens are baked carried over.
+  const r = withMasks(FRAME_A)
+  r.retouch.push({ ...r.retouch[0], id: 't', lensFrame: FRAME_B, points: [{ x: 0.3, y: 0.7 }] })
+  assert.equal(spotsOn(r, null), r.retouch, 'nothing to carry: as drawn')
+  assert.equal(
+    spotFramesKey(withMasks(FRAME_A), FRAME_A),
+    '',
+    'on the lens rendered: no key of its own'
+  )
+  // Optics switched off: rendered with no correction.
+  const placed = spotsOn(r, { to: null, maps: MAPS })
+  assert.ok(near(placed[0].points[0], frameMap(MAPS, FRAME_A, null)({ x: 0.85, y: 0.85 }), 1e-12))
+  assert.ok(near(placed[0].source!, frameMap(MAPS, FRAME_A, null)({ x: 0.6, y: 0.6 }), 1e-12))
+  assert.ok(near(placed[1].points[0], frameMap(MAPS, FRAME_B, null)({ x: 0.3, y: 0.7 }), 1e-12))
+  assert.ok(placed[0].radius !== r.retouch[0].radius, 'its size by the scale an area keeps')
+  // The same points under another lens are another bake.
+  const k = spotFramesKey(r, null)
+  assert.notEqual(k, '')
+  assert.notEqual(k, spotFramesKey(r, FRAME_A))
+  assert.notEqual(k, spotFramesKey({ ...r, masks: { lensFrame: FRAME_B } }, null))
+  // What the render compiles from them is the carried spots (compile's own placing).
+  const ctx: CompileContext = {
+    isRaw: false,
+    asShot: null,
+    sourceOrientation: 'Normal',
+    frameWidth: 1200,
+    frameHeight: 800,
+    scale: 1,
+    seed: 1,
+    brushPaths: {},
+    applyCrop: true
+  }
+  const live = compile(r, { ...ctx, maskFrames: { to: null, maps: MAPS } })
+  const baked = compile({ ...r, retouch: placed }, ctx)
+  assert.deepEqual(live.retouch, baked.retouch)
 })

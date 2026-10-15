@@ -259,6 +259,37 @@ export function remapSpot(s: RetouchSpot, f: (p: P) => P): RetouchSpot {
   }
 }
 
+/**
+ * The spots of `r` on the frame `frames` carries them to (`r` itself when
+ * null: all on the frame rendered). What the lens-corrected proxies bake in
+ * (main/render.ts): a render from them leaves the spots out, so one baked
+ * where it was drawn would stay off its content however the lens is now.
+ */
+export function spotsOn(
+  r: Pick<Recipe, 'retouch' | 'masks'>,
+  frames: MaskFrames | null
+): RetouchSpot[] {
+  if (!frames) return r.retouch
+  const masks = r.masks?.lensFrame ?? null
+  return r.retouch.map((s) => {
+    const from = frameOf(s, masks)
+    return sameLensFrame(from, frames.to) ? s : remapSpot(s, frameMap(frames.maps, from, frames.to))
+  })
+}
+
+/**
+ * What spots baked on frame `to` hold beyond their own points: the frames
+ * they are carried from ('' when every one is on `to`), so a bake of the
+ * same points drawn under another lens is another bake.
+ */
+export function spotFramesKey(r: Pick<Recipe, 'retouch' | 'masks'>, to: LensFrame): string {
+  const masks = r.masks?.lensFrame ?? null
+  const from = r.retouch.map((s) => frameOf(s, masks))
+  return from.every((f) => sameLensFrame(f, to))
+    ? ''
+    : `${from.map(lensFrameKey).join('|')}>${lensFrameKey(to)}`
+}
+
 /** `c` without its own frame. */
 function unframed<T extends Framed>(c: T): T {
   if (c.lensFrame === undefined) return c

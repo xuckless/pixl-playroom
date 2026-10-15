@@ -101,7 +101,14 @@ import {
 } from './autowb'
 import { brushPlanes } from './brushes'
 import { maskFramesFor, maskGrid, planeOnFrame, rebaseMasks } from './maskframe'
-import type { LensFrame, LensGrid, MaskFrames } from '../shared/lensframe'
+import {
+  lensFrameOf,
+  spotFramesKey,
+  spotsOn,
+  type LensFrame,
+  type LensGrid,
+  type MaskFrames
+} from '../shared/lensframe'
 import { paths } from './paths'
 import { sweepPhoto } from './sweep'
 import type { PhotoRow } from './db'
@@ -919,7 +926,11 @@ class Session {
    * What the prepared proxies hold for a recipe: its lens correction and
    * its spots, placed on the base frame (the proxy's own).
    */
-  private prepared(recipe: Recipe): {
+  private prepared(
+    recipe: Recipe,
+    /** Spots drawn under another lens than the one rendered: what carries them to it (`maskFrames`). */
+    frames: MaskFrames | null = null
+  ): {
     lens: LensCorrection | null
     retouch: Retouch | null
     /** The proxies they are prepared from: the plain ones or the working pixels (steps laid on). */
@@ -931,7 +942,7 @@ class Session {
       base: this.basePx().proxy.path,
       lens: lensCorrection(shown.lens),
       retouch: compileRetouch(
-        shown.retouch,
+        spotsOn(shown, frames),
         'Normal',
         this.basePx().frameWidth,
         this.basePx().frameHeight
@@ -941,20 +952,45 @@ class Session {
 
   /** What names the prepared proxies a recipe needs: '' for none (the plain proxies serve). */
   /** The last `lensKey` asked for, by what it is made from (asked several times per update). */
-  private lensKeyMemo: { lens: unknown; retouch: unknown; base: Proxies; key: string } | null = null
+  private lensKeyMemo: {
+    lens: unknown
+    retouch: unknown
+    masks: unknown
+    off: unknown
+    base: Proxies
+    key: string
+  } | null = null
 
   private lensKey(recipe: Recipe): string {
     const base = this.basePx()
     const m = this.lensKeyMemo
-    if (m && m.lens === recipe.lens && m.retouch === recipe.retouch && m.base === base) return m.key
+    if (
+      m &&
+      m.lens === recipe.lens &&
+      m.retouch === recipe.retouch &&
+      m.masks === recipe.masks &&
+      m.off === recipe.off &&
+      m.base === base
+    )
+      return m.key
     const key = this.lensKeyOf(recipe)
-    this.lensKeyMemo = { lens: recipe.lens, retouch: recipe.retouch, base, key }
+    this.lensKeyMemo = {
+      lens: recipe.lens,
+      retouch: recipe.retouch,
+      masks: recipe.masks,
+      off: recipe.off,
+      base,
+      key
+    }
     return key
   }
 
   private lensKeyOf(recipe: Recipe): string {
     const p = this.prepared(recipe)
-    return p.lens || p.retouch ? hash32(JSON.stringify(p)).toString(16) : ''
+    if (!p.lens && !p.retouch) return ''
+    // Spots drawn under another lens are baked carried over (see `bake`).
+    const carried = spotFramesKey(effective(recipe, this.isRaw), lensFrameOf(p.lens))
+    return hash32(JSON.stringify(carried ? [p, carried] : p)).toString(16)
   }
 
   /**
@@ -985,38 +1021,45 @@ class Session {
   private bake(): void {
     const key = this.lensKey(this.recipe)
     if (!key || this.lensed?.key === key || this.baking === key || this.bakeFailed === key) return
-    const { lens, retouch } = this.prepared(this.recipe)
+    const recipe = this.recipe
     const base = this.basePx()
     this.baking = key
-    ensureLensedProxies(
-      this.owner.bgEngine,
-      this.row,
-      base,
-      lens,
-      retouch,
-      key,
-      this.hdrWorking
-    ).then(
-      (px) => {
-        if (this.baking === key) this.baking = null
-        if (this.closed) return
-        if (this.lensKey(this.recipe) === key) {
-          const before = this.lensed?.key
-          this.lensed = { key, px }
-          this.schedule('full')
-          // The sets before the last go now, not only when the photo closes
-          // (each is two proxies: a session of lens edits made gigabytes).
-          void pruneLensed(this.row, this.key, key, before)
-        } else this.bake()
-      },
-      (err) => {
-        if (this.baking === key) this.baking = null
-        log.warn('lens proxies failed; correcting live', (err as Error).message)
-        this.bakeFailed = key
-        // The settled render, mask, before and headroom waited for the bake: they run now.
-        if (!this.closed && this.lensKey(this.recipe) === key) this.schedule('full')
-      }
-    )
+    // Spots drawn under another lens than the one rendered are baked where
+    // their content now is: renders from the set leave the spots out.
+    this.maskFrames(recipe)
+      .then((frames) => {
+        const { lens, retouch } = this.prepared(recipe, frames)
+        return ensureLensedProxies(
+          this.owner.bgEngine,
+          this.row,
+          base,
+          lens,
+          retouch,
+          key,
+          this.hdrWorking
+        )
+      })
+      .then(
+        (px) => {
+          if (this.baking === key) this.baking = null
+          if (this.closed) return
+          if (this.lensKey(this.recipe) === key) {
+            const before = this.lensed?.key
+            this.lensed = { key, px }
+            this.schedule('full')
+            // The sets before the last go now, not only when the photo closes
+            // (each is two proxies: a session of lens edits made gigabytes).
+            void pruneLensed(this.row, this.key, key, before)
+          } else this.bake()
+        },
+        (err) => {
+          if (this.baking === key) this.baking = null
+          log.warn('lens proxies failed; correcting live', (err as Error).message)
+          this.bakeFailed = key
+          // The settled render, mask, before and headroom waited for the bake: they run now.
+          if (!this.closed && this.lensKey(this.recipe) === key) this.schedule('full')
+        }
+      )
   }
 
   update(next: Recipe, interactive: boolean, rev?: number): void {
@@ -1359,7 +1402,7 @@ class Session {
     }
     // The lensed set's correction, baked as on its proxies; a live one is the render's.
     if (key.endsWith(':live') === false) {
-      const { lens, retouch } = this.prepared(this.recipe)
+      const { lens, retouch } = this.prepared(this.recipe, await this.maskFrames(this.recipe))
       file = await lensOn(
         engine,
         file,
