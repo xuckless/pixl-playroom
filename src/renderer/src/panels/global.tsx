@@ -228,6 +228,7 @@ function CameraColourRow({
   const say = useLibrary((s) => s.say)
   const steps = useDevelop((s) => s.recipe?.pixels.length ?? 0)
   const [profiles, setProfiles] = useState<CameraProfileChoices>({ kept: [], adobe: [] })
+  // Asked again when the colour changes: one just imported is kept now.
   useEffect(() => {
     let live = true
     void api.develop
@@ -237,7 +238,7 @@ function CameraColourRow({
     return () => {
       live = false
     }
-  }, [session.key])
+  }, [session.key, session.rawColour])
   const cc = session.cameraColour
   const profile = session.cameraProfile
   const options = [

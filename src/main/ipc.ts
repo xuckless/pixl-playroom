@@ -605,19 +605,18 @@ export function registerIpc(s: Services): void {
   })
   handle(IPC.develop.cameraProfiles, (key: string) => s.library.cameraProfiles(key))
   handle(IPC.develop.addCameraProfile, async (key: string, path: string | null) => {
-    let file = path
-    if (!file) {
-      const w = win()
-      const opts = {
-        title: t('Import a camera profile'),
-        properties: ['openFile'] as 'openFile'[],
-        filters: [{ name: t('DNG camera profile'), extensions: ['dcp'] }]
-      }
-      const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
-      if (r.canceled || !r.filePaths[0]) return null
-      file = r.filePaths[0]
+    // A path from the renderer is one of Adobe's profiles it was offered
+    // (checked against that list); any other file the person picks here.
+    if (typeof path === 'string') return s.library.addCameraProfile(key, path, 'adobe')
+    const w = win()
+    const opts = {
+      title: t('Import a camera profile'),
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: t('DNG camera profile'), extensions: ['dcp'] }]
     }
-    return s.library.addCameraProfile(key, file)
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    if (r.canceled || !r.filePaths[0]) return null
+    return s.library.addCameraProfile(key, r.filePaths[0])
   })
   handle(
     IPC.develop.update,

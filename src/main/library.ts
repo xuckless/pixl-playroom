@@ -58,7 +58,7 @@ import {
   type RawColour
 } from '../shared/rawcolour'
 import { whiteXy } from '../shared/wb'
-import type { CameraProfiles } from './cameraprofiles'
+import { NotAProfile, type CameraProfiles } from './cameraprofiles'
 import { EngineError, type EngineClient } from './engine/client'
 import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
@@ -362,15 +362,27 @@ export class Library {
    * for this photo's body is said; one that is not is kept, but offered only
    * for its own camera. The engine refuses a file that is not a profile.
    */
-  async addCameraProfile(key: string, path: string): Promise<CameraProfileAdded> {
+  async addCameraProfile(
+    key: string,
+    path: string,
+    from: 'chosen' | 'adobe' = 'chosen'
+  ): Promise<CameraProfileAdded> {
     if (!this.profiles) throw new Error(t('Camera profiles are not available'))
+    // A path the renderer names is only ever one of Adobe's it was offered.
+    if (from === 'adobe' && !(await this.profiles.isAdobe(path)))
+      throw new Error(
+        t('{{name}} is not a DNG camera profile Playroom can read.', { name: basename(path) })
+      )
     const row = await this.photoRow(key)
     const info = await this.engineProbe(row, this.engine)
     let kept
     try {
       kept = await this.profiles.import(path)
     } catch (err) {
-      if (err instanceof EngineError && err.code === 'InvalidRequest')
+      if (
+        (err instanceof EngineError && err.code === 'InvalidRequest') ||
+        err instanceof NotAProfile
+      )
         throw new Error(
           t('{{name}} is not a DNG camera profile Playroom can read.', { name: basename(path) })
         )

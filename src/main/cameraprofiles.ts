@@ -14,7 +14,7 @@
 import { createHash } from 'crypto'
 import log from 'electron-log/main'
 import { existsSync, readdirSync, readFileSync } from 'fs'
-import { mkdir, readdir, readFile, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, stat, writeFile } from 'fs/promises'
 import { homedir } from 'os'
 import { basename, join } from 'path'
 import type { DcpProfile, SourceInfo } from '../shared/engine-types'
@@ -35,6 +35,15 @@ export interface FoundProfile {
   path: string
   name: string
 }
+
+/**
+ * The largest `.dcp` read: Adobe's are a few KB to about 1 MB (the engine's
+ * guide), so anything far past that is not one, and is never read whole.
+ */
+export const MAX_PROFILE_BYTES = 16 * 1024 * 1024
+
+/** A file that cannot be a camera profile (not a file, or far too big): never read. */
+export class NotAProfile extends Error {}
 
 /** A `.dcp` file's id: the first 8 hex digits of its SHA-256. */
 export function profileId(bytes: Uint8Array): string {
@@ -135,6 +144,8 @@ export class CameraProfiles {
 
   /** Import a `.dcp` file: read by the engine, kept as JSON, registered. Refused by the engine if it is not one. */
   async import(path: string): Promise<KeptProfile> {
+    const st = await stat(path)
+    if (!st.isFile() || st.size > MAX_PROFILE_BYTES) throw new NotAProfile(path)
     const bytes = await readFile(path)
     const id = profileId(bytes)
     const had = this.kept.get(id)
@@ -180,16 +191,40 @@ export class CameraProfiles {
     const files = (await this.listAdobe()).filter((f) => namedFor(f, bodies))
     const found: FoundProfile[] = []
     for (const path of files) {
-      try {
-        const bytes = await readFile(path)
-        if (this.kept.has(profileId(bytes))) continue
-        const profile = await this.engine.readCameraProfile(new Uint8Array(bytes))
-        if (profileFits(profile, info)) found.push({ path, name: profileLabel(profile) })
-      } catch (err) {
-        log.info('Adobe camera profile not read', path, (err as Error).message)
-      }
+      const read = await this.readAdobe(path)
+      if (!read || this.kept.has(read.id)) continue
+      if (profileFits(read.profile, info)) found.push({ path, name: profileLabel(read.profile) })
     }
     return found.sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  /** Adobe's files read, once a run each (every open of a photo asks again). */
+  private adobeRead = new Map<string, Promise<{ id: string; profile: DcpProfile } | null>>()
+
+  private readAdobe(path: string): Promise<{ id: string; profile: DcpProfile } | null> {
+    let p = this.adobeRead.get(path)
+    if (!p) {
+      p = (async () => {
+        try {
+          const bytes = await readFile(path)
+          const profile = await this.engine.readCameraProfile(new Uint8Array(bytes))
+          return { id: profileId(bytes), profile }
+        } catch (err) {
+          log.info('Adobe camera profile not read', path, (err as Error).message)
+          return null
+        }
+      })()
+      this.adobeRead.set(path, p)
+    }
+    return p
+  }
+
+  /**
+   * Whether a path is one of the `.dcp` files found in Adobe's folders: the
+   * only paths the renderer may name for an import (`adobe` listed them).
+   */
+  async isAdobe(path: string): Promise<boolean> {
+    return (await this.listAdobe()).includes(path)
   }
 
   private listAdobe(): Promise<string[]> {

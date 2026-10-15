@@ -28,7 +28,13 @@ import {
 import { RAW_DEVELOP_REV } from '../src/shared/pixels'
 import { compile, type CompileContext } from '../src/shared/compile'
 import { defaultRecipe } from '../src/shared/recipe'
-import { adobeFolders, CameraProfiles, namedFor, profileId } from '../src/main/cameraprofiles'
+import {
+  adobeFolders,
+  CameraProfiles,
+  namedFor,
+  NotAProfile,
+  profileId
+} from '../src/main/cameraprofiles'
 
 const camera = {
   illuminants: [
@@ -222,8 +228,23 @@ test('an imported profile is kept as JSON, known again next run, and found in Ad
       ['Adobe Standard', 'Camera Faithful']
     )
     assert.ok(!read.includes('r5'))
+    // Asked again (every open of a photo asks): nothing is read twice.
+    read.length = 0
+    await again.adobe(cam())
+    assert.deepEqual(read, [])
+    // The renderer may name only a file found there.
+    assert.equal(
+      await again.isAdobe(join(adobe, 'Adobe Standard', 'Canon EOS 200D Adobe Standard.dcp')),
+      true
+    )
+    assert.equal(await again.isAdobe(mine), false)
+    assert.equal(await again.isAdobe('/etc/passwd'), false)
     // Imported once, the same file is the same profile.
     assert.equal((await again.import(mine)).id, kept.id)
+    // What cannot be a profile is never read: a folder.
+    read.length = 0
+    await assert.rejects(again.import(adobe), NotAProfile)
+    assert.deepEqual(read, [])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
