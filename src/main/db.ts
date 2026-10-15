@@ -371,7 +371,13 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   // 0.21, E21): the profile itself, as the engine states it (its guide: keep
   // the profile, not the path), so sidecars and projects can carry it.
   (db) =>
-    db.exec('CREATE TABLE IF NOT EXISTS camera_profiles (id TEXT PRIMARY KEY, json TEXT NOT NULL)')
+    db.exec('CREATE TABLE IF NOT EXISTS camera_profiles (id TEXT PRIMARY KEY, json TEXT NOT NULL)'),
+  // 20. A thumbnail the engine refused for its request, not its file, was
+  // marked unreadable too (a development run on an older engine refusing
+  // 0.21's fields): every photo is tried again once.
+  (db) => {
+    db.exec('UPDATE photos SET failed_key = NULL, failed_reason = NULL')
+  }
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */

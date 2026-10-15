@@ -2709,6 +2709,17 @@ export function unsupportedRaw(detail: EngineErrorShape['detail']): string | nul
 }
 
 /**
+ * Whether a failure says the file itself cannot be read: its bytes cannot be
+ * decoded, are not what they claim to be, or are a RAW the engine refuses by
+ * name. Only these mark a photo unreadable for good; a refused request (an
+ * engine older than the app, a field it does not know) or a model's failure
+ * is Playroom's to fix, and the photo is tried again.
+ */
+export function unreadableFile(code: string, detail: EngineErrorShape['detail']): boolean {
+  return code === 'Decode' || code === 'FormatMismatch' || unsupportedRaw(detail) !== null
+}
+
+/**
  * Whether a RAW was refused for having no embedded preview the engine can
  * decode (0.21.0, OBS-1: `Unsupported`, operation `raw embedded preview`):
  * the one refusal a preview's caller develops instead. An I/O failure or a

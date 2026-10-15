@@ -16,6 +16,7 @@ import {
 import {
   noPreview,
   reduceRefused,
+  unreadableFile,
   type PixlErrorDetail,
   type RawPreview
 } from '../src/shared/engine-types'
@@ -164,6 +165,21 @@ test('only the no-preview refusal develops instead; a refused reduction is retri
   assert.equal(reduceRefused('InvalidRequest', invalid('decode_reduce')), true)
   assert.equal(reduceRefused('InvalidRequest', invalid('resize')), false)
   assert.equal(reduceRefused('Decode', invalid('decode_reduce')), false)
+})
+
+test('only a file the engine cannot read is marked unreadable; a refused request is tried again', () => {
+  assert.equal(unreadableFile('Decode', { Decode: { format: 'Jpeg', detail: 'x' } }), true)
+  assert.equal(unreadableFile('FormatMismatch', undefined), true)
+  assert.equal(
+    unreadableFile('Unsupported', { Unsupported: { operation: 'raw frames', detail: 'x' } }),
+    true
+  )
+  // An older engine refusing a newer request's field (0.20 and `hue_vs_luma`).
+  const unknown = { InvalidRequest: { field: 'request', detail: 'unknown field `hue_vs_luma`' } }
+  assert.equal(unreadableFile('InvalidRequest', unknown), false)
+  assert.equal(unreadableFile('Model', { Model: { stage: 'run', detail: 'x' } }), false)
+  assert.equal(unreadableFile('Io', { Io: { path: '/x', detail: 'x' } }), false)
+  assert.equal(unreadableFile('Cancelled', undefined), false)
 })
 
 /** The native engine, where it is built (not in CI: this check skips). */

@@ -22,6 +22,7 @@ import {
   noPreview,
   PRESERVE_ALL,
   reduceRefused,
+  unreadableFile,
   type ConvertRequest,
   type SourceInfo,
   type WhitePoint
@@ -731,8 +732,9 @@ export class Library {
           // Only the engine failing to read the file says the photo is
           // unreadable (once per version of it: not tried again until it
           // changes). Anything else (the index stopping at quit, a plane not
-          // found) leaves it to be tried another time.
-          if (!(err instanceof EngineError) || err.cancelled) return
+          // found, a request the engine refuses) leaves it to be tried
+          // another time.
+          if (!(err instanceof EngineError) || !unreadableFile(err.code, err.detail)) return
           void this.index.markFailed(job.photoId, err.userMessage).catch(() => {})
           this.broadcast(IPC.library.thumb, {
             key: keyOf(job.photoId, job.copyId),
