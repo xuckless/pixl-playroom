@@ -1454,7 +1454,7 @@ class Session {
     const alpha = framingTransparent(compiled.framing)
     // The selected mask's plane from this same render (0.21.0, E38), where a
     // plane would follow it: no second render for the overlay.
-    const besideProbe = this.besideProbe(kind, compiled, alpha, preview !== null)
+    let besideProbe = this.besideProbe(kind, compiled, alpha, preview !== null)
     // A draft (a slider moving) goes to the window as pixels, straight from
     // the engine: no file written, served and decoded for a picture that is
     // replaced a moment later. The settled picture stays a file: the mask's
@@ -1479,64 +1479,74 @@ class Session {
         ? heldKey(src.path, compiled.framing)
         : null
     const planes = await this.planesFor(compiled, src)
-    const report = await this.withPlanes(planes, (native) =>
-      this.convertHeld(
-        {
-          ...blankRequest(src.path, out, src.input),
-          ...(frame ? { sink: 'Bytes' as const } : {}),
-          pixel: {
-            depth: (display || floatSdr) && frame ? 'F32' : 'Eight',
-            channels: alpha || frame ? 4 : 3
+    const picture = (beside: { probe: MaskProbe } | null): Promise<ConvertReport> =>
+      this.withPlanes(planes, (native) =>
+        this.convertHeld(
+          {
+            ...blankRequest(src.path, out, src.input),
+            ...(frame ? { sink: 'Bytes' as const } : {}),
+            pixel: {
+              depth: (display || floatSdr) && frame ? 'F32' : 'Eight',
+              channels: alpha || frame ? 4 : 3
+            },
+            encode: frame
+              ? { Pixels: { sample: display || floatSdr ? 'F16' : 'U8' } }
+              : avif
+                ? SETTLED_AVIF
+                : alpha
+                  ? { Png: { compression: 'Fast', filter: 'Sub' } }
+                  : {
+                      // A settled picture is a few MB less as 4:2:0, which a screen
+                      // shows the same; the draft keeps full chroma at its lower quality.
+                      Jpeg: {
+                        quality: kind === 'draft' ? 92 : 95,
+                        subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                        optimize: false
+                      }
+                    },
+            metadata: { exif: false, icc: true, xmp: false, iptc: false },
+            color: display
+              ? masterFor(
+                  display,
+                  undefined,
+                  kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE
+                )
+              : floatSdr
+                ? LINEAR_P3
+                : displayPolicy(this.info, 'DisplayP3'),
+            // The master reads a gain map itself, and refuses the field.
+            ...(display ? { gain_map: null } : {}),
+            grade: compiled.grade,
+            framing: compiled.framing,
+            lens: compiled.lens,
+            retouch: compiled.retouch,
+            threads: interactiveThreads(),
+            // A warp shown whole counts its empty corners (as black) rather than
+            // risk measuring nothing when little of the picture is left.
+            measure: measureOf(kind === 'draft' ? 2 : 1),
+            ...(beside ? { inspect: { Beside: { mask: beside.probe, depth: 'Eight' } } } : {})
           },
-          encode: frame
-            ? { Pixels: { sample: display || floatSdr ? 'F16' : 'U8' } }
-            : avif
-              ? SETTLED_AVIF
-              : alpha
-                ? { Png: { compression: 'Fast', filter: 'Sub' } }
-                : {
-                    // A settled picture is a few MB less as 4:2:0, which a screen
-                    // shows the same; the draft keeps full chroma at its lower quality.
-                    Jpeg: {
-                      quality: kind === 'draft' ? 92 : 95,
-                      subsampling: kind === 'draft' ? 'None' : 'Quarter',
-                      optimize: false
-                    }
-                  },
-          metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: display
-            ? masterFor(
-                display,
-                undefined,
-                kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE
-              )
-            : floatSdr
-              ? LINEAR_P3
-              : displayPolicy(this.info, 'DisplayP3'),
-          // The master reads a gain map itself, and refuses the field.
-          ...(display ? { gain_map: null } : {}),
-          grade: compiled.grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          threads: interactiveThreads(),
-          // A warp shown whole counts its empty corners (as black) rather than
-          // risk measuring nothing when little of the picture is left.
-          measure: measureOf(kind === 'draft' ? 2 : 1),
-          ...(besideProbe
-            ? { inspect: { Beside: { mask: besideProbe.probe, depth: 'Eight' } } }
-            : {})
-        },
-        {
-          signal,
-          frame,
-          ...(floatSdr || native
-            ? { native: { ...native, ...(floatSdr ? { sdrCompanion: COMPANION_EDGE } : {}) } }
-            : {})
-        },
-        keyHeld
+          {
+            signal,
+            frame,
+            ...(floatSdr || native
+              ? { native: { ...native, ...(floatSdr ? { sdrCompanion: COMPANION_EDGE } : {}) } }
+              : {})
+          },
+          keyHeld
+        )
       )
-    ).catch(named(compiled))
+    // The overlay's plane refused (the inspection, not the picture): the
+    // picture renders on its own, and `renderMask` draws the plane after it.
+    const report = await picture(besideProbe)
+      .catch((err) => {
+        if (!besideProbe || !(err instanceof EngineError) || !err.field?.startsWith('inspect'))
+          throw err
+        log.warn('the mask beside the picture was refused', err.field, err.message)
+        besideProbe = null
+        return picture(null)
+      })
+      .catch(named(compiled))
     // The engine had no way to the window (it was reloading): main passes the frame on.
     if (frame && report.output)
       this.owner.send(IPC.develop.previewFrame, {
@@ -1615,8 +1625,12 @@ class Session {
         this.recentFull.delete(this.recentFull.keys().next().value as string)
     }
     this.owner.send(IPC.develop.rendered, event)
+    // The picture is shown: its plane failing is logged, and drawn on its own (`renderMask`).
     if (besideProbe && report.beside)
-      await this.sendBeside(kind, report.beside, besideProbe.layerId, rev, signal)
+      await this.sendBeside(kind, report.beside, besideProbe.layerId, rev, signal).catch((err) => {
+        if (isCancelled(err)) throw err
+        log.warn('mask beside the picture failed', (err as Error).message)
+      })
   }
 
   /**
@@ -2042,7 +2056,8 @@ class Session {
     } catch (err) {
       if (!planeRefused(err)) throw err
       log.info('mask planes refused, rendering without', (err as Error).message)
-      this.owner.maskPlanes.forget(planes)
+      // Gone with its host (Stale) is no refusal of the planes themselves.
+      this.owner.maskPlanes.forget(planes, (err as EngineError).code !== 'Stale')
       return run(undefined)
     }
   }
