@@ -113,7 +113,7 @@ import {
   measureAutoWb,
   rendersDir
 } from './autowb'
-import { brushPlanes } from './brushes'
+import { brushPlanes, forgetPlanes } from './brushes'
 import { lutsFor } from './lutfile'
 import { cacheFile } from './contain'
 import { maskFramesFor, maskGrid, planeOnFrame, rebaseMasks } from './maskframe'
@@ -3619,7 +3619,9 @@ class Session {
     this.coverageAbort?.abort()
     // Corrected proxies for any other correction are no longer read.
     void pruneLensed(this.row, this.key, this.lensKey(this.recipe))
-    void sweepPhoto(this.dir, paths.photoCache(this.row.id))
+    // Its planes are looked for on disk again once the sweep is done.
+    const cache = paths.photoCache(this.row.id)
+    void sweepPhoto(this.dir, cache).finally(() => forgetPlanes(cache))
     const saved = (this.save ? this.persist() : Promise.resolve()).then(() => {
       // A thumbnail still waiting for a pause is made now.
       if (this.thumbTimer) this.thumbLater(true)

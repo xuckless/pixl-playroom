@@ -29,12 +29,31 @@ import { isPlaneHash } from '../shared/ids'
 import { cacheFile } from './contain'
 import { planeRef } from './planeref'
 import { exists } from './exists'
+import { KnownFiles } from './knownfiles'
 import { paths } from './paths'
 import { pruneGradientsSometimes, writeBrushPlane, writeGradientPlane } from './planes'
 import { pixels, type PixelsJob } from './workers/pool'
 
 /** Planes being written now, by file: two renders asking for one plane share the work. */
 const writing = new Map<string, Promise<void>>()
+/**
+ * Planes known to be written: a drag's drafts (each compiles every mask's
+ * plane) find them here rather than by a stat each, per plane, per frame.
+ */
+const present = new KnownFiles()
+
+/** A photo's cache folder was swept: its planes are looked for on disk again. */
+export function forgetPlanes(dir: string): void {
+  present.forget(dir)
+}
+
+/** Whether `file` is on disk: known, or found (and known from then on). */
+async function onDisk(file: string): Promise<boolean> {
+  if (present.has(file)) return true
+  const there = await exists(file)
+  if (there) present.add(file)
+  return there
+}
 
 /** A grey plane, 8 bits, row by row. */
 export interface Grey {
@@ -74,7 +93,7 @@ function snapped(
   const running = snapping.get(snapFile)
   if (running) return running
   const p = (async () => {
-    if (await exists(snapFile)) return snapFile
+    if (await onDisk(snapFile)) return snapFile
     // The object is found on the picture as rendered: a stroke drawn under
     // another lens asks for it where it now lies (once: the file is kept).
     const drawn = grey8(Buffer.from(job.png, 'base64'))
@@ -97,9 +116,10 @@ function snapped(
 }
 
 function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Promise<void> {
+  if (present.has(file)) return Promise.resolve()
   const running = writing.get(file)
   if (running) return running
-  const p = exists(file)
+  const p = onDisk(file)
     .then((there) => (there ? undefined : pixels.run<null>(job).then(() => undefined)))
     .catch(() => {
       // The worker is gone: draw it here rather than fail the render.
@@ -107,6 +127,11 @@ function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Pr
         writeGradientPlane(file, job.c, job.user)
         pruneGradientsSometimes(job.dir)
       } else writeBrushPlane(file, job.png, job.user, job.edge, job.object, job.warp)
+    })
+    .then(() => {
+      // Writing a gradient's plane may have pruned the folder's older ones.
+      if (job.op === 'gradient') present.forget(job.dir, 'grad-')
+      present.add(file)
     })
     .finally(() => writing.delete(file))
   writing.set(file, p)
