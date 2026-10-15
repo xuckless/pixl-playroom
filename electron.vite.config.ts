@@ -31,8 +31,16 @@ function bundledPackages(): Plugin {
   }
 }
 
+/**
+ * A release build (release.yml sets PLAYROOM_RELEASE_BUILD=1) or a
+ * development one (`electron-vite dev`, and any other build: what the test
+ * drives launch). Settled here, never at run time: src/main/build.ts.
+ */
+const DEV_BUILD = process.env.PLAYROOM_RELEASE_BUILD !== '1'
+
 export default defineConfig({
   main: {
+    define: { __DEV__: JSON.stringify(DEV_BUILD) },
     plugins: [externalizeDepsPlugin(), bundledPackages()],
     build: {
       rollupOptions: {

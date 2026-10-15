@@ -18,6 +18,7 @@ import { IPC } from '../shared/ipc'
 import { LicenceError, licenceEnforced, type LicenceStatus, type Licensed } from '../shared/licence'
 import { accessToken, accountStatus, onAccountChange, refreshAccess } from './account'
 import { Access, type AccessFile } from './account/access'
+import { DEV_BUILD, devEnv, HIDDEN } from './build'
 import { AccountApi } from './account/api'
 import { deviceHash, deviceName, deviceOs, machineId } from './account/device'
 
@@ -25,7 +26,7 @@ const betaBuild = app.getVersion().includes('-beta')
 const enforced = licenceEnforced(app.getVersion())
 /** The access section shows in development, in a beta build, when asked for, or once enforced. */
 const visible = !app.isPackaged || betaBuild || process.env['PLAYROOM_LICENCE_UI'] === '1'
-const hidden = process.env['PLAYROOM_HIDDEN'] === '1'
+const hidden = HIDDEN
 /** How often a running app looks at whether its token wants refreshing. */
 const CHECK_EVERY_MS = 60 * 60 * 1000
 /** Coming back to the window asks again at most this often. */
@@ -52,7 +53,7 @@ const access = new Access({
   load,
   save,
   server: new AccountApi({
-    base: (process.env['PLAYROOM_ACCOUNT_URL'] || ACCOUNT_API).replace(/\/+$/, ''),
+    base: (devEnv('PLAYROOM_ACCOUNT_URL') || ACCOUNT_API).replace(/\/+$/, ''),
     product: PRODUCT,
     appVersion: app.getVersion(),
     fetch,
@@ -64,8 +65,9 @@ const access = new Access({
     deviceName: deviceName(),
     os: deviceOs()
   }),
-  // The development root signs the mock's key sets; a packaged app never trusts it.
-  roots: app.isPackaged ? ROOT_KEYS : { ...ROOT_KEYS, ...DEV_ROOT_KEYS },
+  // The development root signs the mock's key sets: only a development build
+  // trusts it, settled when it was built (build.ts), never by how it runs.
+  roots: DEV_BUILD ? { ...ROOT_KEYS, ...DEV_ROOT_KEYS } : ROOT_KEYS,
   product: PRODUCT,
   betaBuild,
   signedIn: () => accountStatus().signedIn,

@@ -25,6 +25,7 @@ import { IPC, type RenderMode } from '../shared/ipc'
 import { TEXT_FALLBACK, type MenuBarSpec, type MenuNode } from '../shared/appmenu'
 import { PERFORMANCE_SCALE, renderScale, setRenderMode, ULTRA_SCALE } from './display'
 import { paths } from './paths'
+import { DEV_BUILD } from './build'
 import { t } from '../shared/i18n'
 
 const SITE = 'https://playroom.pixlfoundation.com'
@@ -148,21 +149,27 @@ function renderingMenu(): MenuItemConstructorOptions[] {
 }
 
 export function buildMenu(): void {
-  const developer: MenuItemConstructorOptions = {
-    label: t('Developer'),
-    submenu: [
-      { role: 'reload', label: t('Reload') },
-      { role: 'forceReload', label: t('Force Reload') },
-      { role: 'toggleDevTools', label: t('Toggle Developer Tools') }
-    ]
-  }
+  // DevTools and reloads are a development build's (build.ts): a release has
+  // no Developer menu.
+  const developer: MenuItemConstructorOptions[] = DEV_BUILD
+    ? [
+        { type: 'separator' },
+        {
+          label: t('Developer'),
+          submenu: [
+            { role: 'reload', label: t('Reload') },
+            { role: 'forceReload', label: t('Force Reload') },
+            { role: 'toggleDevTools', label: t('Toggle Developer Tools') }
+          ]
+        }
+      ]
+    : []
   const viewTail: MenuItemConstructorOptions[] = [
     engineReport(),
     ...renderingMenu(),
     { type: 'separator' },
     { role: 'togglefullscreen', label: t('Toggle Full Screen') },
-    { type: 'separator' },
-    developer
+    ...developer
   ]
   // The renderer's menus come in order (File, Edit, Photo, Develop, Masks,
   // View), labelled in the user's language: File is the first, View the last.

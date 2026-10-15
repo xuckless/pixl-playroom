@@ -47,6 +47,7 @@ import { equivalentFocal } from '../shared/upright'
 import { orientedFrame } from '../shared/compile'
 import { cropAtAspect } from '../shared/crop'
 import { ensureProxies } from './proxy'
+import { DEV_BUILD } from './build'
 import { BACKGROUND_THREADS, IMAGE_EXTENSIONS } from './source'
 import type { IndexClient } from './indexer/client'
 import { IndexError } from './indexer/client'
@@ -139,7 +140,7 @@ function toAppError(err: unknown): AppError {
 /** The window's own page (src/main/app.ts loads it); no other frame may call in. */
 const isAppPage = appPage(
   pathToFileURL(join(MAIN_DIR, '../renderer/index.html')).href,
-  is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
+  DEV_BUILD && is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
 )
 
 /**

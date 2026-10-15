@@ -123,7 +123,20 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build renderer, preload and main
-        run: pnpm exec electron-vite build
+        shell: bash
+        run: |
+          pnpm exec electron-vite build
+          # Never fail open: a production release that came out a development build stops here.
+          if [ "$TARGET" = production ] && ! grep -q 'DEV_BUILD = false' out/main/index.js; then
+            echo "::error::out/main/index.js is a development build (PLAYROOM_RELEASE_BUILD unset)"
+            exit 1
+          fi
+        env:
+          # A release build (src/main/build.ts): no development entitlement
+          # root, no beta-gate skip, no DevTools, no remote debugging, and no
+          # automation or feed switches. A staging build stays a development
+          # build, so PLAYROOM_UPDATE_URL works for the update test.
+          PLAYROOM_RELEASE_BUILD: ${{ env.TARGET == 'production' && '1' || '' }}
 
       # macOS: Playroom's display reader (src/native/display), the screen's
       # EDR headroom Full HDR needs, built for this job's arch against the

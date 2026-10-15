@@ -3,22 +3,24 @@
  * from updates.pixlfoundation.com at launch and every four hours, and kept
  * in userData/policy.json so an offline launch still knows the floor. A
  * fetch that fails keeps what was there. PLAYROOM_POLICY_URL reads another
- * file; with PLAYROOM_UPDATE_URL set, the policy beside that feed is read.
+ * file; with PLAYROOM_UPDATE_URL set, the policy beside that feed is read
+ * (both in a development build only, build.ts).
  */
 import { app } from 'electron'
 import log from 'electron-log/main'
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { parsePolicy, type Policy } from '../shared/policy'
+import { devEnv, HIDDEN } from './build'
 
 const POLICY_URL = 'https://updates.pixlfoundation.com/playroom/policy.json'
 const EVERY_MS = 4 * 60 * 60 * 1000
 
 function policyUrl(): string {
-  const feed = process.env['PLAYROOM_UPDATE_URL']
+  // Another feed is a development build's only (build.ts): a release reads its own.
+  const feed = devEnv('PLAYROOM_UPDATE_URL')
   return (
-    process.env['PLAYROOM_POLICY_URL'] ||
-    (feed ? `${feed.replace(/\/+$/, '')}/policy.json` : POLICY_URL)
+    devEnv('PLAYROOM_POLICY_URL') || (feed ? `${feed.replace(/\/+$/, '')}/policy.json` : POLICY_URL)
   )
 }
 
@@ -70,7 +72,7 @@ export function startPolicy(): void {
   } catch {
     current = {}
   }
-  if (process.env['PLAYROOM_HIDDEN'] === '1') return
+  if (HIDDEN) return
   void fetchPolicy()
   setInterval(() => void fetchPolicy(), EVERY_MS).unref()
 }

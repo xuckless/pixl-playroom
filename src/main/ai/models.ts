@@ -31,6 +31,7 @@ import type { ExecutionProvider, SessionSpec } from '../../shared/engine-types'
 import { IPC, type EngineStatus, type ModelInfo, type ProviderInfo } from '../../shared/ipc'
 import type { EngineClient } from '../engine/client'
 import type { IndexClient } from '../indexer/client'
+import { devEnv } from '../build'
 import { DEV_KIT } from '../devkit'
 import { paths } from '../paths'
 import { heavyThreads } from '../source'
@@ -61,7 +62,7 @@ function held(id: string): boolean {
   return (id === 'nafnet-sidd-w32' && !NAFNET_DENOISE) || (id === 'sam3' && !SAM3_PHRASE)
 }
 
-const BASE = (process.env.PLAYROOM_MODELS_URL ?? 'https://models.pixlfoundation.com').replace(
+const BASE = (devEnv('PLAYROOM_MODELS_URL') ?? 'https://models.pixlfoundation.com').replace(
   /\/+$/,
   ''
 )

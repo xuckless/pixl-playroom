@@ -55,8 +55,9 @@ export const ROOT_KEYS: Record<string, string> = {
 }
 
 /**
- * The development root, trusted only by unpackaged builds: its private key
- * is in scripts/mock-account.mjs, in the open, so the mock can sign.
+ * The development root, trusted only by development builds (main/build.ts,
+ * settled when built): its private key is in scripts/dev-entitlement-root.mjs,
+ * in the open, so the mock can sign. A release build carries no trace of it.
  */
 export const DEV_ROOT_KEYS: Record<string, string> = {
   'dev-root': 'mvSbsudfbttEQ4sOYN5zX8IBPisy9FoykmgqoMis_FM'

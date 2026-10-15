@@ -1,5 +1,7 @@
 // The development root for entitlement key sets, in the open on purpose:
-// only unpackaged builds trust it (src/shared/account.ts DEV_ROOT_KEYS), so
+// only development builds trust it (src/shared/account.ts DEV_ROOT_KEYS,
+// src/main/build.ts; a release build made with PLAYROOM_RELEASE_BUILD=1
+// does not even carry it), so
 // scripts/mock-account.mjs and a local Worker (wrangler dev) can sign key
 // sets that `pnpm dev` accepts. Never use it for anything real.
 export const DEV_ROOT = {

@@ -61,6 +61,7 @@ import {
   takeHandOff
 } from './open'
 import { paths } from './paths'
+import { DEV_BUILD, HIDDEN } from './build'
 import { PlaneStore } from './planestore'
 import { pixels } from './workers/pool'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
@@ -79,7 +80,7 @@ registerSchemePrivileges()
 // userData is settled (index.ts) — consent lives there — so before anything else can crash:
 startCrashReporting()
 /** Automation: never show the window; render offscreen so it can still be captured. */
-const hidden = process.env['PLAYROOM_HIDDEN'] === '1'
+const hidden = HIDDEN
 
 // The display's scale was settled before this module loaded (index.ts): a
 // process that is starting again with it never gets here.
@@ -223,7 +224,7 @@ function createWindow(): void {
   })
   win.webContents.on('will-attach-webview', (event) => event.preventDefault())
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (DEV_BUILD && is.dev && process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     win.loadFile(join(MAIN_DIR, '../renderer/index.html'))

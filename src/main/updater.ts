@@ -4,8 +4,9 @@
  * space-pixl's updater. Checks at launch and every four hours, downloads in
  * the background, and installs on quit or on "Restart to update".
  * PLAYROOM_UPDATE_URL reads another feed (a staging folder) instead, to test
- * an update before it goes out (RELEASING.md); the update is still checked
- * against the app's signature on both platforms.
+ * an update before it goes out (RELEASING.md), in a development build only
+ * (build.ts: staging builds are); the update is still checked against the
+ * app's signature on both platforms.
  *
  * macOS only accepts a signed, notarized update (Squirrel.Mac): until the
  * builds are signed a check there ends in an error, which the settings show.
@@ -16,6 +17,7 @@ import type { AppUpdater, ProgressInfo, UpdateInfo } from 'electron-updater'
 import { IPC, type UpdateChannel, type UpdateState } from '../shared/ipc'
 import { belowFloor } from '../shared/policy'
 import { parseReleaseNotes } from '../shared/releasenotes'
+import { devEnv, HIDDEN } from './build'
 import { onPolicy } from './policy'
 import { readSettings, writeSettings } from './settings'
 
@@ -95,10 +97,7 @@ export async function setupUpdater(): Promise<void> {
   // In development there is nothing to update against. PLAYROOM_FORCE_UPDATER=1
   // reads dev-app-update.yml instead, to exercise the flow from `pnpm dev`.
   // Automation (PLAYROOM_HIDDEN) never updates.
-  if (
-    (!app.isPackaged && !process.env['PLAYROOM_FORCE_UPDATER']) ||
-    process.env['PLAYROOM_HIDDEN'] === '1'
-  ) {
+  if ((!app.isPackaged && !process.env['PLAYROOM_FORCE_UPDATER']) || HIDDEN) {
     state = { ...state, phase: 'disabled' }
     return
   }
@@ -112,7 +111,8 @@ export async function setupUpdater(): Promise<void> {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   if (!app.isPackaged) autoUpdater.forceDevUpdateConfig = true
-  const feed = process.env['PLAYROOM_UPDATE_URL']
+  // Another feed is a development build's only (build.ts): a release reads its own.
+  const feed = devEnv('PLAYROOM_UPDATE_URL')
   if (feed) {
     log.info(`updates: reading ${feed} (PLAYROOM_UPDATE_URL)`)
     autoUpdater.setFeedURL({ provider: 'generic', url: feed.replace(/\/+$/, '') })
