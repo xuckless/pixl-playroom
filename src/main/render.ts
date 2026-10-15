@@ -133,6 +133,7 @@ import {
   ensureProxies,
   ensureQuickMaster,
   masterCached,
+  masterStoodIn,
   pruneLensed,
   type Proxies,
   type ProxyFile
@@ -2473,6 +2474,9 @@ class Session {
     const plan = await scenePlan(this.file.raw_cfa, ask)
     if (plan.demosaic !== 'pixl' || plan.pmrid) return null
     if (await masterCached(this.row, this.file, ask)) return null
+    // Refused for this photo (its noise unread, nothing to state it from):
+    // its stand-in master is the picture, not a region the model develops.
+    if (await masterStoodIn(this.row, this.file, ask)) return null
     // The master goes on being made meanwhile (on open, or from here): the
     // region's are the same pixels, so nothing moves when tiles come from it.
     void ensureMaster(

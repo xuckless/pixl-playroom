@@ -712,6 +712,22 @@ export async function masterCached(
 }
 
 /**
+ * Whether another develop stood in for this one's master this run, and is
+ * still what `ensureMaster` would give (`stoodIn`): the plan's own model is
+ * then not what the 1:1 view shows, so it is not developed for a region
+ * either (E66).
+ */
+export async function masterStoodIn(
+  photo: PhotoRow,
+  info: Pick<SourceInfo, 'raw_cfa'>,
+  ask: RawDevelopAsk = PLAIN_DEVELOP
+): Promise<boolean> {
+  const plan = await scenePlan(info.raw_cfa, ask)
+  const stood = stoodIn.get(`${photo.id}:${stamp(photo)}:${plan.tag}`)
+  return !!stood && (!stood.photoOnly || stood.kept === noiseKept())
+}
+
+/**
  * The quick master for a first 1:1 look (the engine's viewing guide,
  * 2026-10-09): the same Scene develop with the classic demosaic (PPG on a
  * Bayer sensor, about 1.2 s for 24 MP on an M2 Pro, against DemosaicNet's
@@ -793,10 +809,12 @@ export async function ensureMaster(
     return stood.out
   const had = mastering.get(key)
   if (had && !had.stopped) return had.join(signal)
-  // Said over only once the master's record is written: what hears it finds the master made.
-  let said = false
   const cancelled = (): Error =>
     new EngineError({ message: 'the RAW develop: cancelled', code: 'Cancelled' })
+  // Its photo left already (a 1:1 ask landing as it closes): no develop nobody waits for.
+  if (signal?.aborted) throw cancelled()
+  // Said over only once the master's record is written: what hears it finds the master made.
+  let said = false
   const work: SharedWork<ProxyFile> = new SharedWork(async (stop): Promise<ProxyFile> => {
     // F32 (engine 0.18: a RAW's master is Scene in float): twice a 16-bit
     // TIFF's size, nothing clipped at 1.0.
