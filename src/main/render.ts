@@ -92,7 +92,8 @@ import {
 } from '../shared/ipc'
 import { engineBins, engineScopeSpec, type ScopeBins } from '../shared/scopes'
 import { gamutCoverage, type GamutCoverage } from '../shared/scopemetrics'
-import { COVERAGE_SIZE, coverageRequest } from './proofing'
+import { softProofTarget } from '../shared/gamutwarning'
+import { COVERAGE_SIZE, coverageRequest, gamutWarningRequest } from './proofing'
 import { beforeRecipe, hash32, normaliseRecipe, sameValue, type Recipe } from '../shared/recipe'
 import { LookThumbQueue, type LookThumb, type ThumbJob } from './lookthumbs'
 import type { Vec3 } from '../shared/wb'
@@ -539,7 +540,7 @@ class Session {
   /** An earlier session's picture files: nothing names them now. */
   private async clearEarlier(): Promise<void> {
     for (const name of await readdir(this.dir).catch(() => [] as string[])) {
-      if (/^(view|mask|headroom|look)-/.test(name) && !name.includes(`-${this.tag}-`))
+      if (/^(view|mask|headroom|gamut|look)-/.test(name) && !name.includes(`-${this.tag}-`))
         await rm(join(this.dir, name), { force: true }).catch(() => undefined)
     }
   }
@@ -1161,6 +1162,7 @@ class Session {
         if (this.view.maskLayer) await beside('mask', () => this.renderMask('full', signal))
         if (this.view.before) await beside('before', () => this.renderBefore(signal))
         if (this.view.headroom) await beside('headroom', () => this.renderHeadroom(signal))
+        if (this.view.gamut) await beside('gamut', () => this.renderGamut(signal))
         if (this.view.maskThumbs) await beside('mask thumbs', () => this.renderMaskThumbs(signal))
       }
     } catch (err) {
@@ -2064,6 +2066,65 @@ class Session {
       if (isCancelled(err)) throw err
       log.info('headroom overlay unavailable', (err as Error).message)
     }
+  }
+
+  /** The last gamut warning sent, and what it was rendered from: the same again is said again. */
+  private gamutSig = ''
+  private lastGamut: RenderEvent | null = null
+
+  /**
+   * The gamut warning (E22, soft proofing's first part): beside a settled SDR
+   * picture, the engine's plane of how far (ΔE2000, `GAMUT_SCALE` at full
+   * scale) each pixel's colour lies from what the export's colour space
+   * makes of it. The engine measures it only on an SDR render: none while
+   * Full HDR shows the photo (the toolbar says why).
+   */
+  private async renderGamut(signal: AbortSignal): Promise<void> {
+    if (this.view.display) return
+    const src = this.source('full')
+    const cropMode = this.view.cropMode
+    const compiled = await this.compileFor(this.recipe, src, !cropMode, false, true, false)
+    // A plane has one channel, so a warp's transparent corners cannot be said.
+    if (framingTransparent(compiled.framing)) return
+    const last = await this.owner.library.index.getSetting('export.last').catch(() => null)
+    const target = softProofTarget(last)
+    const sig = String(
+      hash32(
+        gradeKey([
+          src.path,
+          cropMode,
+          target,
+          compiled.grade,
+          compiled.framing,
+          compiled.lens,
+          compiled.retouch
+        ])
+      )
+    )
+    if (sig === this.gamutSig && this.lastGamut) {
+      this.lastGamut = { ...this.lastGamut, seq: this.seq }
+      if (!this.closed) this.owner.send(IPC.develop.rendered, this.lastGamut)
+      return
+    }
+    const out = this.nextFile('gamut', 'png')
+    const r = await this.owner.engine
+      .convert(gamutWarningRequest(src, out, this.info, compiled, target, interactiveThreads()), {
+        signal
+      })
+      .catch(named(compiled))
+    if (this.closed) return
+    this.gamutSig = sig
+    this.lastGamut = {
+      key: this.key,
+      seq: this.seq,
+      kind: 'gamut',
+      cropMode,
+      url: cacheUrl(out, `${Date.now()}`),
+      width: r.width,
+      height: r.height,
+      gamutTo: target.to
+    }
+    this.owner.send(IPC.develop.rendered, this.lastGamut)
   }
 
   // ── the settled picture's exact scopes and gamut coverage (E76) ──

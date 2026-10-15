@@ -16,7 +16,7 @@ import { MASK_TOOL_GROUPS, startMaskTool } from '../panels/masks/model'
 import { useConfirm } from '../state/confirm'
 import { suggestedReasons, useCull } from '../state/cull'
 import { useDevelop } from '../state/develop'
-import { canShowHdr, useDisplay } from '../state/display'
+import { aboveWhite, canShowHdr, useDisplay } from '../state/display'
 import { selectionSet, useLibrary } from '../state/library'
 import { useUi } from '../state/ui'
 import { api, errorText } from './api'
@@ -233,10 +233,16 @@ function revealItems(): Item[] {
 function compareItems(): Item[] {
   const d = dev()
   const display = useDisplay.getState().display
+  const hdrShown = ui().fullHdr && canShowHdr(display) && aboveWhite(d.session)
   return [
     cmd('view.before', t('Before'), { checked: d.compare === 'before' }),
     cmd('view.split', t('Before / After Split'), { checked: d.compare === 'split' }),
     cmd('view.clipping', t('Show Clipping'), { checked: d.clipping }),
+    // An SDR picture's (the engine measures none on Full HDR's).
+    cmd('view.gamut', t('Show Gamut Warning'), {
+      checked: d.gamut && !hdrShown,
+      enabled: available('view.gamut') && !hdrShown
+    }),
     act('view.fullHdr', t('Full HDR'), () => ui().setFullHdr(!ui().fullHdr), {
       checked: ui().fullHdr && canShowHdr(display),
       enabled: !modal() && canShowHdr(display)

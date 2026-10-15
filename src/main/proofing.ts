@@ -1,11 +1,13 @@
 /**
- * The renders behind the Metrics tab's gamut coverage (E76's
- * chromaticity): beside the picture, from the same grade, made only to be
- * measured. Built here, apart from the session (render.ts), so the tests
- * can send them to the engine.
+ * The renders behind the gamut warning (E22) and the Metrics tab's gamut
+ * coverage (E76's chromaticity): beside the picture, from the same grade,
+ * each made only to be measured or drawn over it. Built here, apart from
+ * the session (render.ts), so the tests can send them to the engine.
  */
 import type { ConvertRequest, Measure, SourceInfo } from '../shared/engine-types'
+import { STRIP_ALL } from '../shared/engine-types'
 import type { Compiled } from '../shared/compile'
+import { GAMUT_SCALE, type SoftProofTarget } from '../shared/gamutwarning'
 import { blankRequest, displayPolicy } from './source'
 import type { ProxyFile } from './proxy'
 
@@ -13,6 +15,41 @@ type Graded = Pick<Compiled, 'grade' | 'framing' | 'lens' | 'retouch'>
 
 /** The gamut coverage's u′v′ density, cells a side (0.0025 each over the engine's 0…0.65). */
 export const COVERAGE_SIZE = 256
+
+/**
+ * The gamut warning's plane: the settled SDR picture's render (its source,
+ * grade and colour) with `inspect: GamutWarning` against the export's
+ * space, written as a one-channel PNG (`GAMUT_SCALE` ΔE2000 at full scale).
+ */
+export function gamutWarningRequest(
+  src: Pick<ProxyFile, 'path' | 'input'>,
+  out: string,
+  info: SourceInfo,
+  graded: Graded,
+  target: SoftProofTarget,
+  threads: number
+): ConvertRequest {
+  return {
+    ...blankRequest(src.path, out, src.input),
+    pixel: { depth: 'Eight', channels: 1 },
+    encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+    metadata: STRIP_ALL,
+    color: displayPolicy(info, 'DisplayP3'),
+    grade: graded.grade,
+    framing: graded.framing,
+    lens: graded.lens,
+    retouch: graded.retouch,
+    inspect: {
+      GamutWarning: {
+        to: target.to,
+        intent: target.intent,
+        black_point_compensation: target.black_point_compensation,
+        scale: GAMUT_SCALE
+      }
+    },
+    threads
+  }
+}
 
 /**
  * The gamut coverage's render: the SDR picture's grade, its float buffer

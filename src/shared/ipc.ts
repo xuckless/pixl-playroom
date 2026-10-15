@@ -730,6 +730,11 @@ export interface ViewState {
    * 8-bit files. Absent or false: as before.
    */
   float?: boolean
+  /**
+   * The gamut warning (E22, soft proofing): also render, beside a settled
+   * SDR picture, where its colours fall outside the export's colour space.
+   */
+  gamut?: boolean
 }
 
 export interface RenderReport {
@@ -751,7 +756,7 @@ export interface RenderEvent {
   seq: number
   /** The renderer's number for the recipe this was rendered from (see `develop.update`). */
   rev?: number
-  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom'
+  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom' | 'gamut'
   url: string
   /**
    * Full HDR's settled picture: its SDR companion as a file, for what reads
@@ -777,6 +782,8 @@ export interface RenderEvent {
   hdrStats?: ImageStats
   /** A headroom plane: how many stops above white its full scale stands for. */
   stops?: number
+  /** A gamut warning's plane: the space it proofs against (the export's). */
+  gamutTo?: ExportSettings['colorSpace']
   /**
    * A Full HDR render: the display's ceiling over SDR white (the master's
    * `display.headroom`), where its light stops: what the clipping overlay

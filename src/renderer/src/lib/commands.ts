@@ -682,6 +682,14 @@ export const COMMANDS: KeyCommand[] = [
     run: () => dev().setClipping(!dev().clipping)
   },
   {
+    id: 'view.gamut',
+    label: tk('Show gamut warning'),
+    group: 'View',
+    context: 'develop',
+    keys: ['Shift+J'],
+    run: () => dev().setGamut(!dev().gamut)
+  },
+  {
     id: 'scopes.next',
     label: tk('Next scope'),
     group: 'View',

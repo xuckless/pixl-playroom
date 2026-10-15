@@ -6,7 +6,8 @@ import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { loupeZoom } from '../views/loupe/zoom'
 import { useUi } from '../state/ui'
-import { aboveWhite, canShowHdr, useDisplay } from '../state/display'
+import { aboveWhite, canShowHdr, useDisplay, useHdrShown } from '../state/display'
+import { SPACE_NAME } from '../../../shared/gamutwarning'
 import { useKeyHint, withKey } from '../lib/commands'
 import { t } from '../lib/i18n'
 import { HoverHint, type Hint } from '../components/HoverHint'
@@ -74,6 +75,10 @@ export function DevelopToolbar(): React.JSX.Element {
   const setClipping = useDevelop((s) => s.setClipping)
   const headroom = useDevelop((s) => s.headroom)
   const setHeadroom = useDevelop((s) => s.setHeadroom)
+  const gamut = useDevelop((s) => s.gamut)
+  const setGamut = useDevelop((s) => s.setGamut)
+  const gamutTo = useDevelop((s) => s.gamutPlane?.gamutTo)
+  const hdrShown = useHdrShown()
   const zoomed = useDevelop((s) => s.zoom.scale !== 'fit')
   const undo = useDevelop((s) => s.undo)
   const redo = useDevelop((s) => s.redoStep)
@@ -129,6 +134,27 @@ export function DevelopToolbar(): React.JSX.Element {
         what: t(
           'Marks detail that is lost: warm where highlights blow out to pure white, cool where shadows crush to pure black.'
         )
+      }
+    },
+    {
+      label: t('Gamut'),
+      k: k('view.gamut'),
+      on: gamut && !hdrShown,
+      able: !hdrShown,
+      toggle: () => setGamut(!gamut),
+      hint: {
+        title: t('Gamut warning'),
+        keys: k('view.gamut'),
+        what: t(
+          'Marks colours your export’s colour space can’t hold (2 ΔE or more from what it makes of them), in green, deeper the further out. The space is the one the Export dialog starts with.'
+        ),
+        now: hdrShown
+          ? t(
+              'Full HDR is showing this photo: the gamut warning reads its SDR picture, so turn Full HDR off to see it.'
+            )
+          : gamut && gamutTo
+            ? t('Proofing against {{space}}.', { space: SPACE_NAME[gamutTo] })
+            : undefined
       }
     },
     {

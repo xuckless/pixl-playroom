@@ -1,6 +1,6 @@
 import { MAX_QUALIFIERS, qualifierFromSample } from '../../../../shared/resolve'
 import { RebuildPrompt } from './RebuildPrompt'
-import { aboveWhite } from '../../state/display'
+import { aboveWhite, useHdrShown } from '../../state/display'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { loupeContextMenu } from '../../lib/menus'
 import { readable } from '../../lib/frames'
@@ -50,6 +50,7 @@ import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
 import { ClippingOverlay } from './ClippingOverlay'
 import { HeadroomOverlay } from './HeadroomOverlay'
+import { GamutOverlay } from './GamutOverlay'
 import { SpotsOverlay } from './SpotsOverlay'
 import { CropTool } from './CropTool'
 import { DecodedImage } from './DecodedImage'
@@ -169,6 +170,10 @@ export function Loupe(): React.JSX.Element {
   // Every photo with light above white: a RAW or an HDR one (state/display `aboveWhite`).
   const headroom = useDevelop((s) => s.headroom && aboveWhite(s.session))
   const headroomPlane = useDevelop((s) => s.headroomPlane)
+  // The gamut warning is an SDR picture's: none while Full HDR shows the photo.
+  const hdrShown = useHdrShown()
+  const gamut = useDevelop((s) => s.gamut)
+  const gamutPlane = useDevelop((s) => s.gamutPlane)
   const zoom = useDevelop((s) => s.zoom)
   const layerId = useDevelop((s) => s.layerId)
   const loading = useDevelop((s) => s.loading)
@@ -655,6 +660,9 @@ export function Loupe(): React.JSX.Element {
             {spots && picture && <SpotsOverlay url={readable(picture)} level={spotLevel} />}
             {headroom && headroomPlane && compare !== 'before' && (
               <HeadroomOverlay url={headroomPlane.url} />
+            )}
+            {gamut && gamutPlane && !hdrShown && compare !== 'before' && (
+              <GamutOverlay url={gamutPlane.url} />
             )}
           </div>
         )}
