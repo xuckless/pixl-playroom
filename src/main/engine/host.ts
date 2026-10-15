@@ -30,6 +30,7 @@ import type {
 import { pickBySize } from '../../shared/concepts'
 import { toRgba } from '../../shared/gpudrag'
 import { sdrCompanion } from '../../shared/sdrcompanion'
+import { progressOf } from './progress'
 import { withRequiredFields } from './required'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
@@ -206,8 +207,16 @@ async function sam(e: PixlEngineModule, call: SamOp, signal?: AbortSignal): Prom
       if (had && had.ref === ref && !had.obj.closed) return { op: 'load', loadMs: 0 }
       had?.obj.close()
       samSessions.delete(call.session)
-      const obj = await e.loadModelSession(call.ref)
+      // 0.21.0 (OBS-5): a load still queued, or between its steps, stops
+      // with the job; a CoreML compile under way runs to its end first.
+      const obj = await e.loadModelSession(call.ref, signal ? { signal } : undefined)
       samSessions.set(call.session, { ref, obj })
+      // OBS-4: whether the compile was made before (the cache) or just now.
+      if (obj.coremlCache)
+        console.log(
+          `CoreML ${obj.coremlCache.existed ? 'cache used' : 'compiled and cached'} for ${call.session}`,
+          `(hashed in ${obj.coremlCache.hash_ms} ms)`
+        )
       return { op: 'load', loadMs: obj.loadMs }
     }
     case 'embed': {
@@ -552,6 +561,9 @@ process.parentPort.on('message', (e) => {
     aborts.set(id, abort)
     options = { signal: abort.signal }
   }
+  // With both, aborting the signal cancels the token too.
+  const counting = msg.progress ? progressOf(engine, id, send) : null
+  if (counting) options = { ...options, token: counting.token }
   const frame = msg.frame
   Promise.resolve()
     .then(() => {
@@ -570,5 +582,8 @@ process.parentPort.on('message', (e) => {
       },
       (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })
     )
-    .finally(() => aborts.delete(id))
+    .finally(() => {
+      counting?.stop()
+      aborts.delete(id)
+    })
 })
