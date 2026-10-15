@@ -21,8 +21,10 @@ import {
   changedFields,
   defaultRecipe,
   HSL_BANDS,
+  type BloomStyle,
   type CalibrationSetting,
   type CurvePointSetting,
+  type GrainResponseKind,
   type HslBand,
   type Recipe,
   type RecipeGroup
@@ -76,6 +78,7 @@ const ROOT_GROUP: Record<string, RecipeGroup> = {
   hsl: 'hsl',
   bwMix: 'hsl',
   pointColors: 'hsl',
+  density: 'hsl',
   colorGrade: 'colorGrade',
   effects: 'effects',
   calibration: 'calibration',
@@ -382,15 +385,29 @@ export const mono =
     }
   }
 
+/**
+ * Film grain: amount, size and roughness, and for a colour film its colour
+ * (0…100) and where in the tones it is strongest (`film`, the midtones, by
+ * default).
+ */
 export const grain =
-  (amount: number, size = 25, roughness = 50): LookStep =>
+  (
+    amount: number,
+    size = 25,
+    roughness = 50,
+    opts: { colour?: number; response?: GrainResponseKind } = {}
+  ): LookStep =>
   (r, s) => {
     r.effects.grainAmount = amount
     r.effects.grainSize = size
     r.effects.grainRoughness = roughness
-    // A grain is all three: the photo's own size never mixes with this amount.
+    r.effects.grainColour = opts.colour ?? 0
+    r.effects.grainResponse = opts.response ?? 'film'
+    // A grain is all of it: the photo's own size or colour never mixes with this amount.
     s.include.add('effects.grainSize')
     s.include.add('effects.grainRoughness')
+    s.include.add('effects.grainColour')
+    s.include.add('effects.grainResponse')
   }
 
 export const vignette =
@@ -423,28 +440,56 @@ export const addLight =
   }
 
 /**
- * Halation as the sliders can suggest it: Gain warmed toward red, a
- * faint red wash, a little less local contrast. Marked, so the look can be
- * redone when the engine has the real thing.
+ * Halation: a red glow around the highlights, as light scattered back
+ * through a colour film's base (0…100; threshold and size 0…100, hue 0…45
+ * from red to amber). The whole effect, so a photo's own never mixes in.
  */
-export const halationApprox =
-  (k: number): LookStep =>
+export const halation =
+  (amount: number, opts: { threshold?: number; size?: number; hue?: number } = {}): LookStep =>
   (r, s) => {
-    // Gain's disc toward red-orange: the highlights warm, the blacks untouched.
-    push('gain', 12, k * 0.18)(r, s)
-    r.effects.wash = { hue: 8, saturation: 70, amount: Math.round(k * 0.05) }
-    r.presence.clarity -= Math.round(k * 0.08)
-    s.approximates.add('halation')
+    r.effects.halation = {
+      amount,
+      threshold: opts.threshold ?? 80,
+      size: opts.size ?? 50,
+      hue: opts.hue ?? 12
+    }
+    for (const k of ['threshold', 'size', 'hue']) s.include.add(`effects.halation.${k}`)
   }
 
-/** Bloom or diffusion as the sliders can suggest it: softer local contrast, lifted shadows. */
-export const bloomApprox =
-  (k: number): LookStep =>
+/**
+ * Bloom: `diffusion` veils the whole picture as a diffusion filter does
+ * (a Pro-Mist), `glow` spreads only the highlights (neon at night). Amount,
+ * size and threshold 0…100, warmth −100…100.
+ */
+export const bloom =
+  (
+    amount: number,
+    opts: { style?: BloomStyle; size?: number; threshold?: number; warmth?: number } = {}
+  ): LookStep =>
   (r, s) => {
-    r.presence.clarity -= Math.round(k * 0.25)
-    r.presence.texture -= Math.round(k * 0.1)
-    r.basic.shadows += Math.round(k * 0.15)
-    s.approximates.add('bloom')
+    r.effects.bloom = {
+      style: opts.style ?? 'diffusion',
+      amount,
+      size: opts.size ?? 65,
+      threshold: opts.threshold ?? 75,
+      warmth: opts.warmth ?? 0
+    }
+    for (const k of ['style', 'size', 'threshold', 'warmth']) s.include.add(`effects.bloom.${k}`)
+  }
+
+/**
+ * Density (−100…100): saturated colour darkened as a slide film's dyes
+ * make it, its hue kept. `bands` weighs each hue (−100…100, 100 untouched).
+ * Every band is the look's.
+ */
+export const density =
+  (amount: number, bands: Partial<Record<HslBand, number>> = {}): LookStep =>
+  (r, s) => {
+    r.density.amount += amount
+    for (const b of HSL_BANDS) {
+      r.density.bands[b] = bands[b] ?? 100
+      s.include.add(`density.bands.${b}`)
+    }
   }
 
 /** Marks a look as standing in for something the sliders cannot quite do. */

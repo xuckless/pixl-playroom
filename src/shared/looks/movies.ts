@@ -5,16 +5,17 @@
  */
 import {
   approximates,
-  bloomApprox,
+  bloom,
   collection,
   gain,
   gamma,
   grain,
-  halationApprox,
+  halation,
   hsl,
   hueCurve,
   lift,
   look,
+  lumSat,
   matte,
   mono,
   offset,
@@ -22,8 +23,7 @@ import {
   prim,
   sCurve,
   tone,
-  vignette,
-  lumSat
+  vignette
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -134,11 +134,11 @@ export const MOVIES = collection('movies', [
       tags: ['bw', 'mono', 'infrared', 'stark', 'dune', 'part two', 'giedi prime'],
       inspiredBy: 'Dune: Part Two (2024), the infrared arena',
       description: tk('Infrared-style mono: glowing skin and foliage, black skies.'),
-      version: 2
+      version: 3
     },
     mono({ green: 80, yellow: 60, red: 40, orange: 40, blue: -70, aqua: -50 }),
     prim({ contrast: 1.21 }),
-    bloomApprox(20)
+    bloom(30)
   ),
   look(
     'orange-haze-city',
@@ -147,7 +147,7 @@ export const MOVIES = collection('movies', [
       tags: ['orange', 'haze', 'dystopia', 'sci-fi', 'blade runner 2049'],
       inspiredBy: 'Blade Runner 2049 (2017), the abandoned city',
       description: tk('Everything drowned in orange dust; only warm colour survives.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.88 }),
     matte(0.06),
@@ -162,7 +162,8 @@ export const MOVIES = collection('movies', [
       [120, 0.4],
       [60, 0.64]
     ]),
-    bloomApprox(30)
+    tone({ shadows: 5 }),
+    bloom(30, { warmth: 40 })
   ),
   look(
     'cold-smog',
@@ -171,7 +172,7 @@ export const MOVIES = collection('movies', [
       tags: ['cold', 'smog', 'neon', 'sci-fi', 'blade runner 2049'],
       inspiredBy: 'Blade Runner 2049 (2017), the city at night',
       description: tk('Cold, smoggy and drained, with neon magentas left alive.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.94 }),
     matte(0.05),
@@ -182,7 +183,8 @@ export const MOVIES = collection('movies', [
       [315, 1.4],
       [275, 1.3]
     ]),
-    bloomApprox(20),
+    tone({ shadows: 3 }),
+    bloom(20, { warmth: -30 }),
     grain(6, 15, 30)
   ),
   look(
@@ -348,7 +350,7 @@ export const MOVIES = collection('movies', [
       tags: ['neon', 'night', 'magenta', 'teal', 'synthwave', 'drive'],
       inspiredBy: 'Drive (2011)',
       description: tk('Teal night and hot magenta neon, warm skin.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.09 }),
     lift(190, 20),
@@ -358,7 +360,7 @@ export const MOVIES = collection('movies', [
       [275, 1.2],
       [30, 1.05]
     ]),
-    bloomApprox(20)
+    bloom(30, { style: 'glow', threshold: 70, size: 55 })
   ),
   look(
     'green-and-gold-whimsy',
@@ -392,7 +394,7 @@ export const MOVIES = collection('movies', [
       tags: ['red', 'romantic', 'moody', 'hong kong', 'in the mood for love', 'wong kar-wai'],
       inspiredBy: 'In the Mood for Love (2000)',
       description: tk('Deep reds and emerald greens under warm lamplight.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.15 }),
     tone({ blacks: -5 }),
@@ -407,7 +409,7 @@ export const MOVIES = collection('movies', [
       [60, 1.06]
     ]),
     hsl({ red: [0, 0, -10] }),
-    bloomApprox(15),
+    bloom(15, { warmth: 20 }),
     grain(20, 25, 50)
   ),
   look(
@@ -417,12 +419,12 @@ export const MOVIES = collection('movies', [
       tags: ['neon', 'night', 'grain', 'hong kong', 'chungking express', 'wong kar-wai'],
       inspiredBy: 'Chungking Express (1994) and Fallen Angels (1995)',
       description: tk('Green-cast night, smeared neon reds and rough grain.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.18 }),
     lift(160, 20),
     hueCurve('hueSat', [[0, 1.2]]),
-    bloomApprox(15),
+    bloom(25, { style: 'glow', threshold: 70, size: 55 }),
     grain(45, 40, 75)
   ),
   look(
@@ -530,7 +532,7 @@ export const MOVIES = collection('movies', [
       tags: ['coral', 'warm', 'soft', 'romantic', 'her'],
       inspiredBy: 'Her (2013)',
       description: tk('Soft coral reds and peaches, no blue at all.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.91 }),
     matte(0.03),
@@ -545,7 +547,8 @@ export const MOVIES = collection('movies', [
       [240, 0.4],
       [180, 0.6]
     ]),
-    bloomApprox(25)
+    tone({ shadows: 4 }),
+    bloom(25, { warmth: 25 })
   ),
   look(
     'golden-hour-jet',
@@ -588,7 +591,7 @@ export const MOVIES = collection('movies', [
       tags: ['purple', 'neon', 'party', 'teen', 'euphoria'],
       inspiredBy: 'Euphoria (2019–)',
       description: tk('Purple and magenta club light, saturated and grainy.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.12 }),
     presence({ saturation: 20 }),
@@ -598,7 +601,7 @@ export const MOVIES = collection('movies', [
       [275, 1.3],
       [315, 1.3]
     ]),
-    halationApprox(20),
+    halation(20),
     grain(15, 22, 45)
   ),
   look(
@@ -798,7 +801,7 @@ export const MOVIES = collection('movies', [
       tags: ['soft', 'night', 'city', 'dreamy', 'lost in translation'],
       inspiredBy: 'Lost in Translation (2003)',
       description: tk('Soft, hushed city nights with pink and blue neon.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.91, sat: -5 }),
     matte(0.03),
@@ -806,7 +809,8 @@ export const MOVIES = collection('movies', [
       [315, 1.15],
       [240, 1.15]
     ]),
-    bloomApprox(20),
+    tone({ shadows: 3 }),
+    bloom(20),
     grain(12, 20, 40)
   ),
   look(
@@ -928,14 +932,14 @@ export const MOVIES = collection('movies', [
       tags: ['bw', 'mono', 'vintage', 'hollywood', '1930s', 'mank'],
       inspiredBy: 'Mank (2020)',
       description: tk('Classic studio-era black and white with a soft glow.'),
-      version: 2
+      version: 3
     },
     mono({ red: 6, orange: 6 }),
     prim({ contrast: 1.09 }),
-    tone({ highlights: -12 }),
+    tone({ highlights: -12, shadows: 4 }),
     matte(0.03),
     vignette(-25, { feather: 70 }),
-    bloomApprox(25),
+    bloom(25),
     grain(30, 30, 55)
   ),
   look(

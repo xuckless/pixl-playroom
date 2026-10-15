@@ -4,12 +4,14 @@
  */
 import {
   collection,
+  density,
   gain,
   grain,
   hsl,
   hueCurve,
   lift,
   look,
+  lumSat,
   matte,
   mono,
   offset,
@@ -17,8 +19,7 @@ import {
   prim,
   rgb,
   sCurve,
-  tone,
-  lumSat
+  tone
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -32,7 +33,7 @@ export const FUJIFILM = collection('camera/fujifilm', [
       tags: ['slide', 'standard', 'everyday', 'provia', 'fujifilm'],
       inspiredBy: insp('PROVIA/Standard'),
       description: tk('Balanced slide-film colour with a firm, clean curve.'),
-      version: 2
+      version: 3
     },
     sCurve(22),
     prim({ contrast: 1.04 }),
@@ -48,7 +49,8 @@ export const FUJIFILM = collection('camera/fujifilm', [
       [120, 1.06],
       [240, 1.14]
     ]),
-    hsl({ blue: [0, 0, -10] })
+    hsl({ blue: [0, 0, -10] }),
+    density(30)
   ),
   look(
     'vivid-slide',
@@ -57,7 +59,7 @@ export const FUJIFILM = collection('camera/fujifilm', [
       tags: ['slide', 'vivid', 'saturated', 'landscape', 'velvia', 'fujifilm'],
       inspiredBy: insp('Velvia/Vivid'),
       description: tk('Dense, saturated slide colour for landscapes; skin is held back.'),
-      version: 2
+      version: 3
     },
     sCurve(35),
     prim({ contrast: 1.09 }),
@@ -74,7 +76,8 @@ export const FUJIFILM = collection('camera/fujifilm', [
       [120, 1.25],
       [60, 1.15]
     ]),
-    hsl({ blue: [0, 0, -15], green: [0, 0, -5], yellow: [0, 0, -3] })
+    hsl({ blue: [0, 0, -15], green: [0, 0, -5], yellow: [0, 0, -3] }),
+    density(45)
   ),
   look(
     'soft-slide',
@@ -83,7 +86,7 @@ export const FUJIFILM = collection('camera/fujifilm', [
       tags: ['slide', 'soft', 'portrait', 'astia', 'fujifilm'],
       inspiredBy: insp('ASTIA/Soft'),
       description: tk('Slide colour with gentle highlights and kind skin.'),
-      version: 2
+      version: 3
     },
     sCurve(15),
     tone({ highlights: -22, shadows: 8 }),
@@ -100,7 +103,8 @@ export const FUJIFILM = collection('camera/fujifilm', [
       [240, 1.16],
       [180, 1.1]
     ]),
-    hsl({ orange: [0, 0, 8], blue: [0, 0, -6] })
+    hsl({ orange: [0, 0, 8], blue: [0, 0, -6] }),
+    density(20)
   ),
   look(
     'documentary-chrome',
