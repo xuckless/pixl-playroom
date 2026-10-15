@@ -164,6 +164,47 @@ test('an Invariant in the colour tools names the card and marks its rows (engine
   assert.ok(invariantTouches(vs, 'curvesVs.hueLum'))
 })
 
+test('an Invariant in a Qualifier card’s layer names the card; a mask named “qualifier” stays a mask', async () => {
+  const { qualifierFromSample, qualifierLayerId } = await import('../src/shared/resolve')
+  const r = defaultRecipe(false)
+  const q = qualifierFromSample('k1', { hue: 30, saturation: 0.5, luminance: 0.5 })
+  q.sat = 80
+  r.qualifiers = [q]
+  const l = newLocalLayer('qualifier')
+  l.components.push(polygon)
+  l.settings.basic.highlights = -80
+  r.layers.push(l)
+  const c = compile(r, ctx)
+  const qi = c.layerIndex[qualifierLayerId('k1')]
+  const own = invariantPlace(
+    `grade.layers[${qi}].stages[0].ops[0]: NaN`,
+    c.grade,
+    null,
+    c.layerIndex
+  )!
+  assert.equal(own.layer, qualifierLayerId('k1'))
+  assert.match(describeInvariant(own, 'grade'), /^Qualifier in the photo’s settings/)
+  // The SDR grade has no ids: compile's own name says it.
+  assert.match(
+    describeInvariant({ layer: null, layerName: 'qualifier', op: 'Primary', sdr: true }, 'grade'),
+    /^Qualifier in/
+  )
+  const mi = c.layerIndex[l.id]
+  const stages = c.grade!.layers[mi].stages
+  const si = stages.findIndex((st) => st.ops.some((op) => 'Tone' in op))
+  const oi = stages[si].ops.findIndex((op) => 'Tone' in op)
+  const mask = invariantPlace(
+    `grade.layers[${mi}].stages[${si}].ops[${oi}]: NaN`,
+    c.grade,
+    null,
+    c.layerIndex
+  )!
+  assert.equal(
+    describeInvariant(mask, 'grade'),
+    'Highlights, Shadows, Whites or Blacks in “qualifier” made pixels that are not numbers. Lower it, or undo.'
+  )
+})
+
 test('HR-0.18-9: the photo’s own settings, a layer’s blend, and a stage outside the grade', () => {
   const r = defaultRecipe(false)
   r.presence.dehaze = 50

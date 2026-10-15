@@ -161,24 +161,33 @@ export function invariantPlace(
 /** The name compile gives a Qualifier card's layer. */
 const QUALIFIER_LAYER = 'qualifier'
 
+/**
+ * Whether the layer is a Qualifier card's own: by its id where the compile
+ * knows it (resolve.ts qualifierLayerId, `q:` and the qualifier's), so a
+ * mask the user named "qualifier" stays a mask; by compile's name in the SDR
+ * grade, which has no ids.
+ */
+const isQualifierLayer = (place: InvariantPlace): boolean =>
+  place.layer !== null ? place.layer.startsWith('q:') : place.layerName === QUALIFIER_LAYER
+
 /** What to tell the user. */
 export function describeInvariant(place: InvariantPlace | null, stage: string): string {
   if (!place)
     return t('The picture could not be rendered after {{stage}}. Undo the last change.', { stage })
+  const qualifier = isQualifierLayer(place)
   const where =
-    place.layer === 'base' || place.layerName === QUALIFIER_LAYER
+    place.layer === 'base' || qualifier
       ? t('the photo’s settings')
       : t('“{{name}}”', { name: place.layerName ?? t('a layer') })
   const label = place.op ? OP_LABEL[place.op] : undefined
-  // A Qualifier card's own layer (compile's 'qualifier'): whatever it ran, the card.
-  const what =
-    place.layerName === QUALIFIER_LAYER
-      ? t('Qualifier')
-      : place.op
-        ? label
-          ? t(label)
-          : place.op
-        : t('The layer’s blend')
+  // A Qualifier card's own layer: whatever it ran, the card.
+  const what = qualifier
+    ? t('Qualifier')
+    : place.op
+      ? label
+        ? t(label)
+        : place.op
+      : t('The layer’s blend')
   return t('{{what}} in {{where}} made pixels that are not numbers. Lower it, or undo.', {
     what,
     where
