@@ -1,5 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
-import { clearedFilters, extraFilterCount, type FlagFilter } from '../../../../shared/filter'
+import {
+  clearedFilters,
+  extraFilterCount,
+  moreFilters,
+  type FlagFilter
+} from '../../../../shared/filter'
 import type { ColorLabel } from '../../../../shared/ipc'
 import { keywordLabel, keywordPaths } from '../../../../shared/keywords'
 import { cameraName } from '../../../../shared/smart'
@@ -10,6 +15,7 @@ import { useUi } from '../../state/ui'
 import { LABEL_COLOURS } from '../../lib/helpers'
 import { useLibrary, useTargets } from '../../state/library'
 import { keyHint } from '../../lib/commands'
+import { FLAGS, labelName } from './filterNames'
 import { t, tk, tp } from '../../lib/i18n'
 
 const stop = (e: React.KeyboardEvent): void => e.stopPropagation()
@@ -70,47 +76,30 @@ function Range({
   )
 }
 
-const FLAGS: [FlagFilter, string][] = [
-  ['notRejected', tk('Hide rejected')],
-  ['all', tk('All photos')],
-  ['pick', tk('Picks')],
-  ['unflagged', tk('Unflagged')],
-  ['reject', tk('Rejected only')]
-]
-
-const LABEL_NAME: Record<string, string> = {
-  red: tk('Red'),
-  yellow: tk('Yellow'),
-  green: tk('Green'),
-  blue: tk('Blue'),
-  purple: tk('Purple')
-}
-
-const cap = (s: string): string => s[0].toUpperCase() + s.slice(1)
-const labelName = (l: string): string => (LABEL_NAME[l] ? t(LABEL_NAME[l]) : cap(l))
-
 /**
  * Every filter but the search: rating, flag, colour label and edits first
  * (the quick ones), then camera, lens, file kind, ISO and focal ranges,
  * capture dates and a keyword. The button counts those narrowing the view.
  */
-export function FilterButton(): React.JSX.Element {
+export function FilterButton({ more }: { more?: boolean }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const filter = useLibrary((s) => s.filter)
-  const n = extraFilterCount(filter)
+  // In the filter bar, "More…" counts only what the bar does not show.
+  const n = more ? moreFilters(filter).length : extraFilterCount(filter)
+  const label = more ? t('More…') : t('Filters')
   return (
     <span className="menu-anchor">
       <button
-        className={`lg${n ? ' on' : ''}`}
+        className={`${more ? 'sm ghost' : 'lg'}${n ? ' on' : ''}`}
         title={t(
           'Filter by rating, flag, label, edits, camera, lens, kind, ISO, focal length, date or keyword'
         )}
-        aria-label={n ? tp('Filters, {{count}} on', 'Filters, {{count}} on', n) : t('Filters')}
+        aria-label={n ? tp('Filters, {{count}} on', 'Filters, {{count}} on', n) : label}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         <Icon name="filter" />
-        {t('Filters')}
+        {label}
         {n > 0 && <span className="filter-count t-num">{n}</span>}
       </button>
       {open && <FilterForm onClose={() => setOpen(false)} />}

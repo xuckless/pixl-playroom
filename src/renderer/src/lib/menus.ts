@@ -27,6 +27,9 @@ import { t, tp, useLanguage } from './i18n'
 import { COMMANDS, currentBindings, IS_MAC, layoutKey, listening } from './commands'
 import { chordAccelerator } from './keys'
 import { developBatch, metaItem } from './librarycontext'
+import { developToLoupe, goCompare, goGrid, goLoupe, goSurvey, shownKey } from './librarymodes'
+import { useLibZoom } from '../views/library/libzoom'
+import type { LibraryMode } from '../../../shared/cullnav'
 
 /** A menu item with what it does, before it is sent. */
 interface Item extends Omit<MenuNode, 'submenu'> {
@@ -307,6 +310,14 @@ function compareItems(): Item[] {
 }
 
 function zoomItems(): Item[] {
+  // The Library's Loupe and Compare (in the Grid, the thumbnails' size).
+  if (!inDevelop())
+    return [
+      cmd('library.zoomIn', t('Zoom In')),
+      cmd('library.zoomOut', t('Zoom Out')),
+      cmd('library.zoomFit', t('Fit in Window')),
+      cmd('loupe.zoom', t('Fit ↔ 1:1'))
+    ]
   return [
     cmd('zoom.in', t('Zoom In')),
     cmd('zoom.out', t('Zoom Out')),
@@ -427,6 +438,7 @@ function photoMenu(): Item[] {
     ratingMenu(),
     flagMenu(),
     labelMenu(),
+    cmd('library.autoAdvance', t('Auto Advance'), { checked: ui().autoAdvance }),
     sep,
     makeCopy(),
     stackMenu(),
@@ -495,27 +507,60 @@ function masksMenu(): Item[] {
   ]
 }
 
-function viewMenu(): Item[] {
+/** The Library's views and Develop, as radios (the toolbar's segment, and D). */
+function viewModes(): Item[] {
   const developing = inDevelop()
+  const mode = lib().mode
+  const radio = (m: LibraryMode, label: string, key: string, run: () => void): Item =>
+    act(`view.${m}`, label, run, {
+      key,
+      checked: !developing && mode === m,
+      radio: true,
+      // Compare and Survey start from the Library's photos.
+      enabled: !modal() && (!developing || m === 'grid' || m === 'loupe')
+    })
   return [
-    act('view.library', t('Library'), () => lib().setView('library'), {
-      key: 'develop.library',
-      checked: !developing,
-      radio: true
-    }),
+    radio('grid', t('Grid'), 'library.grid', goGrid),
+    radio('loupe', t('Loupe'), 'library.loupe', developing ? developToLoupe : goLoupe),
+    radio('compare', t('Compare'), 'library.compare', goCompare),
+    radio('survey', t('Survey'), 'library.survey', () => void goSurvey()),
     act('view.develop', t('Develop'), () => runCommand('library.develop'), {
       key: 'library.develop',
       checked: developing,
       radio: true,
-      enabled: !modal() && (developing || !!lib().focus)
-    }),
+      enabled: !modal() && (developing || !!shownKey())
+    })
+  ]
+}
+
+/** Compare's and Survey's own items, while they are up. */
+function cullItems(): Item[] {
+  if (inDevelop()) return []
+  const mode = lib().mode
+  if (mode === 'compare')
+    return [
+      cmd('compare.swap', t('Swap Select and Candidate')),
+      cmd('compare.promote', t('Make the Candidate the Select')),
+      cmd('compare.link', t('Link Zoom'), { checked: useLibZoom.getState().linked }),
+      sep
+    ]
+  if (mode === 'survey') return [cmd('survey.drop', t('Drop from Survey')), sep]
+  return []
+}
+
+function viewMenu(): Item[] {
+  const developing = inDevelop()
+  return [
+    ...viewModes(),
     sep,
+    ...cullItems(),
     ...compareItems(),
     sep,
     ...zoomItems(),
     sep,
     cmd('library.sidebar', t('Show Sources'), { checked: ui().librarySidebar }),
     cmd('library.info', t('Show Info'), { checked: ui().libraryInfo }),
+    cmd('library.filterBar', t('Show Filter Bar'), { checked: ui().filterBar }),
     act('view.filmstrip', t('Show Filmstrip'), () => ui().setFilmstrip(!ui().filmstrip), {
       checked: ui().filmstrip,
       enabled: !modal() && developing
@@ -594,6 +639,8 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
   const l = lib()
   if (!selectionSet(l.selection).has(key)) l.select(key, 'only')
   else if (l.focus !== key) useLibrary.setState({ focus: key })
+  // In Compare the photo clicked is the Select now: the menu acts on it.
+  if (l.mode === 'compare' && l.active !== 'select') useLibrary.setState({ active: 'select' })
   const n = lib().targets().length
   const developing = inDevelop()
   const item = focusedItem()
@@ -760,6 +807,7 @@ export function startMenuUpkeep(): () => void {
   }
   const offs = [
     useLibrary.subscribe(soon),
+    useLibZoom.subscribe((s, p) => s.linked !== p.linked && soon()),
     useLibraryUndo.subscribe(soon),
     useDevelop.subscribe(soon),
     useUi.subscribe(soon),

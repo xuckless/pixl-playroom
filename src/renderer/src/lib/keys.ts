@@ -21,13 +21,18 @@ export interface Chord {
  * sub-contexts (`develop.heal` …) are commands that only act while that tool is
  * up, so they may share a key with a general develop command (the more specific
  * one is listed first and wins while its tool is showing). The library's
- * sub-contexts are its views of the photos (`library.grid`; culling's loupe
- * and compare to come), the same way.
+ * sub-contexts are its views of the photos, the same way: `library.grid`,
+ * `library.loupe` (the Loupe and Compare, which zoom), `library.compare` and
+ * `library.survey`; a key may mean one thing in one view and another in the
+ * next (↑ a row in the Grid, the Candidate promoted in Compare).
  */
 export type KeyContext =
   | 'global'
   | 'library'
   | 'library.grid'
+  | 'library.loupe'
+  | 'library.compare'
+  | 'library.survey'
   | 'develop'
   | 'develop.heal'
   | 'develop.masks'

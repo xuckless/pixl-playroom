@@ -185,6 +185,22 @@ interface UiState {
   libraryInfo: boolean
   setLibrarySidebar(open: boolean): void
   setLibraryInfo(open: boolean): void
+  /**
+   * The Library's view of its photos at the next launch: the Grid or the
+   * Loupe (Compare and Survey start from a selection, so they open as the Grid).
+   */
+  libraryMode: 'grid' | 'loupe'
+  setLibraryMode(mode: string): void
+  /** A rating, flag or label moves on to the next photo (⇧A; Caps Lock flips it while held on). */
+  autoAdvance: boolean
+  setAutoAdvance(on: boolean): void
+  /** The Library's filter bar under its toolbar (⇧\). */
+  filterBar: boolean
+  setFilterBar(on: boolean): void
+  /** One-time hints already given (E's new meaning in the Library). */
+  told: string[]
+  /** True the first time a hint is asked for: it is given once. */
+  tell(id: string): boolean
   cropGuide: CropGuide
   maskOverlay: MaskOverlaySettings
   setMaskOverlay(p: Partial<MaskOverlaySettings>): void
@@ -334,6 +350,18 @@ export const useUi = create<UiState>()(
       libraryInfo: false,
       setLibrarySidebar: (librarySidebar) => set({ librarySidebar }),
       setLibraryInfo: (libraryInfo) => set({ libraryInfo }),
+      libraryMode: 'grid',
+      setLibraryMode: (mode) => set({ libraryMode: mode === 'loupe' ? 'loupe' : 'grid' }),
+      autoAdvance: false,
+      setAutoAdvance: (autoAdvance) => set({ autoAdvance }),
+      filterBar: true,
+      setFilterBar: (filterBar) => set({ filterBar }),
+      told: [],
+      tell: (id) => {
+        if (get().told.includes(id)) return false
+        set((s) => ({ told: [...s.told, id] }))
+        return true
+      },
       cropGuide: 'thirds',
       maskOverlay: DEFAULT_MASK_OVERLAY,
       setMaskOverlay: (p) => set((s) => ({ maskOverlay: { ...s.maskOverlay, ...p } })),
@@ -398,7 +426,7 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 10,
+      version: 11,
       migrate: (persisted, version) => migrateUi(persisted, version),
       // Crop or Heal is never in hand when the app opens.
       partialize: (s) => {
@@ -426,6 +454,8 @@ export const useUi = create<UiState>()(
             model: p.denoise ? aiDenoiseModel(p.denoise.model) : 'drunet-color'
           },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
+          libraryMode: p.libraryMode === 'loupe' ? 'loupe' : 'grid',
+          told: Array.isArray(p.told) ? p.told.filter((x) => typeof x === 'string') : [],
           cardsOpen:
             p.cardsOpen && typeof p.cardsOpen === 'object' ? p.cardsOpen : current.cardsOpen,
           focusCard: savedPanel(p.focusCard) ?? current.focusCard,

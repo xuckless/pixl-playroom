@@ -12,6 +12,8 @@
  *   batch of settings: paste, sync, auto white balance, and the looks and
  *   Quick develop nudges built on it. Its undo and redo go through each
  *   photo's own history in main (main/batchcommit.ts).
+ * - `dropFromSurvey` (lib/librarymodes.ts) pushes a **drop** entry for a
+ *   photo taken out of Survey; undo puts it back in Survey and the selection.
  *
  * The API the culling and Quick develop work builds on: `pushUndo`,
  * `undoLibrary`, `redoLibrary`, `undoAction` (a toast's Undo button) and
@@ -30,12 +32,14 @@ import {
   pushEntry,
   UNDO_CHUNK,
   withoutEntry,
+  type DropEntry,
   type MetaEntry,
   type MetaValues,
   type RecipeEntry,
   type UndoEntry,
   type UndoStack
 } from '../../../shared/libraryundo'
+import { restoreTo } from '../../../shared/cullnav'
 import type { BatchUndoResult } from '../../../shared/ipc'
 import { api, errorText } from '../lib/api'
 import { t, tp } from '../lib/i18n'
@@ -149,6 +153,48 @@ async function runMeta(
   return { done, skipped: plan.skipped }
 }
 
+/**
+ * Survey's drop taken back (or done again): each photo back where it was in
+ * Survey (while it shows) and in the selection. Nothing on disk.
+ */
+function runDrop(e: DropEntry, redo: boolean): { done: string[]; skipped: string[] } {
+  const l = useLibrary.getState()
+  let keys = l.survey?.keys ?? []
+  let selection = [...l.selection]
+  e.keys.forEach((k, i) => {
+    if (redo) {
+      keys = keys.filter((x) => x !== k)
+      selection = selection.filter((x) => x !== k)
+    } else {
+      keys = restoreTo(keys, k, e.at[i])
+      if (!selection.includes(k)) selection.push(k)
+    }
+  })
+  const survey =
+    l.survey && l.mode === 'survey'
+      ? {
+          ...l.survey,
+          keys,
+          total: Math.max(keys.length, l.survey.total + (redo ? -1 : 1) * e.keys.length)
+        }
+      : l.survey
+  useLibrary.setState({
+    selection,
+    survey,
+    ...(redo || !survey ? {} : { focus: e.keys[0], anchor: e.keys[0] })
+  })
+  return { done: e.keys, skipped: [] }
+}
+
+/** An entry run either way. */
+async function runEntry(
+  e: UndoEntry,
+  redo: boolean
+): Promise<{ done: string[]; skipped: string[] }> {
+  if (e.kind === 'drop') return runDrop(e, redo)
+  return e.kind === 'meta' ? runMeta(e, redo) : runRecipe(e, redo)
+}
+
 /** What an undo or redo did, said (and how many photos a later edit kept as they are). */
 function report(e: UndoEntry, redo: boolean, done: number, skipped: number): void {
   const lib = useLibrary.getState()
@@ -188,7 +234,7 @@ export function undoLibrary(id?: string): Promise<void> {
     }
     const newest = done[done.length - 1]?.id === e.id
     try {
-      const r = e.kind === 'meta' ? await runMeta(e, false) : await runRecipe(e, false)
+      const r = await runEntry(e, false)
       const kept = onlyKeys(e, r.done)
       // Taken back out of order: redoing it later could undo what came after.
       useLibraryUndo.setState((s) => (newest ? afterUndo(s, e, kept) : withoutEntry(s, e.id)))
@@ -209,7 +255,7 @@ export function redoLibrary(): Promise<void> {
       return
     }
     try {
-      const r = e.kind === 'meta' ? await runMeta(e, true) : await runRecipe(e, true)
+      const r = await runEntry(e, true)
       useLibraryUndo.setState((s) => afterRedo(s, e, onlyKeys(e, r.done)))
       report(e, true, r.done.length, r.skipped.length)
     } catch (err) {

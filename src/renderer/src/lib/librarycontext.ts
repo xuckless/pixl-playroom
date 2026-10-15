@@ -2,12 +2,13 @@
  * ARCHITECTURE — the Library's command context: what a key in the Library
  * acts on, for the commands (lib/commands.ts) and menus (lib/menus.ts).
  *
- * - `libraryMode()`: the Library's view, 'grid' today; culling's Loupe,
- *   Compare and Survey set it, and grid-only commands listen in the
- *   `library.grid` key context (lib/keys.ts) through `inGrid()`.
+ * - `libraryMode()`: the Library's view, Grid, Loupe, Compare or Survey
+ *   (lib/librarymodes.ts runs them); each view's own commands listen in its
+ *   key context (`library.grid`, `library.loupe` …, lib/keys.ts) through
+ *   `inGrid()` and `inMode()`.
  * - `metaTargets()` (UX-13): rating, flag and label keys act on the
- *   selection only in the Grid; in Develop (and the single-photo modes) on
- *   the photo shown.
+ *   selection only in the Grid; in Develop, the Loupe and Survey on the
+ *   photo shown, in Compare on the pane picked.
  * - `metaItem()`: the photo whose rating, flag or label a menu shows checked.
  * - `developBatch()`: in Develop, ⌘Z right after a paste or sync on several
  *   photos takes the whole batch back, not the open photo's share alone.
@@ -28,8 +29,13 @@ export function libraryMode(): LibraryMode {
 
 /** The Library is up, showing its grid. */
 export function inGrid(): boolean {
+  return inMode('grid')
+}
+
+/** The Library is up, in one of these views. */
+export function inMode(...modes: LibraryMode[]): boolean {
   const l = useLibrary.getState()
-  return l.view === 'library' && l.mode === 'grid'
+  return l.view === 'library' && modes.includes(l.mode)
 }
 
 /** The photos a rating, flag or label key acts on now. */
@@ -40,14 +46,23 @@ export function metaTargets(): string[] {
     mode: l.mode,
     selection: l.selection,
     focus: l.focus,
-    open: useDevelop.getState().session?.key ?? null
+    open: useDevelop.getState().session?.key ?? null,
+    active: l.mode === 'compare' && l.active === 'candidate' ? l.candidate : null
   })
 }
 
-/** The photo whose rating, flag and label the keys and menus read: the shown one in Develop. */
+/**
+ * The photo whose rating, flag and label the keys and menus read: the shown
+ * one in Develop, Compare's picked pane, else the focus.
+ */
 export function metaItem(): LibraryItem | undefined {
   const l = useLibrary.getState()
-  const key = l.view === 'develop' ? (useDevelop.getState().session?.key ?? l.focus) : l.focus
+  const key =
+    l.view === 'develop'
+      ? (useDevelop.getState().session?.key ?? l.focus)
+      : l.mode === 'compare' && l.active === 'candidate'
+        ? l.candidate
+        : l.focus
   return l.items.find((i) => i.key === key)
 }
 
