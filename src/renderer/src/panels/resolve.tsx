@@ -23,6 +23,7 @@ import {
   LOG_MIN_GAP,
   LOG_TOP,
   MAX_QUALIFIERS,
+  qualifierRest,
   vsPeriodic,
   type KeyBandSetting,
   type PrimariesSetting,
@@ -239,7 +240,8 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
         periodic={periodic}
         background={STRIP[vs]}
         points={pts}
-        colour="#e8e6f2"
+        colour="var(--ch-y)"
+        label={t(label)}
         onChange={(p: CurvePointSetting[], live) => edit((r) => (r.curvesVs[vs] = p), live)}
         onCommit={() => commit(`Curves: ${label}`)}
       />
@@ -412,7 +414,7 @@ function BandBar({
             <stop offset="1" stopColor="#fff" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <rect x={0} y={0} width={100} height={10} fill="rgba(0,0,0,0.55)" />
+        <rect x={0} y={0} width={100} height={10} fill="#000" fillOpacity={0.55} />
         {copies.map((o) => (
           <g key={o}>
             <rect
@@ -427,7 +429,8 @@ function BandBar({
               y={0}
               width={pct(band.width)}
               height={10}
-              fill="rgba(255,255,255,0.9)"
+              fill="#fff"
+              fillOpacity={0.9}
             />
             <rect x={pct(hi + o)} y={0} width={pct(band.soft)} height={10} fill="url(#bb-out)" />
           </g>
@@ -466,6 +469,8 @@ export function QualifierBody(): React.JSX.Element | null {
   const q = qs.find((x) => x.id === selectedId) ?? qs[qs.length - 1]
   const at = (r: Recipe): QualifierSetting | undefined => r.qualifiers.find((x) => x.id === q?.id)
   const full = qs.length >= MAX_QUALIFIERS
+  // Each band's sliders reset to where the pick keyed it, never to where they are.
+  const rest = q ? qualifierRest(q) : null
   const remove = (id: string): void => {
     const next = structuredClone(recipe)
     next.qualifiers = next.qualifiers.filter((x) => x.id !== id)
@@ -538,7 +543,7 @@ export function QualifierBody(): React.JSX.Element | null {
           ))}
         </ul>
       )}
-      {q && (
+      {q && rest && (
         <>
           {BANDS.map((b) => (
             <div key={b.key} className="q-band">
@@ -570,7 +575,7 @@ export function QualifierBody(): React.JSX.Element | null {
                     min={0}
                     max={b.top}
                     step={b.step}
-                    def={q[b.key].centre}
+                    def={rest[b.key].centre}
                     format={(v) => (b.top === 360 ? `${Math.round(v)}°` : v.toFixed(2))}
                   />
                   <RS
@@ -583,7 +588,7 @@ export function QualifierBody(): React.JSX.Element | null {
                     min={0}
                     max={b.top}
                     step={b.step}
-                    def={q[b.key].width}
+                    def={rest[b.key].width}
                     format={(v) => (b.top === 360 ? `${Math.round(v)}°` : v.toFixed(2))}
                   />
                   <RS
@@ -596,7 +601,7 @@ export function QualifierBody(): React.JSX.Element | null {
                     min={0}
                     max={b.top / 2}
                     step={b.step}
-                    def={q[b.key].soft}
+                    def={rest[b.key].soft}
                     format={(v) => (b.top === 360 ? `${Math.round(v)}°` : v.toFixed(2))}
                   />
                 </>

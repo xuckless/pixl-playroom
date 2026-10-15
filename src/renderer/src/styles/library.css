@@ -810,7 +810,11 @@
   border-color: color-mix(in srgb, var(--acc) 42%, transparent);
 }
 .thumb.in-stack .thumb-meta {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 5%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--acc) 16%, transparent),
+    color-mix(in srgb, var(--acc) 5%, transparent)
+  );
   border-top-color: color-mix(in srgb, var(--acc) 30%, transparent);
 }
 .thumb.in-stack:not(.stack-cover) .thumb-img {
@@ -841,7 +845,12 @@
 .dupe-head .line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), var(--hair) 40%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    var(--hair) 40%,
+    transparent
+  );
 }
 .grid.loading {
   opacity: 0.55;
@@ -1055,7 +1064,11 @@
   margin: 4px 0 2px 4px;
   padding: 8px 0 8px 12px;
   border-left: 1px solid var(--acc-a35);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 5%, transparent), transparent 60%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 5%, transparent),
+    transparent 60%
+  );
   animation: rowIn 0.45s var(--spring) both;
 }
 .rule-group-head {
@@ -1104,7 +1117,7 @@ select.rule-value {
 .rule-row input.rule-date {
   width: 150px;
 }
-.rule-value .stars span {
+.rule-value .stars button {
   font-size: 15px;
 }
 .rule-and {

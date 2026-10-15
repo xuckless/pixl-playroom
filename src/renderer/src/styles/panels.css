@@ -19,6 +19,9 @@
 .histogram path {
   transition: d 0.45s var(--ease);
 }
+.histogram .chart-grid {
+  stroke: rgb(var(--fg-rgb) / 0.06);
+}
 .clip-marker {
   position: absolute;
   top: 4px;
@@ -202,11 +205,25 @@
   background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.02), rgb(var(--shade-rgb) / 0.2));
   margin: 6px 0;
 }
+.curve-hist {
+  fill: color-mix(in srgb, var(--acc) 14%, transparent);
+}
+.curve-grid {
+  stroke: rgb(var(--fg-rgb) / 0.06);
+}
+.curve-rest {
+  stroke: rgb(var(--fg-rgb) / 0.16);
+}
 .curve circle {
+  fill: rgb(var(--shade-rgb));
   transition: r 0.3s var(--spring);
 }
-.curve circle:hover {
+.curve circle:hover,
+.curve circle:focus-visible {
   r: 6;
+}
+.curve circle:focus-visible {
+  stroke-width: 2.5px;
 }
 
 /* ── colour wheels ─────────────────────────────────────────────── */

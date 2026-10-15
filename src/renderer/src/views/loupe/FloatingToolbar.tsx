@@ -1,9 +1,10 @@
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
+import { Slider } from '../../components/ui'
 import { Icon } from '../../components/icons'
 import { ASPECTS, aspectValue } from '../../lib/aspects'
 import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../../lib/geometry'
 import { useDevelop } from '../../state/develop'
-import { CROP_GUIDES, useUi, type BrushSlot } from '../../state/ui'
+import { CROP_GUIDES, DEFAULT_BRUSHES, useUi, type BrushSlot } from '../../state/ui'
 import { addLabel, addPickHint } from '../../lib/addpick'
 import { applyGuides } from '../../lib/upright'
 import { MAX_GUIDES } from './UprightGuides'
@@ -13,12 +14,17 @@ import { cancelObjects, commitObjects } from '../../lib/objects'
 import { useObjects, type ObjectsMode } from '../../state/objects'
 import { rich, t, tk } from '../../lib/i18n'
 
-/** A compact range for the floating bar: label, rail and value. */
+/**
+ * A compact slider for the floating bar: the app's slider (Shift fine,
+ * Alt-click or a double-click back to `def`, typed values, arrow keys), sized
+ * for the bar.
+ */
 export function BarRange({
   label,
   value,
   min,
   max,
+  def,
   onChange,
   suffix = ''
 }: {
@@ -26,29 +32,25 @@ export function BarRange({
   value: number
   min: number
   max: number
+  /** Where a reset puts it (the brush's own setting as it comes). */
+  def: number
   onChange: (v: number) => void
   suffix?: string
 }): React.JSX.Element {
-  const pct = ((value - min) / (max - min)) * 100
   return (
-    <label className="bar-range">
-      <span className="micro">{label}</span>
-      <span className="bar-track">
-        <span className="bar-fill" style={{ width: `${pct}%` }} />
-        <input
-          type="range"
-          min={min}
-          max={max}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          onKeyDown={(e) => e.stopPropagation()}
-        />
-      </span>
-      <span className="t-num bar-value">
-        {Math.round(value)}
-        {suffix}
-      </span>
-    </label>
+    <span className="bar-range">
+      <Slider
+        label={label}
+        value={value}
+        min={min}
+        max={max}
+        def={def}
+        format={(v) => `${Math.round(v)}${suffix}`}
+        onChange={(v) => onChange(v)}
+        onCommit={() => undefined}
+        adjusts={false}
+      />
+    </span>
   )
 }
 
@@ -134,6 +136,7 @@ function BrushBar(): React.JSX.Element {
       <BarRange
         label={t('Size')}
         value={brush.size}
+        def={DEFAULT_BRUSHES[slot].size}
         min={4}
         max={500}
         onChange={(size) => setBrush({ size })}
@@ -141,6 +144,7 @@ function BrushBar(): React.JSX.Element {
       <BarRange
         label={t('Feather')}
         value={brush.softness}
+        def={DEFAULT_BRUSHES[slot].softness}
         min={0}
         max={100}
         onChange={(softness) => setBrush({ softness })}
@@ -148,6 +152,7 @@ function BrushBar(): React.JSX.Element {
       <BarRange
         label={t('Flow')}
         value={brush.flow}
+        def={DEFAULT_BRUSHES[slot].flow}
         min={1}
         max={100}
         onChange={(flow) => setBrush({ flow })}
@@ -155,6 +160,7 @@ function BrushBar(): React.JSX.Element {
       <BarRange
         label={t('Density')}
         value={brush.density}
+        def={DEFAULT_BRUSHES[slot].density}
         min={1}
         max={100}
         onChange={(density) => setBrush({ density })}

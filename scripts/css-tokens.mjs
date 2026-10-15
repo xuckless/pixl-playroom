@@ -7,6 +7,12 @@
  *   node scripts/css-tokens.mjs --fix     move the three families onto tokens (no visual change)
  *   node scripts/css-tokens.mjs --json    the per-file counts, as tests/fixtures/css-literals.json holds them
  *
+ * The renderer's components (.tsx) are counted too, under `tsx:<path>`: a
+ * colour drawn from code (an SVG's fill, a chart's line) takes a token's
+ * var() in `style` as a stylesheet does. Data colours stay (a hue strip, a
+ * gamut's outline), held by the count; Mark.tsx, the wordmark's own art, is
+ * not counted.
+ *
  * The families, each written so it renders exactly as before while the
  * tokens hold today's values:
  *   rgba(157, 139, 234, a)  →  color-mix(in srgb, var(--acc) a·100%, transparent)
@@ -20,15 +26,10 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const STYLES = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '..',
-  'src',
-  'renderer',
-  'src',
-  'styles'
-)
+const RENDERER = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'renderer', 'src')
+const STYLES = join(RENDERER, 'styles')
 const EXEMPT = new Set(['tokens.css'])
+const TSX_EXEMPT = new Set(['components/Mark.tsx'])
 
 /** A literal colour: rgb()/rgba() with numbers, or a hex (not #fff/#000). */
 const LITERAL = /rgba?\(\s*\d[^)]*\)|#(?![fF]{3}\b|[fF]{6}\b|0{3}\b|0{6}\b)[0-9a-fA-F]{3,8}\b/g
@@ -49,6 +50,19 @@ function fix(css) {
 /** CSS without its comments: a colour named in a comment is not one. */
 const code = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '')
 
+/** TSX without its comments (block, and line ones that start a line or follow code). */
+const tsxCode = (src) => code(src).replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
+
+function tsxFiles(dir, rel = '') {
+  const out = []
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const r = rel ? `${rel}/${e.name}` : e.name
+    if (e.isDirectory()) out.push(...tsxFiles(join(dir, e.name), r))
+    else if (e.name.endsWith('.tsx') && !TSX_EXEMPT.has(r)) out.push(r)
+  }
+  return out.sort()
+}
+
 export function counts() {
   const out = {}
   for (const f of readdirSync(STYLES)
@@ -56,6 +70,10 @@ export function counts() {
     .sort()) {
     if (EXEMPT.has(f)) continue
     out[f] = (code(readFileSync(join(STYLES, f), 'utf8')).match(LITERAL) ?? []).length
+  }
+  for (const f of tsxFiles(RENDERER)) {
+    const n = (tsxCode(readFileSync(join(RENDERER, f), 'utf8')).match(LITERAL) ?? []).length
+    if (n > 0) out[`tsx:${f}`] = n
   }
   return out
 }

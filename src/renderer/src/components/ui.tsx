@@ -2,11 +2,21 @@ import { motion } from 'motion/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DialogBackdrop } from '../fx/DialogBackdrop'
 import { touchAdjusting } from '../lib/interacting'
-import { dragValue, dragValueLog, keyValue, keyValueLog, logFraction } from '../lib/sliderDrag'
+import {
+  dragValue,
+  dragValueLog,
+  isFine,
+  isReset,
+  keyStep,
+  keyValue,
+  keyValueLog,
+  logFraction
+} from '../lib/sliderDrag'
+import { useEscapeWhile } from '../lib/escape'
 import { LiquidGlass } from './glass/LiquidGlass'
 import { Icon, type IconName } from './icons'
 import { InfoTip, type Tip } from './InfoTip'
-import { t } from '../lib/i18n'
+import { t, tp } from '../lib/i18n'
 
 /** A panel section that remembers whether it was open. */
 export function Section({
@@ -207,11 +217,15 @@ export interface SliderProps {
   step?: number
   /** Double-click the slider to return here. */
   def?: number
+  /** False: no reset (a choice whose first stop is no default); `def` only anchors the fill. */
+  resettable?: boolean
   format?: (v: number) => string
   /** Called on every movement (`live` true) and on a typed value or a key (`live` false). */
   onChange: (v: number, live: boolean) => void
   /** Called once when a movement ends. */
   onCommit: () => void
+  /** Called when Escape takes a drag back (the value is already back where it started). */
+  onCancel?: () => void
   /** A CSS background for the track (colour sliders). */
   track?: string
   disabled?: boolean
@@ -241,6 +255,8 @@ const DRAG_SLOP = 3
 interface Grab {
   id: number
   x: number
+  /** The value when the press came (Escape goes back to it). */
+  start: number
   from: number
   last: number
   width: number
@@ -253,11 +269,11 @@ interface Grab {
  * A slider as one glass bar: the label and the value inside it, a frosted
  * knob riding over a fill that runs from the resting value to the current
  * one (so a bipolar slider fills out from its centre). A drag moves the
- * value by how far the pointer goes, never to where it was pressed (Alt
- * moves it a tenth as fast); it renders live and records history on
- * release. A click on the value types one (Enter sets it, Escape cancels).
- * Arrow keys step it (Shift ten steps, Alt a tenth); a double-click or Home
- * resets it.
+ * value by how far the pointer goes, never to where it was pressed; it
+ * renders live and records history on release, and Escape takes it back.
+ * A click on the value types one (Enter sets it, Escape cancels). The app's
+ * one rule (lib/sliderDrag.ts): Shift is fine, Alt-click, a double-click or
+ * Home resets; arrows step, Page Up and Page Down ten steps.
  */
 export function Slider({
   label,
@@ -266,9 +282,11 @@ export function Slider({
   max,
   step = 1,
   def = 0,
+  resettable = true,
   format = (v) => (Number.isInteger(step) ? String(Math.round(v)) : v.toFixed(2)),
   onChange,
   onCommit,
+  onCancel,
   track,
   disabled,
   title,
@@ -285,6 +303,7 @@ export function Slider({
   // Escape leaves the field: the blur that follows must not set what was typed.
   const cancelled = useRef(false)
   const reset = (): void => {
+    if (!resettable) return
     onChange(def, false)
     onCommit()
   }
@@ -313,12 +332,25 @@ export function Slider({
     if (g.moved) onCommit()
     else if (g.onValue) setText(format(value))
   }
+  // Escape mid-drag: back where the press found it, and nothing recorded.
+  const barRef = useRef<HTMLDivElement>(null)
+  useEscapeWhile(dragging, () => {
+    const g = grab.current
+    if (!g) return
+    grab.current = null
+    setDragging(false)
+    const el = barRef.current
+    if (el?.hasPointerCapture(g.id)) el.releasePointerCapture(g.id)
+    if (g.last !== g.start) onChange(g.start, false)
+    onCancel?.()
+  })
   const place = (v: number): number => (log ? logFraction(v, min, max) : frac(v, min, max))
   const at = place(value)
   const rest = place(def)
   const showZero = !track && def > min && def < max
   const bar = (
     <div
+      ref={barRef}
       className={`slider${disabled ? ' disabled' : ''}${value !== def ? ' changed' : ''}${dragging ? ' dragging' : ''}${track ? ' graded' : ''}${problem ? ' problem' : ''}`}
       title={title}
       aria-invalid={problem ? true : undefined}
@@ -340,15 +372,20 @@ export function Slider({
       }
       onPointerDown={(e) => {
         if (disabled || e.button !== 0 || text !== null) return
+        if (isReset(e) && !(e.target as Element).closest('.num, .info-tip')) {
+          reset()
+          return
+        }
         // The pointer is captured once a drag starts, not on the press: a
         // captured press loses its click, and so the double-click that resets.
         grab.current = {
           id: e.pointerId,
           x: e.clientX,
+          start: value,
           from: value,
           last: value,
           width: e.currentTarget.getBoundingClientRect().width,
-          fine: e.altKey,
+          fine: isFine(e),
           moved: false,
           onValue: !!(e.target as Element).closest('.num')
         }
@@ -363,9 +400,9 @@ export function Slider({
           e.currentTarget.setPointerCapture(e.pointerId)
           setDragging(true)
         }
-        // Alt pressed or let go mid-drag: carry on from here, at the new speed.
-        if (e.altKey !== g.fine) {
-          g.fine = e.altKey
+        // Shift pressed or let go mid-drag: carry on from here, at the new speed.
+        if (isFine(e) !== g.fine) {
+          g.fine = isFine(e)
           g.x = e.clientX
           g.from = g.last
         }
@@ -391,15 +428,9 @@ export function Slider({
       }}
       onKeyDown={(e) => {
         if (disabled || e.target !== e.currentTarget || e.metaKey || e.ctrlKey) return
-        const mod = e.shiftKey ? 'coarse' : e.altKey ? 'fine' : 'none'
-        const dir =
-          e.key === 'ArrowRight' || e.key === 'ArrowUp'
-            ? 1
-            : e.key === 'ArrowLeft' || e.key === 'ArrowDown'
-              ? -1
-              : 0
-        if (dir !== 0) {
-          onChange((log ? keyValueLog : keyValue)(value, dir, min, max, step, mod), false)
+        const k = keyStep(e)
+        if (k) {
+          onChange((log ? keyValueLog : keyValue)(value, k.dir, min, max, step, k.mod), false)
           onCommit()
         } else if (e.key === 'Home') reset()
         else if (e.key === 'Enter') setText(format(value))
@@ -465,7 +496,8 @@ export function Slider({
 /**
  * A slider over a few named stops (a format, a chroma): the editor's slider,
  * with a tick for each stop and the stop's name where the number would be.
- * It snaps to the stops; the bar fills from the first.
+ * It snaps to the stops; the bar fills from the first. It has no reset: its
+ * first stop is no default, and a double-click must not jump to it.
  */
 export function StepSlider<T extends string | number>({
   label,
@@ -507,6 +539,7 @@ export function StepSlider<T extends string | number>({
         max={last}
         step={1}
         def={0}
+        resettable={false}
         ticks={options.length}
         format={(i) => options[Math.min(last, Math.max(0, Math.round(i)))].label}
         onChange={pick}
@@ -690,26 +723,75 @@ export function Modal({
   )
 }
 
+/**
+ * A photo's rating as five stars: a radio group (Rating), one star a stop
+ * of its own. A click on a star sets that many, a click on the rating it
+ * has clears it; from the keys, arrows move it a star either way (to none
+ * below one), Home clears it, End gives five, and 0 to 5 set it. Each star's
+ * target is 24 px tall and a star's width apart; `compact` (a library tile)
+ * keeps them narrower, where the rating keys do the same.
+ */
 export function Stars({
   value,
-  onChange
+  onChange,
+  compact = false
 }: {
   value: number
   onChange?: (v: number) => void
+  compact?: boolean
 }): React.JSX.Element {
+  const label = value > 0 ? tp('{{count}} star', '{{count}} stars', value) : t('Not rated')
+  if (!onChange)
+    return (
+      <span className="stars" role="img" aria-label={label}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <span key={n} className={n <= value ? 'on' : ''} aria-hidden>
+            ★
+          </span>
+        ))}
+      </span>
+    )
+  const set = (v: number, group: HTMLElement | null): void => {
+    const next = Math.max(0, Math.min(5, v))
+    onChange(next)
+    group?.querySelectorAll<HTMLElement>('button')[Math.max(0, next - 1)]?.focus()
+  }
   return (
-    <span className="stars">
+    <span
+      className={`stars${compact ? ' compact' : ''}`}
+      role="radiogroup"
+      aria-label={t('Rating')}
+      onKeyDown={(e) => {
+        if (e.metaKey || e.ctrlKey || e.altKey) return
+        const g = e.currentTarget
+        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') set(value + 1, g)
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') set(value - 1, g)
+        else if (e.key === 'Home') set(0, g)
+        else if (e.key === 'End') set(5, g)
+        else if (/^[0-5]$/.test(e.key)) set(Number(e.key), g)
+        else return
+        e.preventDefault()
+        e.stopPropagation()
+      }}
+    >
       {[1, 2, 3, 4, 5].map((n) => (
-        <span
+        <button
           key={n}
+          type="button"
+          role="radio"
+          aria-checked={n === value}
+          aria-label={tp('{{count}} star', '{{count}} stars', n)}
+          // One stop for the group: the rating it has (the first star when none).
+          tabIndex={n === Math.max(1, value) ? 0 : -1}
           className={n <= value ? 'on' : ''}
           onClick={(e) => {
             e.stopPropagation()
-            onChange?.(n === value ? 0 : n)
+            onChange(n === value ? 0 : n)
           }}
+          onDoubleClick={(e) => e.stopPropagation()}
         >
-          ★
-        </span>
+          <span aria-hidden>★</span>
+        </button>
       ))}
     </span>
   )

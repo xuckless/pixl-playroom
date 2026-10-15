@@ -1,10 +1,12 @@
 /* Near-black OLED surfaces, one matte purple accent, hairlines that end in
    light. Surfaces have square corners; controls round by at most 2px. */
 :root {
-  /* A colour channel's own colour: the R, G and B of numbers and scopes. */
+  /* A colour channel's own colour: the R, G and B of numbers, curves and
+     scopes, and Y (luma, a curve's master) in the ink. */
   --ch-r: #ff6b7d;
   --ch-g: #6be38f;
   --ch-b: #7b9cff;
+  --ch-y: var(--text);
 
   color-scheme: dark;
 
@@ -105,16 +107,20 @@
  * characters differently). Space Grotesk carries Vietnamese itself.
  */
 :root:lang(zh-Hans) {
-  --font: 'Space Grotesk Variable', 'Space Grotesk', 'PingFang SC', 'Hiragino Sans GB',
+  --font:
+    'Space Grotesk Variable', 'Space Grotesk', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
-  --font-body: 'Manrope Variable', 'Manrope', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+  --font-body:
+    'Manrope Variable', 'Manrope', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI',
+    'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
 }
 :root:lang(ja) {
-  --font: 'Space Grotesk Variable', 'Space Grotesk', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
+  --font:
+    'Space Grotesk Variable', 'Space Grotesk', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
     'Yu Gothic UI', 'Meiryo UI', 'Noto Sans JP', system-ui, sans-serif;
-  --font-body: 'Manrope Variable', 'Manrope', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
-    'Yu Gothic UI', 'Meiryo UI', 'Noto Sans JP', system-ui, sans-serif;
+  --font-body:
+    'Manrope Variable', 'Manrope', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI',
+    'Meiryo UI', 'Noto Sans JP', system-ui, sans-serif;
 }
 /* Tracked capitals have no meaning in ideographs: set them close (the wordmark keeps its own). */
 :root:is(:lang(zh-Hans), :lang(ja)) body *:not(.wordmark, .wordmark *) {

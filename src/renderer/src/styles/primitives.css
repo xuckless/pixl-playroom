@@ -474,9 +474,10 @@ input[type='checkbox']:disabled {
 .slider:hover {
   background: rgb(var(--fg-rgb) / 0.05);
 }
+/* A solid ring, 3:1 against every theme's surfaces (WCAG 1.4.11). */
 .slider:focus-visible {
   box-shadow:
-    inset 0 0 0 1px var(--acc-a55),
+    inset 0 0 0 2px var(--acc),
     0 0 14px -6px var(--glow);
 }
 .sl-rail {
@@ -1041,26 +1042,39 @@ input[type='checkbox']:disabled {
     0 20px 50px -20px rgb(var(--shade-rgb) / 0.8);
 }
 
-/* stars */
+/* stars: each a 24 px tall target (WCAG 2.5.8), the glyph as it was */
 .stars {
   display: inline-flex;
-  gap: 1px;
   letter-spacing: 0;
 }
-.stars span {
-  color: rgb(var(--fg-rgb) / 0.18);
-  cursor: pointer;
+.stars > span,
+.stars button {
+  color: rgb(var(--fg-rgb) / 0.4);
   font-size: 11px;
-  transition:
-    color 0.2s,
-    transform 0.3s var(--spring);
 }
-.stars span:hover {
+.stars button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.stars.compact button {
+  width: 14px;
+}
+.stars button span {
+  transition: transform 0.3s var(--spring);
+}
+.stars button:hover span {
   transform: scale(1.3);
 }
-.stars span.on {
+.stars .on {
   color: var(--star);
-  text-shadow: 0 0 8px rgba(232, 197, 107, 0.5);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--star) 50%, transparent);
 }
 
 /* ── liquid glass ──────────────────────────────────────────────────

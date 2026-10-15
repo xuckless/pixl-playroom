@@ -1,30 +1,35 @@
 /**
  * A DaVinci Resolve colour wheel: the disc moves the colour balance (R, G, B
  * against one another, luma held), the ring under it the master (Y), and the
- * YRGB numbers below can be typed (Enter sets them) or scrubbed by dragging
- * their letter. Double-click the name to put the wheel back.
+ * YRGB numbers below can be typed (Enter sets them, Escape leaves them) or
+ * scrubbed by dragging their letter. Double-click the name to put the wheel
+ * back.
+ *
+ * Every part keeps the app's one rule (lib/sliderDrag.ts): Shift moves it
+ * finely, Alt-click or a double-click puts that part back, Escape takes a
+ * drag back. From the keys: the disc and the ring are sliders (arrows move
+ * the puck or the master, Shift finely, Home resets), and Up and Down step a
+ * number.
  *
  * Its disc is painted from `discToRgb` itself, so where it is pushed is the
  * colour the picture moves toward, as the vectorscope draws it.
  */
 import { useMemo, useRef, useState } from 'react'
-import { discToRgb, rgbToDisc, type Yrgb } from '../../../../shared/resolve'
+import { discToRgb, type Yrgb } from '../../../../shared/resolve'
 import { t } from '../../lib/i18n'
+import { useEscapeWhile } from '../../lib/escape'
+import { FINE, isFine, isReset, keyStep } from '../../lib/sliderDrag'
+import {
+  atDisc,
+  discPoint,
+  neutralOf,
+  nudgeChannel,
+  nudgeDisc,
+  type WheelScale
+} from '../../lib/wheel'
 import { InfoTip, type Tip } from '../InfoTip'
 
-export interface WheelScale {
-  /** The untouched value of every channel (0 for Lift, Gamma, Offset; 1 for Gain). */
-  neutral: number
-  /** The colour change at the disc's edge. */
-  reach: number
-  /** The master's change per pixel of a drag along the ring. */
-  ringStep: number
-  min: number
-  max: number
-  /** The number shown for a value (Offset's 25 + 100·o), and back. */
-  show?: (v: number) => number
-  read?: (n: number) => number
-}
+export type { WheelScale }
 
 const disc = new Map<number, string>()
 
@@ -61,13 +66,26 @@ function discImage(size: number): string {
 
 const CH = ['y', 'r', 'g', 'b'] as const
 
+/** A drag under way: where it started, so Escape can take it back, and where speed last changed. */
+interface Grab {
+  id: number
+  el: Element
+  start: Yrgb
+  /** The pointer and the value where the speed last changed (Shift pressed or let go). */
+  x: number
+  y: number
+  from: Yrgb
+  fine: boolean
+}
+
 function NumberField({
   ch,
   value,
   scale,
   onSet,
   onScrub,
-  onCommit
+  onCommit,
+  onCancel
 }: {
   ch: (typeof CH)[number]
   value: number
@@ -75,39 +93,92 @@ function NumberField({
   onSet: (v: number) => void
   onScrub: (v: number) => void
   onCommit: () => void
+  /** Escape took a scrub back to this. */
+  onCancel: (v: number) => void
 }): React.JSX.Element {
   const show = scale.show ?? ((v: number) => v)
   const read = scale.read ?? ((n: number) => n)
   const [text, setText] = useState<string | null>(null)
-  const grab = useRef<{ x: number; v: number } | null>(null)
+  const [scrubbing, setScrubbing] = useState(false)
+  const grab = useRef<{
+    id: number
+    el: Element
+    x: number
+    v: number
+    start: number
+    fine: boolean
+  } | null>(null)
+  // Escape leaves the field: the blur that follows must not set what was typed.
+  const cancelled = useRef(false)
   const clamp = (v: number): number => Math.min(scale.max, Math.max(scale.min, v))
   const commitText = (): void => {
     if (text === null) return
+    if (cancelled.current) {
+      cancelled.current = false
+      setText(null)
+      return
+    }
     const n = Number(text.replace(',', '.'))
     setText(null)
     if (!Number.isFinite(n)) return
     onSet(clamp(read(n)))
     onCommit()
   }
+  const resetChannel = (): void => {
+    onSet(scale.neutral)
+    onCommit()
+  }
+  const end = (): void => {
+    const g = grab.current
+    grab.current = null
+    setScrubbing(false)
+    if (g?.el.hasPointerCapture(g.id)) g.el.releasePointerCapture(g.id)
+  }
+  useEscapeWhile(scrubbing, () => {
+    const g = grab.current
+    end()
+    if (g) onCancel(g.start)
+  })
   return (
     <label className={`gw-field gw-${ch}`}>
       <span
         className="gw-ch"
         title={t('Drag to change')}
         onPointerDown={(e) => {
-          ;(e.target as Element).setPointerCapture?.(e.pointerId)
-          grab.current = { x: e.clientX, v: value }
+          if (e.button !== 0) return
+          if (isReset(e)) return resetChannel()
+          e.currentTarget.setPointerCapture(e.pointerId)
+          grab.current = {
+            id: e.pointerId,
+            el: e.currentTarget,
+            x: e.clientX,
+            v: value,
+            start: value,
+            fine: isFine(e)
+          }
+          setScrubbing(true)
         }}
         onPointerMove={(e) => {
           const g = grab.current
-          if (!g) return
-          const step = scale.ringStep * (e.shiftKey ? 0.2 : 1)
+          if (!g || g.id !== e.pointerId) return
+          // Shift pressed or let go: carry on from here, at the new speed.
+          if (isFine(e) !== g.fine) {
+            g.fine = isFine(e)
+            g.x = e.clientX
+            g.v = value
+          }
+          const step = scale.ringStep * (g.fine ? FINE : 1)
           onScrub(clamp(g.v + (e.clientX - g.x) * step))
         }}
         onPointerUp={() => {
           if (grab.current) onCommit()
-          grab.current = null
+          end()
         }}
+        onPointerCancel={() => {
+          if (grab.current) onCommit()
+          end()
+        }}
+        onDoubleClick={resetChannel}
       >
         {ch.toUpperCase()}
       </span>
@@ -122,9 +193,21 @@ function NumberField({
         onBlur={commitText}
         onKeyDown={(e) => {
           e.stopPropagation()
+          const k =
+            e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key.startsWith('Page')
+              ? keyStep(e)
+              : null
+          if (k) {
+            e.preventDefault()
+            const next = nudgeChannel(value, scale, k.dir, k.mod)
+            onSet(next)
+            onCommit()
+            setText(show(next).toFixed(2))
+            return
+          }
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
           if (e.key === 'Escape') {
-            setText(null)
+            cancelled.current = true
             ;(e.target as HTMLInputElement).blur()
           }
         }}
@@ -153,35 +236,65 @@ export function GradeWheel({
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<'disc' | 'ring' | null>(null)
-  const ring = useRef<{ x: number; y: number } | null>(null)
+  const grab = useRef<Grab | null>(null)
   const bg = useMemo(() => discImage(size), [size])
   const n = scale.neutral
   const r = size / 2
-  const at = rgbToDisc(value.r - n, value.g - n, value.b - n)
-  const px = Math.max(-1, Math.min(1, at.x / scale.reach))
-  const py = Math.max(-1, Math.min(1, at.y / scale.reach))
-  const len = Math.hypot(px, py)
-  const dot = len > 1 ? { x: px / len, y: py / len } : { x: px, y: py }
+  const dot = discPoint(value, scale)
 
-  const setDisc = (e: React.PointerEvent): void => {
+  /** The pointer's place on the disc, −1…1 each way. */
+  const pointer = (e: React.PointerEvent): { x: number; y: number } => {
     const b = (ref.current as HTMLDivElement).getBoundingClientRect()
-    let x = (e.clientX - b.left - r) / r
-    let y = (r - (e.clientY - b.top)) / r
-    const d = Math.hypot(x, y)
-    if (d > 1) {
-      x /= d
-      y /= d
+    return { x: (e.clientX - b.left - r) / r, y: (r - (e.clientY - b.top)) / r }
+  }
+  const set = (v: Yrgb, live: boolean): void => {
+    onChange(v, live)
+    if (!live) onCommit()
+  }
+  const reset = (): void => set(neutralOf(scale), false)
+  const resetDisc = (): void => set({ ...value, r: n, g: n, b: n }, false)
+  const resetRing = (): void => set({ ...value, y: n }, false)
+
+  const start = (e: React.PointerEvent, part: 'disc' | 'ring', from: Yrgb): void => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    grab.current = {
+      id: e.pointerId,
+      el: e.currentTarget,
+      start: value,
+      x: e.clientX,
+      y: e.clientY,
+      from,
+      fine: isFine(e)
     }
-    // Fine control near the middle, where most corrections live.
-    const k = e.shiftKey ? 0.25 : 1
-    const c = discToRgb(x * scale.reach * k, y * scale.reach * k)
-    onChange({ ...value, r: n + c.r, g: n + c.g, b: n + c.b }, true)
+    setDrag(part)
   }
-  const reset = (): void => {
-    onChange({ y: n, r: n, g: n, b: n }, false)
-    onCommit()
+  const end = (commit: boolean): void => {
+    const g = grab.current
+    grab.current = null
+    setDrag(null)
+    if (g?.el.hasPointerCapture(g.id)) g.el.releasePointerCapture(g.id)
+    if (g && commit) onCommit()
   }
+  // Escape mid-drag: back where the press found it, and nothing recorded.
+  useEscapeWhile(drag !== null, () => {
+    const g = grab.current
+    end(false)
+    if (g) onChange(g.start, false)
+  })
+  /** Shift pressed or let go mid-drag: carry on from here, at the new speed. */
+  const respeed = (g: Grab, e: React.PointerEvent): void => {
+    if (isFine(e) === g.fine) return
+    g.fine = isFine(e)
+    g.x = e.clientX
+    g.y = e.clientY
+    g.from = value
+  }
+
   const ringPos = Math.max(0, Math.min(1, (value.y - scale.min) / (scale.max - scale.min)))
+  const shown = scale.show ?? ((v: number) => v)
+  const balance = CH.slice(1)
+    .map((ch) => `${ch.toUpperCase()} ${shown(value[ch]).toFixed(2)}`)
+    .join(', ')
   return (
     <div className="gwheel">
       <div className="gw-head">
@@ -194,19 +307,47 @@ export function GradeWheel({
         ref={ref}
         className={`gw-disc${drag === 'disc' ? ' dragging' : ''}`}
         style={{ width: size, height: size, backgroundImage: bg ? `url(${bg})` : undefined }}
+        role="slider"
+        tabIndex={0}
+        aria-roledescription={t('colour wheel')}
+        aria-label={t('{{name}} balance', { name: label })}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(Math.hypot(dot.x, dot.y) * 100)}
+        aria-valuetext={balance}
         onPointerDown={(e) => {
-          setDrag('disc')
-          ;(e.target as Element).setPointerCapture?.(e.pointerId)
-          setDisc(e)
+          if (e.button !== 0) return
+          if (isReset(e)) return resetDisc()
+          // A press puts the puck where it lands; with Shift it stays, to be nudged finely.
+          const p = pointer(e)
+          const from = isFine(e) ? value : atDisc(value, scale, p.x, p.y)
+          start(e, 'disc', from)
+          if (from !== value) onChange(from, true)
         }}
-        onPointerMove={(e) => drag === 'disc' && setDisc(e)}
-        onPointerUp={() => {
-          if (drag === 'disc') onCommit()
-          setDrag(null)
+        onPointerMove={(e) => {
+          const g = grab.current
+          if (drag !== 'disc' || !g || g.id !== e.pointerId) return
+          respeed(g, e)
+          const k = (g.fine ? FINE : 1) / r
+          const p = discPoint(g.from, scale)
+          onChange(
+            atDisc(value, scale, p.x + (e.clientX - g.x) * k, p.y - (e.clientY - g.y) * k),
+            true
+          )
         }}
-        onDoubleClick={() => {
-          onChange({ ...value, r: n, g: n, b: n }, false)
-          onCommit()
+        onPointerUp={() => drag === 'disc' && end(true)}
+        onPointerCancel={() => drag === 'disc' && end(true)}
+        onDoubleClick={resetDisc}
+        onKeyDown={(e) => {
+          if (e.metaKey || e.ctrlKey || e.altKey) return
+          const k = keyStep(e)
+          if (k && !e.key.startsWith('Page')) {
+            const axis = e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? 'x' : 'y'
+            set(nudgeDisc(value, scale, axis, k.dir, k.mod), false)
+          } else if (e.key === 'Home') resetDisc()
+          else return
+          e.preventDefault()
+          e.stopPropagation()
         }}
       >
         <span className="gw-cross" aria-hidden />
@@ -216,26 +357,37 @@ export function GradeWheel({
         className={`gw-ring${drag === 'ring' ? ' dragging' : ''}`}
         style={{ width: size }}
         title={t('Drag for the master (Y)')}
+        role="slider"
+        tabIndex={0}
+        aria-label={t('{{name}} master', { name: label })}
+        aria-valuemin={shown(scale.min)}
+        aria-valuemax={shown(scale.max)}
+        aria-valuenow={shown(value.y)}
+        aria-valuetext={shown(value.y).toFixed(2)}
         onPointerDown={(e) => {
-          setDrag('ring')
-          ;(e.target as Element).setPointerCapture?.(e.pointerId)
-          ring.current = { x: e.clientX, y: value.y }
+          if (e.button !== 0) return
+          if (isReset(e)) return resetRing()
+          start(e, 'ring', value)
         }}
         onPointerMove={(e) => {
-          const g = ring.current
-          if (drag !== 'ring' || !g) return
-          const step = scale.ringStep * (e.shiftKey ? 0.2 : 1)
-          const y = Math.min(scale.max, Math.max(scale.min, g.y + (e.clientX - g.x) * step))
+          const g = grab.current
+          if (drag !== 'ring' || !g || g.id !== e.pointerId) return
+          respeed(g, e)
+          const step = scale.ringStep * (g.fine ? FINE : 1)
+          const y = Math.min(scale.max, Math.max(scale.min, g.from.y + (e.clientX - g.x) * step))
           onChange({ ...value, y }, true)
         }}
-        onPointerUp={() => {
-          if (drag === 'ring') onCommit()
-          setDrag(null)
-          ring.current = null
-        }}
-        onDoubleClick={() => {
-          onChange({ ...value, y: n }, false)
-          onCommit()
+        onPointerUp={() => drag === 'ring' && end(true)}
+        onPointerCancel={() => drag === 'ring' && end(true)}
+        onDoubleClick={resetRing}
+        onKeyDown={(e) => {
+          if (e.metaKey || e.ctrlKey || e.altKey) return
+          const k = keyStep(e)
+          if (k) set({ ...value, y: nudgeChannel(value.y, scale, k.dir, k.mod) }, false)
+          else if (e.key === 'Home') resetRing()
+          else return
+          e.preventDefault()
+          e.stopPropagation()
         }}
       >
         <span className="gw-ring-knob" style={{ left: `${ringPos * 100}%` }} />
@@ -250,6 +402,7 @@ export function GradeWheel({
             onSet={(v) => onChange({ ...value, [ch]: v }, false)}
             onScrub={(v) => onChange({ ...value, [ch]: v }, true)}
             onCommit={onCommit}
+            onCancel={(v) => onChange({ ...value, [ch]: v }, false)}
           />
         ))}
       </div>

@@ -118,6 +118,7 @@ export function RS({
         onGesture?.(false)
         commit(label)
       }}
+      onCancel={() => onGesture?.(false)}
     />
   )
 }
@@ -798,10 +799,10 @@ export function ToneCurveCustom(): React.JSX.Element | null {
   const setChannel = useDevelop((s) => s.setCurveChannel)
   if (!recipe) return null
   const colours: Record<CurveChannel, string> = {
-    master: '#c9bdf7',
-    red: '#ff5a5a',
-    green: '#5aff78',
-    blue: '#5a8cff'
+    master: 'var(--ch-y)',
+    red: 'var(--ch-r)',
+    green: 'var(--ch-g)',
+    blue: 'var(--ch-b)'
   }
   const hist =
     channel === 'master'
@@ -828,6 +829,7 @@ export function ToneCurveCustom(): React.JSX.Element | null {
       <CurveEditor
         points={recipe.toneCurve[channel]}
         colour={colours[channel]}
+        label={t('Curves')}
         histogram={hist}
         onChange={(p: CurvePointSetting[], live) => edit((r) => (r.toneCurve[channel] = p), live)}
         onCommit={() => commit(`Curves: Custom (${channel})`)}

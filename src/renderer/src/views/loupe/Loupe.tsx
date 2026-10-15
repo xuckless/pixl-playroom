@@ -550,7 +550,12 @@ export function Loupe(): React.JSX.Element {
         } else {
           const sel = qs.find((x) => x.id === dev.qualifierId) ?? qs[qs.length - 1]
           const keyed = qualifierFromSample(sel.id, sample)
-          Object.assign(sel, { keyHue: keyed.keyHue, keySat: keyed.keySat, keyLum: keyed.keyLum })
+          Object.assign(sel, {
+            keyHue: keyed.keyHue,
+            keySat: keyed.keySat,
+            keyLum: keyed.keyLum,
+            picked: keyed.picked
+          })
           scoped.replace(next, tk('Qualifier: re-sample'))
         }
         setTool('none')

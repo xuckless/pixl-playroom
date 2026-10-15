@@ -3,6 +3,7 @@
   "aperture.css": 3,
   "base.css": 0,
   "dialogs.css": 11,
+  "fit.css": 0,
   "fx.css": 5,
   "index.css": 0,
   "library.css": 6,
@@ -14,5 +15,10 @@
   "primitives.css": 5,
   "scopes.css": 3,
   "shell.css": 9,
-  "splash.css": 1
+  "splash.css": 1,
+  "tsx:develop/scopes/CieChart.tsx": 4,
+  "tsx:fx/AmbientGradient.tsx": 4,
+  "tsx:panels/global.tsx": 33,
+  "tsx:panels/lens.tsx": 10,
+  "tsx:panels/resolve.tsx": 28
 }

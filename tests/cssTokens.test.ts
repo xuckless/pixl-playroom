@@ -7,11 +7,12 @@ import { counts } from '../scripts/css-tokens.mjs'
 
 /**
  * Colours live on tokens (styles/tokens.css, styles/themes/) so a theme
- * changes them in one place: a stylesheet may hold no more colour literals
- * than it did (tests/fixtures/css-literals.json, made by
+ * changes them in one place: a stylesheet, or a component drawing in code,
+ * may hold no more colour literals than it did
+ * (tests/fixtures/css-literals.json, made by
  * `node scripts/css-tokens.mjs --json`). Lower the counts as literals move.
  */
-test('no stylesheet gains a colour literal (a ratchet: use a token)', () => {
+test('no stylesheet or component gains a colour literal (a ratchet: use a token)', () => {
   const baseline = JSON.parse(
     readFileSync(join(import.meta.dirname, 'fixtures', 'css-literals.json'), 'utf8')
   ) as Record<string, number>

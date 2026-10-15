@@ -6,6 +6,7 @@ import type { HslBand } from '../../../shared/recipe'
 import { areaPath, stopsBins, stopsX } from '../../../shared/scopes'
 import { withKey } from '../lib/commands'
 import { bandOfHue } from '../lib/helpers'
+import { CHANNEL_COLOURS, LUMA_COLOUR } from '../lib/channels'
 import { Icon } from './icons'
 import { InfoTip, type Tip } from './InfoTip'
 import { TechInfo } from './TechInfo'
@@ -82,18 +83,22 @@ export function Histogram({
     // Ignore the end bins when scaling: a clipped end would flatten the rest.
     const inner = (c: number[]): number => Math.max(1, ...c.slice(1, -1))
     const max = Math.max(...chans.map(inner), inner(luma))
-    const colours = ['#ff5a6e', '#5ee08a', '#6d8cff']
     return (
       <>
         <g style={{ mixBlendMode: 'screen' }}>
           {chans.map((c, i) => (
-            <path key={i} d={areaPath(c, w, h, max, log)} fill={colours[i]} fillOpacity={0.55} />
+            <path
+              key={i}
+              d={areaPath(c, w, h, max, log)}
+              style={{ fill: CHANNEL_COLOURS[i] }}
+              fillOpacity={0.55}
+            />
           ))}
         </g>
         <path
           d={areaPath(luma, w, h, max, log)}
           fill="none"
-          stroke="#ebe9f3"
+          style={{ stroke: LUMA_COLOUR }}
           strokeOpacity={0.55}
           strokeWidth={1}
         />
@@ -115,7 +120,7 @@ export function Histogram({
           <rect className="hdr-headroom" x={whiteX} y={0} width={w - whiteX} height={h} />
         )}
         {(whiteX === null ? [0.25, 0.5, 0.75] : []).map((f) => (
-          <line key={f} x1={f * w} x2={f * w} y1={0} y2={h} stroke="rgba(255,255,255,0.06)" />
+          <line key={f} x1={f * w} x2={f * w} y1={0} y2={h} className="chart-grid" />
         ))}
         {content}
         {whiteX !== null && <line className="hdr-white" x1={whiteX} x2={whiteX} y1={0} y2={h} />}

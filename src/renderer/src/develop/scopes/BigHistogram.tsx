@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react'
 import type { ImageStats } from '../../../../shared/engine-types'
 import { HDR_FLOOR_STOPS, areaPath, stopsBins, stopsX } from '../../../../shared/scopes'
 import { t, tk } from '../../lib/i18n'
+import { CHANNEL_COLOURS, LUMA_COLOUR } from '../../lib/channels'
 
 type Mode = 'overlay' | 'parade' | 'red' | 'green' | 'blue' | 'luma'
 
@@ -21,7 +22,7 @@ const MODES: { value: Mode; label: string }[] = [
   { value: 'luma', label: tk('Luma') }
 ]
 
-const COLOURS = ['#ff5a6e', '#5ee08a', '#6d8cff']
+const COLOURS = CHANNEL_COLOURS
 const NAMES = [tk('Red'), tk('Green'), tk('Blue')]
 const W = 900
 const H = 300
@@ -107,7 +108,7 @@ export function BigHistogram({
               key={i}
               d={areaPath(s.counts, w, H, max, log)}
               fill="none"
-              stroke={s.colour}
+              style={{ stroke: s.colour }}
               strokeOpacity={s.ghost ? 0.4 : 0.8}
               strokeWidth={s.ghost ? 1 : 1.4}
               strokeDasharray={s.ghost ? '4 3' : undefined}
@@ -117,7 +118,7 @@ export function BigHistogram({
             <path
               key={i}
               d={areaPath(s.counts, w, H, max, log)}
-              fill={s.colour}
+              style={{ fill: s.colour }}
               fillOpacity={0.5}
             />
           )
@@ -137,8 +138,8 @@ export function BigHistogram({
         'o',
         [
           ...a.chans.map((c, i) => ({ counts: c, colour: COLOURS[i] })),
-          { counts: a.luma, colour: '#ebe9f3', line: true },
-          ...(b ? [{ counts: b.luma, colour: '#ebe9f3', ghost: true, line: true }] : [])
+          { counts: a.luma, colour: LUMA_COLOUR, line: true },
+          ...(b ? [{ counts: b.luma, colour: LUMA_COLOUR, ghost: true, line: true }] : [])
         ],
         0,
         W
@@ -157,8 +158,8 @@ export function BigHistogram({
       panel(
         'l',
         [
-          { counts: a.luma, colour: '#ebe9f3' },
-          ...(b ? [{ counts: b.luma, colour: '#ebe9f3', ghost: true, line: true }] : [])
+          { counts: a.luma, colour: LUMA_COLOUR },
+          ...(b ? [{ counts: b.luma, colour: LUMA_COLOUR, ghost: true, line: true }] : [])
         ],
         0,
         W

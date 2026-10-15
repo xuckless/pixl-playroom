@@ -241,7 +241,11 @@ aside.right .panels {
 .spine button.on {
   color: var(--acc);
   border-color: color-mix(in srgb, var(--acc) 40%, transparent);
-  background: linear-gradient(160deg, color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 3%, transparent));
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--acc) 16%, transparent),
+    color-mix(in srgb, var(--acc) 3%, transparent)
+  );
   box-shadow: 0 0 18px -8px var(--glow);
 }
 .spine button.on::after {
@@ -325,7 +329,12 @@ aside.right .panels {
 .rail-group .line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), var(--hair) 40%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    var(--hair) 40%,
+    transparent
+  );
 }
 .rail-item {
   display: flex;
@@ -691,6 +700,11 @@ button.timeline-head {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+.floating-toolbar .bar-range .slider {
+  width: 132px;
+  height: 24px;
+  margin: 0;
 }
 .bar-track {
   position: relative;
