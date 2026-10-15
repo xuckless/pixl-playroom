@@ -110,7 +110,7 @@ import { openTopMenu, popupMenu, setMenuSpec, topMenus } from './menu'
 import { languageState, setLanguage } from './i18n'
 import { isLanguageSetting, t, type LanguageSetting, tk } from '../shared/i18n'
 import { normaliseProof } from '../shared/proof'
-import { readProfile, scanProfiles } from './iccprofiles'
+import { chooseProfile, readProfile, scanProfiles } from './iccprofiles'
 import type { CopyOptions } from './indexer/service'
 import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
 import { accountStatus, cancelSignIn, signIn, signOut } from './account'
@@ -746,7 +746,9 @@ export function registerIpc(s: Services): void {
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
     if (r.canceled || !r.filePaths[0]) return null
     const read = await readProfile(r.filePaths[0])
-    return 'found' in read ? { profile: read.found } : { error: read.error }
+    if (!('found' in read)) return { error: read.error }
+    chooseProfile(read.found.path)
+    return { profile: read.found }
   })
   handle(IPC.develop.proofCheck, (key: string, settings: unknown) =>
     s.sessions.proofCheck(key, normaliseProof(settings))

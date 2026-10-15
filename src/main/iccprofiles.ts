@@ -13,6 +13,7 @@ import { createHash } from 'crypto'
 import { readdir, readFile, stat } from 'fs/promises'
 import { homedir } from 'os'
 import { basename, extname, join } from 'path'
+import { isSafeLocalPath } from './contain'
 import {
   MAX_ICC_BYTES,
   mergeBySha,
@@ -131,6 +132,23 @@ export function scanProfiles(folders: string[] = profileFolders()): Promise<Foun
   return scanning
 }
 
+/** Profiles chosen with Browse… or Locate… this run: a network path among them is the person's own choice. */
+const chosen = new Set<string>()
+
+/** A profile file the person chose (Browse…, Locate…): read from where it is, a network share included. */
+export function chooseProfile(path: string): void {
+  chosen.add(path)
+}
+
+/**
+ * Whether a proof's path may be looked at. It travels in a copy's sidecar
+ * and in a project, so it is a file's word: never a device, and a network
+ * path only when chosen here (on Windows, looking at a UNC path sends the
+ * person's NTLM hash to whoever serves it). A profile elsewhere is still
+ * found by its SHA-256 in the folders scanned.
+ */
+const mayRead = (path: string): boolean => chosen.has(path) || isSafeLocalPath(path)
+
 /** A profile's bytes as the engine takes them, by SHA-256: the last few used. */
 const kept = new Map<string, number[]>()
 
@@ -149,9 +167,11 @@ function keep(sha: string, bytes: Uint8Array): number[] {
  */
 export async function profileBytes(p: IccProof): Promise<number[] | null> {
   const have = kept.get(p.sha)
+  const readable = mayRead(p.path)
   // Kept, and its file still there (a profile deleted or unmounted since is not proofed with).
   if (
     have &&
+    readable &&
     (await stat(p.path).then(
       (s) => s.isFile() && s.size === have.length,
       () => false
@@ -165,7 +185,7 @@ export async function profileBytes(p: IccProof): Promise<number[] | null> {
     const r = await readProfile(path)
     return 'found' in r && r.found.sha === p.sha ? keep(p.sha, r.bytes) : null
   }
-  const direct = await at(p.path)
+  const direct = readable ? await at(p.path) : null
   if (direct) return direct
   kept.delete(p.sha)
   // Elsewhere: where the last scan saw it, else where a scan now finds it.
@@ -181,6 +201,7 @@ export async function profileBytes(p: IccProof): Promise<number[] | null> {
 /** For tests: forget what was scanned and kept. */
 export function resetProfiles(): void {
   scanned.clear()
+  chosen.clear()
   kept.clear()
   lastScan = null
 }
