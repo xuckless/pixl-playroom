@@ -26,6 +26,8 @@ export interface InvariantPlace {
   op: GradeOpKind | null
   /** In the SDR rendition an HDR export writes beside its master. */
   sdr: boolean
+  /** A Qualifier card's own op (compile's `qualifierIndex`), since 0.21 in the base layer. */
+  qualifier?: boolean
 }
 
 /**
@@ -136,7 +138,8 @@ export function invariantPlace(
   text: string,
   grade: Grade | null,
   sdrGrade: Grade | null,
-  layerIndex: Record<string, number>
+  layerIndex: Record<string, number>,
+  qualifierIndex: Record<string, { layer: number; qualifier: number }> = {}
 ): InvariantPlace | null {
   const at = PATH.exec(text)
   if (!at) return null
@@ -155,7 +158,27 @@ export function invariantPlace(
     op = layer.stages[Number(at[3])]?.ops[Number(at[4])]
     if (op && at[5] !== undefined && 'Masked' in op) op = op.Masked.ops[Number(at[5])]
   }
-  return { layer: id, layerName: layer.name, op: op ? opKind(op) : null, sdr }
+  // A Qualifier op is a Qualifier card's when compile placed one there: its
+  // place among the layer's Qualifier ops, as `qualifierIndex` counts them.
+  let qualifier = false
+  if (!sdr && at[3] !== undefined && at[5] === undefined && op && 'Qualifier' in op) {
+    let n = 0
+    const stage = Number(at[3])
+    const opAt = Number(at[4])
+    layer.stages.forEach((st, si) =>
+      st.ops.forEach((o, oi) => {
+        if ('Qualifier' in o && (si < stage || (si === stage && oi < opAt))) n++
+      })
+    )
+    qualifier = Object.values(qualifierIndex).some((q) => q.layer === index && q.qualifier === n)
+  }
+  return {
+    layer: id,
+    layerName: layer.name,
+    op: op ? opKind(op) : null,
+    sdr,
+    ...(qualifier ? { qualifier } : {})
+  }
 }
 
 /** The name compile gives a Qualifier card's layer. */
@@ -168,7 +191,8 @@ const QUALIFIER_LAYER = 'qualifier'
  * grade, which has no ids.
  */
 const isQualifierLayer = (place: InvariantPlace): boolean =>
-  place.layer !== null ? place.layer.startsWith('q:') : place.layerName === QUALIFIER_LAYER
+  place.qualifier === true ||
+  (place.layer !== null ? place.layer.startsWith('q:') : place.layerName === QUALIFIER_LAYER)
 
 /** What to tell the user. */
 export function describeInvariant(place: InvariantPlace | null, stage: string): string {

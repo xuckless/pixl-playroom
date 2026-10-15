@@ -605,7 +605,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.copy',
-    label: tk("Copy the focused photo's settings"),
+    label: tk('Copy the focused photo’s settings'),
     group: 'Edit',
     context: 'library',
     keys: ['Mod+C'],

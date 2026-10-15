@@ -136,8 +136,8 @@ function notes(sum: TargetsSummary, o: BatchOutcome): string {
   if (o.limited.length > 0)
     out.push(
       tp(
-        "{{count}} held at the slider's end",
-        "{{count}} held at the slider's end",
+        '{{count}} held at the slider’s end',
+        '{{count}} held at the slider’s end',
         o.limited.length
       )
     )

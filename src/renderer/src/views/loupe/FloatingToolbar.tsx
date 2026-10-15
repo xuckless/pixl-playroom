@@ -181,7 +181,7 @@ function BrushBar(): React.JSX.Element {
       <button
         className={brush.pressure ? 'on sm' : 'sm'}
         onClick={() => setBrush({ pressure: !brush.pressure })}
-        title={t("A pen's pressure sets size and strength")}
+        title={t('A pen’s pressure sets size and strength')}
       >
         {t('Pressure')}
       </button>

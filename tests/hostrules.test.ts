@@ -175,14 +175,21 @@ test('an Invariant in a Qualifier cardâ€™s layer names the card; a mask named â€
   l.settings.basic.highlights = -80
   r.layers.push(l)
   const c = compile(r, ctx)
-  const qi = c.layerIndex[qualifierLayerId('k1')]
+  // Since 0.21 (E77) a qualifier is an op in the base layer, found by its key's name.
+  const at = c.qualifierIndex[qualifierLayerId('k1')]
+  assert.ok(at)
+  const base = c.grade!.layers[at.layer]
+  const si = base.stages.findIndex((st) => st.ops.some((op) => 'Qualifier' in op))
+  const oi = base.stages[si].ops.findIndex((op) => 'Qualifier' in op)
   const own = invariantPlace(
-    `grade.layers[${qi}].stages[0].ops[0]: NaN`,
+    `grade.layers[${at.layer}].stages[${si}].ops[${oi}]: NaN`,
     c.grade,
     null,
-    c.layerIndex
+    c.layerIndex,
+    c.qualifierIndex
   )!
-  assert.equal(own.layer, qualifierLayerId('k1'))
+  assert.equal(own.layer, 'base')
+  assert.equal(own.qualifier, true)
   assert.match(describeInvariant(own, 'grade'), /^Qualifier in the photoâ€™s settings/)
   // The SDR grade has no ids: compile's own name says it.
   assert.match(
@@ -191,10 +198,10 @@ test('an Invariant in a Qualifier cardâ€™s layer names the card; a mask named â€
   )
   const mi = c.layerIndex[l.id]
   const stages = c.grade!.layers[mi].stages
-  const si = stages.findIndex((st) => st.ops.some((op) => 'Tone' in op))
-  const oi = stages[si].ops.findIndex((op) => 'Tone' in op)
+  const msi = stages.findIndex((st) => st.ops.some((op) => 'Tone' in op))
+  const moi = stages[msi].ops.findIndex((op) => 'Tone' in op)
   const mask = invariantPlace(
-    `grade.layers[${mi}].stages[${si}].ops[${oi}]: NaN`,
+    `grade.layers[${mi}].stages[${msi}].ops[${moi}]: NaN`,
     c.grade,
     null,
     c.layerIndex

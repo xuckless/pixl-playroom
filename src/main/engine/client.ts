@@ -84,11 +84,12 @@ export class EngineError extends Error {
   nameInvariant(
     grade: Grade | null,
     sdrGrade: Grade | null,
-    layerIndex: Record<string, number>
+    layerIndex: Record<string, number>,
+    qualifierIndex: Record<string, { layer: number; qualifier: number }> = {}
   ): this {
     if (this.code !== 'Invariant') return this
     const { stage, text } = invariantDetail(this.detail)
-    this.invariant = invariantPlace(text, grade, sdrGrade, layerIndex)
+    this.invariant = invariantPlace(text, grade, sdrGrade, layerIndex, qualifierIndex)
     this.message = describeInvariant(this.invariant, stage)
     return this
   }

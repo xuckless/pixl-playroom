@@ -143,7 +143,7 @@ function Clipboard({ keys }: { keys: string[] }): React.JSX.Element {
         </div>
       ) : (
         <p className="qd-note muted">
-          {t("Copy a photo's settings ({{key}}) to paste them here.", {
+          {t('Copy a photo’s settings ({{key}}) to paste them here.', {
             key: keyHint('library.copy')
           })}
         </p>

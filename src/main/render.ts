@@ -416,9 +416,12 @@ function keyWithin(compiled: Compiled, probe: MaskProbe): Inspect | null {
  * came from (engine 0.18, HR-0.18-9): the window marks that adjustment, the
  * edit stays, and nothing renders again without it.
  */
-function named(compiled: Pick<Compiled, 'grade' | 'layerIndex'>): (err: unknown) => never {
+function named(
+  compiled: Pick<Compiled, 'grade' | 'layerIndex' | 'qualifierIndex'>
+): (err: unknown) => never {
   return (err) => {
-    if (err instanceof EngineError) err.nameInvariant(compiled.grade, null, compiled.layerIndex)
+    if (err instanceof EngineError)
+      err.nameInvariant(compiled.grade, null, compiled.layerIndex, compiled.qualifierIndex)
     throw err
   }
 }
@@ -1708,7 +1711,9 @@ class Session {
       measure: measureOf(kind === 'draft' ? 2 : 1),
       ...(beside ? { inspect: { Beside: { mask: beside.probe, depth: 'Eight' as const } } } : {})
     })
-    const opts = (native: NativeRefs | undefined) => ({
+    const opts = (
+      native: NativeRefs | undefined
+    ): { signal: AbortSignal; frame?: string; native?: NativeRefs } => ({
       signal,
       frame,
       ...(floatSdr || native

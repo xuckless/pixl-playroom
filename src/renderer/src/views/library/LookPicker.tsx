@@ -8,6 +8,7 @@ import { Icon } from '../../components/icons'
 import { Slider } from '../../components/ui'
 import { api } from '../../lib/api'
 import { smartReady } from '../../lib/applyLook'
+import { modName } from '../../lib/commands'
 import { t } from '../../lib/i18n'
 import {
   applyLookTo,
@@ -239,8 +240,9 @@ export function LookPicker({ keys }: { keys: string[] }): React.JSX.Element {
             disabled={!chosen || keys.length === 0 || isApplied}
             title={
               look && live && !isApplied
-                ? t('Takes the place of {{name}} (Alt: on top of it)', {
-                    name: lookName(look.look)
+                ? t('Takes the place of {{name}} ({{alt}}: on top of it)', {
+                    name: lookName(look.look),
+                    alt: modName('alt')
                   })
                 : undefined
             }

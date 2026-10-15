@@ -592,7 +592,12 @@ export class Exporter {
         .catch((err: unknown) => {
           // HR-0.18-9: the export says which adjustment broke the picture.
           if (err instanceof EngineError)
-            err.nameInvariant(compiled.grade, r.sdr?.grade ?? null, compiled.layerIndex)
+            err.nameInvariant(
+              compiled.grade,
+              r.sdr?.grade ?? null,
+              compiled.layerIndex,
+              compiled.qualifierIndex
+            )
           throw err
         })
     // A RAW exported from the file at full size: its best demosaic, and PMRID
