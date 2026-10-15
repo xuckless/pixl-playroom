@@ -304,35 +304,37 @@ function curvesOp(c: Partial<Curves>): GradeOp {
   }
 }
 
+/** How far ±100 on a region slider moves its region: a quarter of the range. */
+export const REGION_REACH = 0.25
+
 /**
- * The parametric tone curve as control points: each region's slider bends the
- * curve by up to a quarter of the range with a smooth bump over its region
- * (Lightroom's Highlights/Lights/Darks/Shadows with movable splits).
+ * The tone curve's region sliders (Lightroom's Highlights, Lights, Darks and
+ * Shadows with movable splits) as the engine's parametric curve (engine
+ * 0.21, E19): ±100 moves a region's centre by a quarter of the range, held
+ * between its neighbours, so the curve stays monotone and pinned at black
+ * and white at every setting (strong opposite moves never fold the tones
+ * back). The identity outside 0…1: an HDR pipeline's highlights above white
+ * keep their room as they are. Null when no slider is moved.
  */
-export function parametricCurve(tc: Recipe['toneCurve']): CurvePointSetting[] | null {
+export function regionCurveOp(tc: Recipe['toneCurve']): GradeOp | null {
   const amounts = [tc.shadows, tc.darks, tc.lights, tc.highlights]
   if (amounts.every((a) => a === 0)) return null
-  const [s1, s2, s3] = tc.splits.map((s) => clamp(s, 5, 95) / 100)
-  const edges = [0, s1, s2, s3, 1]
-  const bump = (x: number, a: number, b: number): number => {
-    // A raised cosine over [a − w, b + w], flat-topped over [a, b].
-    const w = (b - a) * 0.5
-    if (x <= a - w || x >= b + w) return 0
-    if (x < a) return 0.5 - 0.5 * Math.cos((Math.PI * (x - (a - w))) / w)
-    if (x > b) return 0.5 + 0.5 * Math.cos((Math.PI * (x - b)) / w)
-    return 1
+  const a = (v: number): number => round4(clamp(v / 100, -1, 1))
+  // Strictly in order inside 0…1, as the engine takes them (a sidecar
+  // written elsewhere may hold any three).
+  const low = clamp(tc.splits[0], 5, 93)
+  const mid = clamp(tc.splits[1], low + 1, 94)
+  const high = clamp(tc.splits[2], mid + 1, 95)
+  return {
+    ParametricCurve: {
+      shadows: a(tc.shadows),
+      darks: a(tc.darks),
+      lights: a(tc.lights),
+      highlights: a(tc.highlights),
+      splits: { low: round4(low / 100), mid: round4(mid / 100), high: round4(high / 100) },
+      reach: { Range: REGION_REACH }
+    }
   }
-  const pts: CurvePointSetting[] = []
-  for (let i = 0; i <= 16; i++) {
-    const x = i / 16
-    let y = x
-    for (let r = 0; r < 4; r++) y += (amounts[r] / 100) * 0.25 * bump(x, edges[r], edges[r + 1])
-    // Pin the ends: a region slider bends the curve, it does not move black or white.
-    if (i === 0) y = 0
-    if (i === 16) y = 1
-    pts.push({ x, y: clamp(y, 0, 1) })
-  }
-  return pts
 }
 
 /** The profile looks, as control points on encoded values (Standard's is Monochrome's now). */
@@ -1390,8 +1392,8 @@ function settingsStages(
       LocalContrast: { amount: clamp(p.clarity / 100, -1, 1), radius: 0.012, midtones: 0.8 }
     })
   }
-  const para = parametricCurve(r.toneCurve)
-  if (para) look.push(curvesOp({ master: tonal(para, hdr) }))
+  const region = regionCurveOp(r.toneCurve)
+  if (region) look.push(region)
   const tc = r.toneCurve
   const pc: Partial<Curves> = {}
   if (!isIdentityCurve(tc.master)) pc.master = tonal(tc.master, hdr)

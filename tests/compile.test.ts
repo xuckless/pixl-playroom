@@ -5,7 +5,7 @@ import {
   calibrationMatrix,
   compile,
   cropFits,
-  parametricCurve,
+  regionCurveOp,
   shoulderCube,
   vignettePlacement,
   type CompileContext
@@ -220,20 +220,39 @@ test('calibration keeps white white', () => {
   for (const row of m) assert.ok(Math.abs(row.r + row.g + row.b - 1) < 1e-3)
 })
 
-test('the parametric curve pins black and white', () => {
-  const pts = parametricCurve({
-    highlights: -50,
-    lights: 20,
-    darks: 0,
-    shadows: 40,
-    splits: [25, 50, 75],
-    master: [],
-    red: [],
-    green: [],
-    blue: []
-  })!
-  assert.equal(pts[0].y, 0)
-  assert.equal(pts[pts.length - 1].y, 1)
+test('the region sliders are the engine’s monotone parametric curve, a quarter of the range at ±100 (E19)', () => {
+  const tc = defaultRecipe(false).toneCurve
+  assert.equal(regionCurveOp(tc), null)
+  const op = regionCurveOp({ ...tc, highlights: -50, lights: 20, shadows: 40 })
+  assert.deepEqual(op, {
+    ParametricCurve: {
+      shadows: 0.4,
+      darks: 0,
+      lights: 0.2,
+      highlights: -0.5,
+      splits: { low: 0.25, mid: 0.5, high: 0.75 },
+      reach: { Range: 0.25 }
+    }
+  })
+  // Strong opposite moves are still sent (the engine keeps the curve
+  // monotone); a mask's Amount past ±100 is held to the engine's ±1.
+  const strong = regionCurveOp({ ...tc, lights: -100, highlights: 200 }) as {
+    ParametricCurve: { lights: number; highlights: number }
+  }
+  assert.deepEqual([strong.ParametricCurve.lights, strong.ParametricCurve.highlights], [-1, 1])
+  // Splits held strictly in order inside 0…1.
+  const s = (regionCurveOp({ ...tc, shadows: 10, splits: [2, 3, 3] }) as {
+    ParametricCurve: { splits: { low: number; mid: number; high: number } }
+  }).ParametricCurve.splits
+  assert.ok(0 < s.low && s.low < s.mid && s.mid < s.high && s.high < 1, JSON.stringify(s))
+  // In the look stage, the same on an HDR pipeline (the identity above white).
+  const r = defaultRecipe(false)
+  r.toneCurve.darks = -30
+  for (const hdr of [false, true]) {
+    const look = compile(r, { ...ctx, hdr }).grade!.layers[0].stages.at(-1)!
+    assert.notEqual(look.space, 'LinearWorking')
+    assert.deepEqual(kinds(look.ops), ['ParametricCurve'])
+  }
 })
 
 const lookOps = (r: ReturnType<typeof defaultRecipe>, hdr = false): GradeOp[] =>
