@@ -477,6 +477,24 @@ test('held measurements are kept per pixels and framing', async () => {
   assert.notEqual(heldKey('/d.jpg', null), heldKey('/d.jpg', { crop: { x: 0.1 } }))
 })
 
+test('the 1:1 view’s held refines are kept per source, grade, framing, lens and retouch', async () => {
+  // Engine 0.21.0 (E62): the engine refuses a held plane only when its mask
+  // changed, so a retouch or a lens correction under it must make it again.
+  const { refineKey } = await import('../src/shared/gpudrag')
+  const src = { path: '/m.tiff', width: 6000, height: 4000 }
+  const render = { grade: null, framing: null, lens: null, retouch: null }
+  const key = refineKey(src, render)
+  assert.equal(refineKey({ ...src }, { ...render }), key)
+  assert.notEqual(refineKey({ ...src, path: '/w.tiff' }, render), key)
+  assert.notEqual(refineKey({ ...src, width: 5998 }, render), key)
+  const retouch = { space: 'Normal', steps: [] } as never
+  assert.notEqual(refineKey(src, { ...render, retouch }), key)
+  const lens = { distortion: 0.1 } as never
+  assert.notEqual(refineKey(src, { ...render, lens }), key)
+  const framing = { orientation: 'Rotate90' } as never
+  assert.notEqual(refineKey(src, { ...render, framing }), key)
+})
+
 test('a GPU drag keeps the local-Laplacian base; the M1 drags without one', async () => {
   const { toneBaseFor, TEXTURE_BASE, DRAG_BASE } = await import('../src/shared/compile')
   const ctx = {

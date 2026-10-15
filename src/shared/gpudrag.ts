@@ -31,6 +31,7 @@ import {
   type Retouch
 } from './engine-types'
 import { hash32 } from './recipe'
+import { gradeKey } from './compile'
 
 /** The index setting that turns GPU dragging off (Preferences); missing is on. */
 export const GPU_DRAG_SETTING = 'develop.gpuDrag'
@@ -383,4 +384,31 @@ export function dragVerdict(err: { code?: string; field?: string }): DragVerdict
  */
 export function heldKey(from: string, framing: unknown): string {
   return JSON.stringify([from, framing])
+}
+
+/**
+ * What the 1:1 view's held refine planes are of (engine 0.21.0, E62): the
+ * full-size source and the whole render's grade, framing, lens correction
+ * and retouch. The engine refuses a plane only when its mask changed, not
+ * the pixels under it, so a retouch or a lens correction since makes them
+ * again; any other grade change does too (the photo's measurements held
+ * beside them are of that grade).
+ */
+export function refineKey(
+  from: { path: string; width: number; height: number },
+  render: Pick<ConvertRequest, 'grade' | 'framing' | 'lens' | 'retouch'>
+): string {
+  return String(
+    hash32(
+      gradeKey([
+        from.path,
+        from.width,
+        from.height,
+        render.grade,
+        render.framing,
+        render.lens,
+        render.retouch
+      ])
+    )
+  )
 }

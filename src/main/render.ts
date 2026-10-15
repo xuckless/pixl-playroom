@@ -114,7 +114,8 @@ import {
   gradeShape,
   heldKey,
   inputKey,
-  measuresPhoto
+  measuresPhoto,
+  refineKey
 } from '../shared/gpudrag'
 import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
@@ -377,10 +378,10 @@ function measureOf(stride: number): Measure {
   }
 }
 
-/** The measurement a `measure` asked for; the engine returns it whenever one was. */
 /** A 1:1 tile's held refine planes were refused: the tile is made again without them. */
 class HeldRefused extends Error {}
 
+/** The measurement a `measure` asked for; the engine returns it whenever one was. */
 function statsOf(r: ConvertReport): ImageStats {
   if (!r.stats) throw new Error('the engine measured nothing')
   return r.stats
@@ -2578,9 +2579,7 @@ class Session {
     // plane and the photo's measurements (`refineSlot`); every pan after it
     // reads them, at the shift's reach, and is that render's pixels, cut.
     const lensed = await this.lensedSize(compiled.lens, width, height)
-    const tileKey = String(
-      hash32(gradeKey([src.path, src.width, src.height, compiled.grade, compiled.framing]))
-    )
+    const tileKey = refineKey(src, compiled)
     // (Not while the RAW itself is developed for the region: its master comes soon.)
     let held = developing ? undefined : this.refineSlot.use(tileKey)
     let reach = await this.regionMargin(compiled.grade, lensed, framed, held)
