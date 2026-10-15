@@ -20,7 +20,7 @@ import { pipeline } from './pipeline'
 import { rebuildReasons } from '../shared/rebuild'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { mkdir, readdir, rm, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { join, sep } from 'path'
 import { createHash } from 'crypto'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
@@ -69,6 +69,7 @@ import type {
   Retouch,
   Transform,
   ImageStats,
+  Inspect,
   InspectPlane,
   MaskProbe,
   Measure,
@@ -126,7 +127,7 @@ import {
 } from '../shared/gpudrag'
 import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
-import { CICP_DISPLAY_P3, encodeGreyPng, encodePng8, pngToFloats } from './pngio'
+import { CICP_DISPLAY_P3, encodeGreyPng, encodePng8, grey8, pngToFloats } from './pngio'
 import { pixels } from './workers/pool'
 import { traceRegion } from './trace'
 import { cacheUrl } from './protocol'
@@ -350,6 +351,16 @@ const TILE_COMPANION_EDGE = 256
 /** A report's companion as a frame carries it. */
 function companionOf(c: Companion): { width: number; height: number; data: Uint8Array } {
   return { width: c.width, height: c.height, data: c.data }
+}
+
+/**
+ * The mask a qualifier's key is shown inside: its layer's, for a mask's own
+ * qualifier (E77's `QualifierKey` is the key alone); null for the photo's.
+ */
+function keyWithin(compiled: Compiled, probe: MaskProbe): Inspect | null {
+  if (!('QualifierKey' in probe)) return null
+  const layer = probe.QualifierKey.layer
+  return compiled.grade?.layers[layer]?.mask ? { LayerMask: { layer } } : null
 }
 
 /**
@@ -1624,7 +1635,9 @@ class Session {
     if (!layerId || preview || alpha || !compiled.grade) return null
     if (kind === 'draft' && !this.view.maskLive) return null
     const probe = maskProbe(compiled, layerId)
-    return probe ? { layerId, probe } : null
+    // A mask's qualifier shows its key inside the mask: two planes, `renderMask`'s.
+    if (!probe || keyWithin(compiled, probe)) return null
+    return { layerId, probe }
   }
 
   /** The mask the last picture carried (`besideProbe`): its bytes' hash, its file. */
@@ -2320,23 +2333,41 @@ class Session {
     const out = this.nextFile('mask', 'png')
     const grade = compiled.grade
     const planes = await this.planesFor(compiled, src)
-    const report = await this.withPlanes(planes, (native) =>
-      this.owner.engine.convert(
-        {
-          ...blankRequest(src.path, out, src.input),
-          pixel: { depth: 'Eight', channels: 1 },
-          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-          metadata: STRIP_ALL,
-          ...colour,
-          grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          inspect: probeInspect(probe)
-        },
-        { signal, ...(native ? { native } : {}) }
-      )
-    ).catch(named(compiled))
+    const plane = (file: string, inspect: Inspect): Promise<ConvertReport> =>
+      this.withPlanes(planes, (native) =>
+        this.owner.engine.convert(
+          {
+            ...blankRequest(src.path, file, src.input),
+            pixel: { depth: 'Eight', channels: 1 },
+            encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+            metadata: STRIP_ALL,
+            ...colour,
+            grade,
+            framing: compiled.framing,
+            lens: compiled.lens,
+            retouch: compiled.retouch,
+            inspect
+          },
+          { signal, ...(native ? { native } : {}) }
+        )
+      ).catch(named(compiled))
+    const report = await plane(out, probeInspect(probe))
+    // A mask's qualifier: its key where the mask lets it act (E77's key is
+    // the qualifier's alone), as the correction lands.
+    const within = keyWithin(compiled, probe)
+    if (within) {
+      const maskFile = this.nextFile('mask', 'png')
+      await plane(maskFile, within)
+      const [key, mask] = await Promise.all([readFile(out), readFile(maskFile)])
+      const k = grey8(key)
+      const m = grey8(mask)
+      if (k.width === m.width && k.height === m.height) {
+        for (let i = 0; i < k.data.length; i++)
+          k.data[i] = Math.round((k.data[i] * m.data[i]) / 255)
+        await writeFile(out, encodeGreyPng(k.data, k.width, k.height, 1))
+      }
+      void rm(maskFile, { force: true }).catch(() => undefined)
+    }
     const maskStats = measure ? await this.measureMask(out, signal) : undefined
     this.maskStatsFor = statsFor
     this.maskSig = sig
