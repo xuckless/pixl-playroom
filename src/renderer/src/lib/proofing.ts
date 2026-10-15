@@ -9,6 +9,7 @@
 import type { ProofIssue } from '../../../shared/ipc'
 import {
   intentShort,
+  locateSettings,
   NOT_A_PROFILE,
   profileName,
   proofCopyName,
@@ -61,9 +62,10 @@ export async function locateProfile(): Promise<void> {
   const chosen = await chooseProfileFile()
   if (!chosen) return
   if (typeof chosen === 'string') return useLibrary.getState().say(chosen, 'error')
-  const issue = await useDevelop
-    .getState()
-    .applyProof({ ...useUi.getState().proof, profile: asIcc(chosen.profile) })
+  const d = useDevelop.getState()
+  // A proof copy's own intent and paper, when it was its profile that went.
+  const base = locateSettings(d.proofIssue, d.session?.proof, useUi.getState().proof)
+  const issue = await d.applyProof({ ...base, profile: asIcc(chosen.profile) })
   if (issue) {
     useDevelop.setState({ proofIssue: issue })
     useLibrary.getState().say(issueText(issue), 'error')

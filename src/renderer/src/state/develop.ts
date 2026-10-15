@@ -14,7 +14,7 @@ import type {
   Snapshot,
   ViewState
 } from '../../../shared/ipc'
-import { profileName, proofKey, type ProofSettings } from '../../../shared/proof'
+import { checkedProof, profileName, proofKey, type ProofSettings } from '../../../shared/proof'
 import { amendLog, appendToLog, canRedo, replay } from '../../../shared/history'
 import { normaliseRecipe, sameValue, type HslBand, type Recipe } from '../../../shared/recipe'
 import { FIT, maskPlacementKey, type ZoomView } from '../../../shared/view'
@@ -259,9 +259,10 @@ interface DevelopState {
   /**
    * New proof settings (the setup), tried on the engine first: used (and
    * proofing turned on) when it takes them; the issue back when it does not,
-   * the settings in force kept.
+   * the settings in force kept. `opening`: a proof copy's own, as it opens
+   * (shown unproofed when the engine will not take them).
    */
-  applyProof(s: ProofSettings): Promise<ProofIssue | null>
+  applyProof(s: ProofSettings, opening?: boolean): Promise<ProofIssue | null>
   setProofSetup(open: boolean): void
   setZoom(z: ZoomView): void
   setHslFocus(b: HslBand | null): void
@@ -548,7 +549,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         loading: false
       })
       // A proof copy brings its proof: it opens proofed with it.
-      if (session.proof) void get().applyProof(session.proof)
+      if (session.proof) void get().applyProof(session.proof, true)
       else get().pushView()
       warmNeighbours(key)
     } catch (err) {
@@ -791,7 +792,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     if (issue) set({ proofIssue: issue })
   },
 
-  async applyProof(settings) {
+  async applyProof(settings, opening = false) {
     const session = get().session
     if (!session) return null
     const check = await api.develop
@@ -807,14 +808,22 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       }))
     // Another photo opened meanwhile: it starts unproofed.
     if (get().session?.key !== session.key) return null
-    if (!check.ok) return check.issue
+    const checked = checkedProof(check, opening)
+    if (!checked.use) {
+      // A proof copy whose profile is gone or refused: shown unproofed, saying why.
+      if (checked.show) {
+        set({ proofIssue: checked.issue })
+        get().pushView()
+      }
+      return checked.issue
+    }
     useUi.getState().setProofSettings(settings)
     set({
       proof: true,
       proofIssue: null,
-      proofPaper: check.paper,
+      proofPaper: checked.paper,
       // A CMYK or grey profile: engine 0.21 warns against it, with no preview.
-      ...(check.warnOnly ? { gamut: true } : {})
+      ...(checked.gamut ? { gamut: true } : {})
     })
     get().pushView()
     return null

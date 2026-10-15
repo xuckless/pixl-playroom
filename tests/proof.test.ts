@@ -13,7 +13,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inflateSync } from 'node:zlib'
 import {
+  checkedProof,
   DEFAULT_PROOF,
+  locateSettings,
   mergeBySha,
   normaliseProfile,
   normaliseProof,
@@ -298,6 +300,40 @@ test('the chip: proofed, on its way, a drag, a warning only, or why it went off'
   assert.equal(chip(true, { kind: 'draft' }), 'drag')
 })
 
+test('a proof tried: used, warned against, or kept off; a proof copy opening is shown unproofed', () => {
+  assert.deepEqual(checkedProof({ ok: true, warnOnly: false, paper: [250, 248, 240] }, false), {
+    use: true,
+    paper: [250, 248, 240],
+    gamut: false
+  })
+  // A CMYK or grey profile: proofed as a gamut warning against it.
+  assert.deepEqual(checkedProof({ ok: true, warnOnly: true, paper: null }, true), {
+    use: true,
+    paper: null,
+    gamut: true
+  })
+  const issue = { kind: 'missing' as const, key: 'icc:x', name: 'Lustre' }
+  // The setup: the proof in force stays, the row says why.
+  assert.deepEqual(checkedProof({ ok: false, issue }, false), { use: false, issue, show: false })
+  // A proof copy whose profile is gone: its picture, unproofed, never none at all.
+  assert.deepEqual(checkedProof({ ok: false, issue }, true), { use: false, issue, show: true })
+})
+
+test('Locate… keeps a proof copy’s own settings when it was its profile that went', () => {
+  const own: ProofSettings = {
+    profile: { sha: SHA('a'), name: 'Lustre', path: '/gone/Lustre.icc', cls: 'prtr', space: 'RGB' },
+    intent: 'Perceptual',
+    bpc: false,
+    simulate: true
+  }
+  const missing = { key: proofKey(own) }
+  assert.equal(locateSettings(missing, own, DEFAULT_PROOF), own)
+  // The setup's profile went (S pressed on the copy after the setup changed), or a plain photo.
+  assert.equal(locateSettings({ key: proofKey(DEFAULT_PROOF) }, own, DEFAULT_PROOF), DEFAULT_PROOF)
+  assert.equal(locateSettings(missing, null, DEFAULT_PROOF), DEFAULT_PROOF)
+  assert.equal(locateSettings(null, own, DEFAULT_PROOF), DEFAULT_PROOF)
+})
+
 test('the surround: dim paper (its own white when simulating), grey or black', () => {
   assert.equal(surroundColour('black', null, false), 'color(display-p3 0 0 0)')
   assert.equal(surroundColour('paper', null, false), 'color(display-p3 0.8 0.8 0.8)')
@@ -575,6 +611,30 @@ test('a scan finds profiles in nested folders, the same file once, and finds a m
     resetProfiles()
     await scanProfiles([a, join(root, 'b')])
     assert.equal(await profileBytes({ ...l, path: join(a, 'Lustre.icc') }), null)
+  } finally {
+    resetProfiles()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a proof’s network path (a sidecar’s or a project’s word) is never looked at unless chosen', async () => {
+  const { chooseProfile, profileBytes, resetProfiles } = await import('../src/main/iccprofiles')
+  const root = mkdtempSync(join(tmpdir(), 'proof-unc-'))
+  try {
+    resetProfiles()
+    const bytes = iccBytes('prtr', 'RGB', 2, { type: 'desc', text: 'Share' })
+    writeFileSync(join(root, 'Share.icc'), bytes)
+    const { createHash } = await import('node:crypto')
+    const sha = createHash('sha256').update(bytes).digest('hex')
+    // `//server/share/…` as a file names it: POSIX reads `//tmp/…` as `/tmp/…`, so
+    // were it looked at it would be found.
+    const unc = `/${join(root, 'Share.icc')}`
+    const proof: IccProof = { sha, name: 'Share', path: unc, cls: 'prtr', space: 'RGB' }
+    assert.equal(await profileBytes(proof), null)
+    assert.equal(await profileBytes({ ...proof, path: '\\\\.\\pipe\\Share.icc' }), null)
+    // Chosen with Browse… or Locate…: the person's own choice is read.
+    chooseProfile(unc)
+    assert.deepEqual(await profileBytes(proof), Array.from(bytes))
   } finally {
     resetProfiles()
     rmSync(root, { recursive: true, force: true })

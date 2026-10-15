@@ -122,16 +122,6 @@ export interface Origin {
   sha1: string | null
 }
 
-/**
- * Whether an origin read from a project is one Playroom could have written:
- * a project travels (a zip, a shared drive) and is opened by double-clicking
- * it, so what it says is checked before any of it names a file. The name is
- * a file name with no folder in it (as this platform reads one: a macOS
- * name may hold a backslash), the extension one the library lists (lower case, as the
- * scan keeps it), the path absolute and never a device. A network path is
- * allowed here (a NAS library); where one is looked at is checked there
- * (`isSafeLocalPath`).
- */
 /** The `proofs` meta: proof copies' proofs by copy id, each read as settings (shared/proof.ts). */
 export function proofsOf(json: string | null): Record<string, ProofSettings> {
   if (!json) return {}
@@ -148,6 +138,16 @@ export function proofsOf(json: string | null): Record<string, ProofSettings> {
   }
 }
 
+/**
+ * Whether an origin read from a project is one Playroom could have written:
+ * a project travels (a zip, a shared drive) and is opened by double-clicking
+ * it, so what it says is checked before any of it names a file. The name is
+ * a file name with no folder in it (as this platform reads one: a macOS
+ * name may hold a backslash), the extension one the library lists (lower case, as the
+ * scan keeps it), the path absolute and never a device. A network path is
+ * allowed here (a NAS library); where one is looked at is checked there
+ * (`isSafeLocalPath`).
+ */
 export function validOrigin(o: Origin): boolean {
   return (
     typeof o.name === 'string' &&

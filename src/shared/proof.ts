@@ -7,6 +7,7 @@
  * 1:1. Pure, for main, the window and the tests.
  */
 import type { RenderingIntent } from './engine-types'
+import type { ProofCheck, ProofIssue } from './ipc'
 import { t, tk } from './i18n'
 
 /** The spaces the engine knows by name (no file): offered first, as Screen and web. */
@@ -388,6 +389,36 @@ export function proofCopyName(p: ProofProfile): string {
 /** The intent's short name for the chip. */
 export function intentShort(i: ProofIntent): string {
   return i === 'Perceptual' ? t('Perc') : t('Rel')
+}
+
+// ── a proof tried ──
+
+/**
+ * What a proof's check (the engine trying its settings) does to Develop:
+ * proofs with them (and turns the gamut warning on for a profile that can
+ * only warn); or keeps the proof in force and says why not. A photo opening
+ * with a proof of its own (a proof copy) has no picture yet, so one the
+ * engine will not take shows it unproofed (`show`) rather than not at all.
+ */
+export type CheckedProof =
+  | { use: true; paper: [number, number, number] | null; gamut: boolean }
+  | { use: false; issue: ProofIssue; show: boolean }
+
+export function checkedProof(check: ProofCheck, opening: boolean): CheckedProof {
+  if (!check.ok) return { use: false, issue: check.issue, show: opening }
+  return { use: true, paper: check.paper, gamut: check.warnOnly }
+}
+
+/**
+ * The settings a profile located again (Locate…) is used with: those it went
+ * missing from (a proof copy's own, as it opened), else the setup's.
+ */
+export function locateSettings(
+  issue: Pick<ProofIssue, 'key'> | null,
+  own: ProofSettings | null | undefined,
+  setup: ProofSettings
+): ProofSettings {
+  return own && issue && issue.key === proofKey(own) ? own : setup
 }
 
 // ── the loupe's chip ──
