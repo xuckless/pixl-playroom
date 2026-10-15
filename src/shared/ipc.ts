@@ -733,6 +733,11 @@ export interface RenderReport {
   colorMs: number
   encodeMs: number
   gradeLines: string[]
+  /**
+   * Samples the grade clamped. Since engine 0.21 (E37) a masked layer's are
+   * counted only over the box it ran over (its mask's support): the ones its
+   * mask discards are not.
+   */
   clampedSamples: number
   loss: LossReport
   notes: string[]

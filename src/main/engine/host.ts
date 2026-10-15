@@ -22,6 +22,9 @@ import type {
   ModelSession,
   NativeRefs,
   PixlEngineModule,
+  PlaneOp,
+  PlaneResult,
+  PreparedRaster,
   PreviewFrame,
   PromptEmbedding,
   SamOp,
@@ -388,12 +391,48 @@ async function gpuCall(e: PixlEngineModule, call: GpuOp, signal?: AbortSignal): 
   }
 }
 
+// ── Prepared mask planes (0.21.0, E37): native, kept here, named by main ────
+
+/** Raster masks' planes at one frame size each, by main's id, with the request each was made from. */
+const planes = new Map<string, { request: string; plane: PreparedRaster }>()
+
+function closePlane(id: string): void {
+  const p = planes.get(id)
+  if (p && !p.plane.closed) p.plane.close()
+  planes.delete(id)
+}
+
+async function planesCall(e: PixlEngineModule, call: PlaneOp): Promise<PlaneResult> {
+  switch (call.op) {
+    case 'prepare': {
+      if (typeof e.prepareRaster !== 'function')
+        throw Object.assign(new Error('this engine prepares no mask planes'), {
+          code: 'EngineUnavailable'
+        })
+      const request = JSON.stringify(call.request)
+      const had = planes.get(call.id)
+      let plane = had && had.request === request && !had.plane.closed ? had.plane : null
+      if (!plane) {
+        plane = await e.prepareRaster(call.request)
+        // Only once the new one is made: a failed prepare leaves the old.
+        closePlane(call.id)
+        planes.set(call.id, { request, plane })
+      }
+      return { op: 'prepare', width: plane.width, height: plane.height, bytes: plane.bytes }
+    }
+    case 'release':
+      for (const id of call.ids) closePlane(id)
+      return { op: 'release' }
+  }
+}
+
 /**
  * A call's native options from main's names for them: the GPU session and
  * the photo's frame for a GPU drag, the held measurements for a drag or
- * `regionReach`. One that is not here (closed, or this host is newer than
- * the name) is `Stale`, which main reads as "upload again" or "measure
- * again", never as the user's error.
+ * `regionReach`, the prepared mask planes a render reads. One that is not
+ * here (closed, or this host is newer than the name) is `Stale`, which main
+ * reads as "upload again", "measure again" or "render without", never as
+ * the user's error.
  */
 function nativeOptions(native: NativeRefs | undefined): Record<string, unknown> {
   if (!native) return {}
@@ -408,6 +447,13 @@ function nativeOptions(native: NativeRefs | undefined): Record<string, unknown> 
     const held = helds.get(native.held)
     if (!held || held.closed) throw stale(`held measurements ${native.held}`)
     out['held'] = held
+  }
+  if (native.planes?.length) {
+    out['maskPlanes'] = native.planes.map((id) => {
+      const p = planes.get(id)
+      if (!p || p.plane.closed) throw stale(`mask plane ${id}`)
+      return p.plane
+    })
   }
   return out
 }
@@ -494,6 +540,23 @@ process.parentPort.on('message', (e) => {
         (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })
       )
       .finally(() => aborts.delete(id))
+    return
+  }
+  if (msg?.kind === 'planes') {
+    const { id } = msg
+    if (!engine) {
+      send({
+        kind: 'response',
+        id,
+        ok: false,
+        error: { message: 'engine unavailable', code: 'EngineUnavailable' }
+      })
+      return
+    }
+    planesCall(engine, msg.call).then(
+      (result) => send({ kind: 'response', id, ok: true, result }),
+      (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })
+    )
     return
   }
   if (msg?.kind === 'gpu') {

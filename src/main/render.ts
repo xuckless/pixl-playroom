@@ -21,7 +21,7 @@ import { rebuildReasons } from '../shared/rebuild'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { mkdir, readdir, rm, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { join, sep } from 'path'
 import { createHash } from 'crypto'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
 import {
@@ -111,6 +111,8 @@ import { sweepPhoto } from './sweep'
 import type { PhotoRow } from './db'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import { GpuDrag, HeldSlot, type FrameRef } from './gpudrag'
+import { MaskPlanes, planeRefused } from './maskplanes'
+import { swapsAxes } from '../shared/orientation'
 import {
   dragRegion,
   dragVerdict,
@@ -1465,49 +1467,64 @@ class Session {
       kind === 'draft' && !this.heldOff && measuresPhoto(compiled.grade)
         ? heldKey(src.path, compiled.framing)
         : null
-    const report = await this.convertHeld(
-      {
-        ...blankRequest(src.path, out, src.input),
-        ...(frame ? { sink: 'Bytes' as const } : {}),
-        pixel: {
-          depth: (display || floatSdr) && frame ? 'F32' : 'Eight',
-          channels: alpha || frame ? 4 : 3
+    const planes = await this.planesFor(compiled, src)
+    const report = await this.withPlanes(planes, (native) =>
+      this.convertHeld(
+        {
+          ...blankRequest(src.path, out, src.input),
+          ...(frame ? { sink: 'Bytes' as const } : {}),
+          pixel: {
+            depth: (display || floatSdr) && frame ? 'F32' : 'Eight',
+            channels: alpha || frame ? 4 : 3
+          },
+          encode: frame
+            ? { Pixels: { sample: display || floatSdr ? 'F16' : 'U8' } }
+            : avif
+              ? SETTLED_AVIF
+              : alpha
+                ? { Png: { compression: 'Fast', filter: 'Sub' } }
+                : {
+                    // A settled picture is a few MB less as 4:2:0, which a screen
+                    // shows the same; the draft keeps full chroma at its lower quality.
+                    Jpeg: {
+                      quality: kind === 'draft' ? 92 : 95,
+                      subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                      optimize: false
+                    }
+                  },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: display
+            ? masterFor(
+                display,
+                undefined,
+                kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE
+              )
+            : floatSdr
+              ? LINEAR_P3
+              : displayPolicy(this.info, 'DisplayP3'),
+          // The master reads a gain map itself, and refuses the field.
+          ...(display ? { gain_map: null } : {}),
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          threads: interactiveThreads(),
+          // A warp shown whole counts its empty corners (as black) rather than
+          // risk measuring nothing when little of the picture is left.
+          measure: measureOf(kind === 'draft' ? 2 : 1),
+          ...(besideProbe
+            ? { inspect: { Beside: { mask: besideProbe.probe, depth: 'Eight' } } }
+            : {})
         },
-        encode: frame
-          ? { Pixels: { sample: display || floatSdr ? 'F16' : 'U8' } }
-          : avif
-            ? SETTLED_AVIF
-            : alpha
-              ? { Png: { compression: 'Fast', filter: 'Sub' } }
-              : {
-                  // A settled picture is a few MB less as 4:2:0, which a screen
-                  // shows the same; the draft keeps full chroma at its lower quality.
-                  Jpeg: {
-                    quality: kind === 'draft' ? 92 : 95,
-                    subsampling: kind === 'draft' ? 'None' : 'Quarter',
-                    optimize: false
-                  }
-                },
-        metadata: { exif: false, icc: true, xmp: false, iptc: false },
-        color: display
-          ? masterFor(display, undefined, kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE)
-          : floatSdr
-            ? LINEAR_P3
-            : displayPolicy(this.info, 'DisplayP3'),
-        // The master reads a gain map itself, and refuses the field.
-        ...(display ? { gain_map: null } : {}),
-        grade: compiled.grade,
-        framing: compiled.framing,
-        lens: compiled.lens,
-        retouch: compiled.retouch,
-        threads: interactiveThreads(),
-        // A warp shown whole counts its empty corners (as black) rather than
-        // risk measuring nothing when little of the picture is left.
-        measure: measureOf(kind === 'draft' ? 2 : 1),
-        ...(besideProbe ? { inspect: { Beside: { mask: besideProbe.probe, depth: 'Eight' } } } : {})
-      },
-      { signal, frame, ...(floatSdr ? { native: { sdrCompanion: COMPANION_EDGE } } : {}) },
-      keyHeld
+        {
+          signal,
+          frame,
+          ...(floatSdr || native
+            ? { native: { ...native, ...(floatSdr ? { sdrCompanion: COMPANION_EDGE } : {}) } }
+            : {})
+        },
+        keyHeld
+      )
     ).catch(named(compiled))
     // The engine had no way to the window (it was reloading): main passes the frame on.
     if (frame && report.output)
@@ -1981,6 +1998,43 @@ class Session {
   }
 
   /**
+   * The prepared planes (E37) a render of `compiled` from `src` names: its
+   * raster masks' planes at its frame's size (the source turned as the
+   * framing turns it, where masks are planned), prepared now where missing.
+   */
+  private async planesFor(compiled: Compiled, src: ProxyFile): Promise<string[]> {
+    if (!compiled.grade) return []
+    const turned = compiled.framing !== null && swapsAxes(compiled.framing.orientation)
+    return this.owner.maskPlanes
+      .namesFor(
+        compiled.grade,
+        turned ? src.height : src.width,
+        turned ? src.width : src.height,
+        paths.photoCache(this.row.id) + sep
+      )
+      .catch(() => [])
+  }
+
+  /**
+   * `convert` naming the prepared planes `planes` (E37); refused for them
+   * (or the host gone since), forgotten and rendered again without.
+   */
+  private async withPlanes<T>(
+    planes: string[],
+    run: (native: NativeRefs | undefined) => Promise<T>
+  ): Promise<T> {
+    if (planes.length === 0) return run(undefined)
+    try {
+      return await run({ planes })
+    } catch (err) {
+      if (!planeRefused(err)) throw err
+      log.info('mask planes refused, rendering without', (err as Error).message)
+      this.owner.maskPlanes.forget(planes)
+      return run(undefined)
+    }
+  }
+
+  /**
    * A CPU render, with the held measurement of `keyHeld` when one is kept
    * (a drag of Dehaze or Denoise: Phase A §4.4), keeping what it returns
    * for the next frame. `keyHeld` null: a plain render, as before. A `held`
@@ -2264,23 +2318,25 @@ class Session {
       return
     }
     const out = this.nextFile('mask', 'png')
-    const report = await this.owner.engine
-      .convert(
+    const grade = compiled.grade
+    const planes = await this.planesFor(compiled, src)
+    const report = await this.withPlanes(planes, (native) =>
+      this.owner.engine.convert(
         {
           ...blankRequest(src.path, out, src.input),
           pixel: { depth: 'Eight', channels: 1 },
           encode: { Png: { compression: 'Fast', filter: 'Sub' } },
           metadata: STRIP_ALL,
           ...colour,
-          grade: compiled.grade,
+          grade,
           framing: compiled.framing,
           lens: compiled.lens,
           retouch: compiled.retouch,
           inspect: probeInspect(probe)
         },
-        { signal }
+        { signal, ...(native ? { native } : {}) }
       )
-      .catch(named(compiled))
+    ).catch(named(compiled))
     const maskStats = measure ? await this.measureMask(out, signal) : undefined
     this.maskStatsFor = statsFor
     this.maskSig = sig
@@ -2349,10 +2405,13 @@ class Session {
       )
       if (this.thumbSig[layer.id] === sig) continue
       const out = join(this.dir, `mthumb-${layer.id}-${sig}.png`)
-      // Made small, not at the draft's size (see MASK_THUMB_EDGE).
+      // Made small, not at the draft's size (see MASK_THUMB_EDGE); its masks
+      // are planned on the draft's frame, so the draft's planes serve.
       const k = Math.min(1, MASK_THUMB_EDGE / Math.max(src.width, src.height))
-      const report = await this.owner.engine
-        .convert(
+      const grade = compiled.grade
+      const planes = await this.planesFor(compiled, src)
+      const report = await this.withPlanes(planes, (native) =>
+        this.owner.engine.convert(
           {
             ...blankRequest(src.path, out, src.input),
             resize: k < 1 ? { Scale: { factor: k } } : 'None',
@@ -2361,15 +2420,15 @@ class Session {
             encode: { Png: { compression: 'Fast', filter: 'Sub' } },
             metadata: STRIP_ALL,
             ...this.maskColor(null),
-            grade: compiled.grade,
+            grade,
             framing: compiled.framing,
             lens: compiled.lens,
             retouch: compiled.retouch,
             inspect: { LayerMask: { layer: index } }
           },
-          { signal }
+          { signal, ...(native ? { native } : {}) }
         )
-        .catch(named(compiled))
+      ).catch(named(compiled))
       this.thumbSig[layer.id] = sig
       if (this.closed) return
       this.owner.send(IPC.develop.rendered, {
@@ -3233,9 +3292,11 @@ class Session {
     this.enhancePreview = null
     if (this.screen) dropFiles(this.screen.made)
     this.screen = null
-    // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5).
+    // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5),
+    // and its prepared mask planes.
     this.heldSlot.drop()
     this.owner.gpu.close(this.key)
+    this.owner.maskPlanes.releaseUnder(paths.photoCache(this.row.id) + sep)
     this.lookQueue?.close()
     for (const f of this.lookFiles.values()) void rm(f, { force: true }).catch(() => undefined)
     clearTimeout(this.settle)
@@ -3290,6 +3351,8 @@ export class DevelopSessions {
 
   /** The GPU drag path's state for the interactive engine (Phase A §4.3). */
   readonly gpu: GpuDrag
+  /** Raster masks' planes the interactive engine keeps prepared (0.21.0, E37). */
+  readonly maskPlanes: MaskPlanes
 
   constructor(
     readonly library: Library,
@@ -3297,6 +3360,13 @@ export class DevelopSessions {
     readonly bgEngine: EngineClient
   ) {
     this.gpu = new GpuDrag(engine, library.index)
+    // The 8 GB M1 keeps a few (17.5 MB each at a 2560 px proxy); others more.
+    this.maskPlanes = new MaskPlanes(
+      engine,
+      (this.gpu.constrained ? 160 : 480) * 1024 * 1024,
+      interactiveThreads
+    )
+    engine.onSpawn(() => this.maskPlanes.clear())
     // The open RAW's full-size develop, said in the window while it runs.
     onMasterWork((e) => {
       for (const [key, s] of this.sessions)
