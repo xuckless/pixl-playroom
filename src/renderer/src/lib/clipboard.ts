@@ -58,6 +58,14 @@ export async function copySettings(key: string): Promise<void> {
       at: Date.now()
     }
     lib.setClipboard(clip)
+    // Stamped as copied, so Quick develop can say when its photo changed since.
+    void api.library
+      .stamps([key])
+      .then((s) => {
+        const now = useLibrary.getState().clipboard
+        if (now === clip && s[key]) lib.setClipboard({ ...clip, stamp: s[key] })
+      })
+      .catch(() => undefined)
     lib.say(
       t('Copied the settings of {{name}} ({{paste}} to paste, {{choose}} to choose)', {
         name: clip.source.name,

@@ -1211,3 +1211,204 @@ select.rule-value {
 .thumb button.project-badge:focus-visible {
   opacity: 1;
 }
+
+/* ── the drawer's tabs, and Quick develop (⇧I) ── */
+.rail-head .lib-info-tabs {
+  height: 26px;
+}
+.rail-head .lib-info-tabs button {
+  font-size: 11.5px;
+}
+.qd-develop {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.qd-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qd-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.qd-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.qd-group > .rail-group {
+  margin-bottom: 4px;
+}
+.qd-auto {
+  height: 22px;
+  padding: 0 8px;
+}
+.qd-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px 22px 64px 22px 22px;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 2px 0 6px;
+  border-radius: var(--r);
+  outline: none;
+}
+.qd-row:hover {
+  background: rgb(var(--fg-rgb) / 0.03);
+}
+.qd-row:focus-visible {
+  background: var(--acc-a10);
+  box-shadow: inset 0 0 0 1px var(--acc-a35);
+}
+.qd-name {
+  font-size: 12px;
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-change {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.qd-row.changed .qd-change {
+  color: var(--acc);
+}
+.qd-step.icon {
+  width: 22px;
+  height: 22px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--muted);
+}
+.qd-more {
+  align-self: flex-start;
+  height: 22px;
+  margin-top: 2px;
+  padding: 0 6px;
+  color: var(--muted);
+}
+.qd-looks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qd-search.search-field {
+  flex: none;
+  width: 100%;
+  height: 30px;
+}
+.qd-look-list {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 2px 0;
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  background: var(--s1);
+}
+.qd-look-shelf {
+  padding: 6px 10px 2px;
+  color: var(--muted);
+}
+.qd-look {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text2);
+  font-size: 12px;
+  text-align: left;
+}
+.qd-look:hover:not(:disabled) {
+  background: rgb(var(--fg-rgb) / 0.04);
+  transform: none;
+}
+.qd-look.on {
+  color: var(--text);
+  background: var(--acc-a10);
+}
+.qd-look.applied .qd-look-name::after {
+  content: ' ✓';
+  color: var(--acc);
+}
+.qd-look-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-look-pick {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+.qd-preview {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--r);
+  background: var(--s1);
+}
+.qd-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.qd-preview .look-skeleton {
+  position: absolute;
+  inset: 0;
+}
+.qd-look-about {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+}
+.qd-look-about strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-clip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qd-clip-line {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: left;
+}
+.qd-clip-line > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-changed {
+  color: var(--acc);
+}

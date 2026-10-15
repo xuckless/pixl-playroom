@@ -35,6 +35,8 @@ export interface SettingsClipboard {
   source: { key: string; name: string }
   /** When it was copied (ms). */
   at: number
+  /** Its photo's settings stamped when copied (`library.stamps`): another stamp, it changed since. */
+  stamp?: string
 }
 
 /** "4 min ago", "just now", "2 h ago": how long since a copy, roughly. */

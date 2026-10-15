@@ -865,6 +865,8 @@ export function LibraryStatus(): React.JSX.Element | null {
         <span className="kbd">{keyHint('flag.clear')}</span> {t('flag')}{' '}
         <span className="kbd">{keyHint('library.stack')}</span> {t('stack')}{' '}
         <span className="kbd">{keyHint('library.info')}</span> {t('info')}{' '}
+        <span className="kbd">{keyHint('library.quickDevelop')}</span> {t('quick develop')}{' '}
+        <span className="kbd">{keyHint('library.undo')}</span> {t('undo')}{' '}
         <span className="kbd">{keyHint('library.develop')}</span> {t('develop')}{' '}
         <span className="kbd">{keyHint('sync')}</span> {t('sync')}
       </span>
