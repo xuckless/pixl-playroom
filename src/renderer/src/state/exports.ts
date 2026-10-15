@@ -73,9 +73,9 @@ export const useExports = create<ExportsState>((set, get) => ({
       lib.say(t('Select photos first'))
       return null
     }
-    set({ last: { settings, label } })
     try {
       const id = await api.export.start(keys, settings, label)
+      set({ last: { settings, label } })
       const what = tp('Exporting {{count}} photo', 'Exporting {{count}} photos', keys.length)
       const text = label ? `${what} · ${label}` : what
       lib.say(text, 'info', { label: t('Stop'), run: () => void api.export.cancel(id) })
