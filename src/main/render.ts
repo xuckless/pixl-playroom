@@ -30,6 +30,7 @@ import {
   framingWarps,
   gradeKey,
   orientedFrame,
+  sourceFrameOf,
   type Compiled
 } from '../shared/compile'
 import { lensCorrection, MANUAL_GEOMETRY } from '../shared/lens'
@@ -2666,14 +2667,17 @@ class Session {
       throw err
     }
     // The develop's frame was taken from the proxies' (cells × their width):
-    // once the engine says its own, the region is made again on it.
+    // once the engine says its own, the region is made again on it. (Its
+    // report's frame is after the lens correction's crop and the user's
+    // turn: `sourceFrameOf` undoes both.)
+    const developed = developing ? sourceFrameOf(report, user) : null
     if (
-      developing &&
-      (report.frame_width !== src.width || report.frame_height !== src.height) &&
+      developed &&
+      (developed.width !== src.width || developed.height !== src.height) &&
       !again &&
       this.regionAbort === abort
     ) {
-      this.rawFrame = { width: report.frame_width, height: report.frame_height }
+      this.rawFrame = developed
       return this.region(req, true)
     }
     // The margin fell short of what the grade read: its edges may not meet a neighbour's.

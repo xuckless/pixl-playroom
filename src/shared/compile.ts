@@ -38,7 +38,7 @@ import type {
   WhitePoint
 } from './engine-types'
 import { addColorOp } from './addcolor'
-import { defringeOp, lensCorrection } from './lens'
+import { canvasOf, defringeOp, lensCorrection } from './lens'
 import { compileRetouch } from './retouch'
 import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
@@ -578,6 +578,21 @@ export function orientedFrame(
   const user = userOrientation(r.geometry.quarterTurns, r.geometry.flipHorizontal)
   const swap = swapsAxes(user)
   return { user, width: swap ? frameHeight : frameWidth, height: swap ? frameWidth : frameHeight }
+}
+
+/**
+ * The source's own frame size, from what a render of it reported: the
+ * frame before its lens correction (`canvasOf`), turned back from the
+ * user's orientation (`user`, as `orientedFrame` gives it), which the
+ * report's frame is turned by. What `orientedFrame` was given, when it was
+ * given the source's true size (a RAW's develop, E66: `render.ts` learns it so).
+ */
+export function sourceFrameOf(
+  report: Parameters<typeof canvasOf>[0],
+  user: Orientation
+): { width: number; height: number } {
+  const c = canvasOf(report)
+  return swapsAxes(user) ? { width: c.height, height: c.width } : c
 }
 
 /** The least a fitted crop keeps across, as a fraction of the canvas: never nothing, which the engine refuses. */

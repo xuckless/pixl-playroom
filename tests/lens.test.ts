@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { compile, isP3Floor, type CompileContext } from '../src/shared/compile'
+import { compile, isP3Floor, sourceFrameOf, type CompileContext } from '../src/shared/compile'
 import type { ShotLens } from '../src/shared/engine-types'
 import {
+  canvasOf,
   defaultLens,
   defringeOp,
   describeLens,
@@ -182,4 +183,24 @@ test('defringe keys its bands on edges and runs before the look is graded', () =
 test('the lens reads as one line', () => {
   assert.equal(describeLens(shot('EF-S 18-55mm', 18, 11)), 'Canon EF-S 18-55mm · 18 mm · f/11')
   assert.equal(describeLens(null), null)
+})
+
+test('a render’s source frame: before the lens correction’s crop, turned back', () => {
+  // Engine 0.21.0, measured on a 6000 × 4000 RAW (E66: render.ts learns a
+  // RAW develop's frame from a region of it): a manual distortion of 40
+  // crops the corrected frame to 5756 × 3836, and a quarter turn swaps both.
+  const lens = { canvas_width: 6000, canvas_height: 4000 }
+  const landscape = { width: 6000, height: 4000 }
+  assert.deepEqual(canvasOf({ frame_width: 5756, frame_height: 3836, lens }), landscape)
+  assert.deepEqual(canvasOf({ frame_width: 6000, frame_height: 4000, lens: null }), landscape)
+  const turned = {
+    frame_width: 3836,
+    frame_height: 5756,
+    lens: { canvas_width: 4000, canvas_height: 6000 }
+  }
+  assert.deepEqual(sourceFrameOf(turned, 'Rotate90'), landscape)
+  const upright = { frame_width: 4000, frame_height: 6000, lens: null }
+  assert.deepEqual(sourceFrameOf(upright, 'Rotate270'), landscape)
+  const over = { frame_width: 6000, frame_height: 4000, lens: null }
+  assert.deepEqual(sourceFrameOf(over, 'Rotate180'), landscape)
 })
