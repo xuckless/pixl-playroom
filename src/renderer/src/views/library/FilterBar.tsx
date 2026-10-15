@@ -7,10 +7,12 @@ import {
   moreFilters,
   savableFilter,
   withoutMore,
+  type FlagFilter,
   type MoreFilter
 } from '../../../../shared/filter'
 import type { ColorLabel } from '../../../../shared/ipc'
 import { keywordLabel } from '../../../../shared/keywords'
+import { GlassSelect } from '../../components/GlassSelect'
 import { Icon } from '../../components/icons'
 import { keyHint, rejectSuggested, withKey } from '../../lib/commands'
 import { LABEL_COLOURS } from '../../lib/helpers'
@@ -63,12 +65,12 @@ export function FilterBar(): React.JSX.Element | null {
   return (
     <div className="filter-bar" role="toolbar" aria-label={t('Filters')}>
       <span
-        className="fb-stars"
+        className="fb-group fb-stars"
         role="group"
         aria-label={t('Minimum rating')}
-        title={t('Minimum rating: click a star again for any')}
+        title={t('Rated at least this many stars: click the same star again for any rating')}
       >
-        <span className="fb-ge">≥</span>
+        <span className="fb-label">{t('Rating')}</span>
         {[1, 2, 3, 4, 5].map((r) => (
           <button
             key={r}
@@ -81,21 +83,20 @@ export function FilterBar(): React.JSX.Element | null {
           </button>
         ))}
       </span>
-      <span className="vsep" />
-      <div className="seg fb-flags" role="group" aria-label={t('Flag')}>
-        {FLAGS.map(([v, label]) => (
-          <button
-            key={v}
-            className={filter.flag === v ? 'on' : ''}
-            aria-pressed={filter.flag === v}
-            onClick={() => setFilter({ flag: v })}
-          >
-            {t(label)}
-          </button>
-        ))}
-      </div>
-      <span className="vsep" />
-      <span className="label-pick fb-labels" role="group" aria-label={t('Colour label')}>
+      <span className="fb-group">
+        <span className="fb-label" id="fb-flag">
+          {t('Flag')}
+        </span>
+        <GlassSelect<FlagFilter>
+          className="sm"
+          labelledBy="fb-flag"
+          value={filter.flag}
+          onChange={(flag) => setFilter({ flag })}
+          options={FLAGS.map(([value, label]) => ({ value, label: t(label) }))}
+        />
+      </span>
+      <span className="fb-group label-pick fb-labels" role="group" aria-label={t('Colour label')}>
+        <span className="fb-label">{t('Label')}</span>
         {Object.keys(LABEL_COLOURS).map((l) => (
           <button
             key={l}
@@ -110,24 +111,22 @@ export function FilterBar(): React.JSX.Element | null {
           </button>
         ))}
       </span>
-      <span className="vsep" />
-      <div className="seg fb-edited" role="group" aria-label={t('Edits')}>
-        {(
-          [
-            ['edited', tk('Edited')],
-            ['unedited', tk('Unedited')]
-          ] as const
-        ).map(([v, label]) => (
-          <button
-            key={v}
-            className={filter.edited === v ? 'on' : ''}
-            aria-pressed={filter.edited === v}
-            onClick={() => setFilter({ edited: filter.edited === v ? 'all' : v })}
-          >
-            {t(label)}
-          </button>
-        ))}
-      </div>
+      <span className="fb-group">
+        <span className="fb-label" id="fb-edits">
+          {t('Edits')}
+        </span>
+        <GlassSelect<'all' | 'edited' | 'unedited'>
+          className="sm"
+          labelledBy="fb-edits"
+          value={filter.edited}
+          onChange={(edited) => setFilter({ edited })}
+          options={[
+            { value: 'all', label: t('Any') },
+            { value: 'edited', label: t('Edited') },
+            { value: 'unedited', label: t('Unedited') }
+          ]}
+        />
+      </span>
       {cullSuggest && !dupes && <SuggestedChip />}
       {more.map((m) => (
         <span key={m} className="fb-chip">
