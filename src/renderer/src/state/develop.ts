@@ -445,7 +445,13 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       if (!history.base) {
         const opened = await api.develop.historyAppend(key, tk('Opened'), session.recipe)
         history = appendToLog(history, opened)
-      } else if (!sameValue(head ?? replay(history.base.recipe, history.steps), session.recipe)) {
+      } else if (
+        !sameValue(
+          // As read today (a recipe from before the masks' lens record gets one, as the sidecar did).
+          normaliseRecipe(head ?? replay(history.base.recipe, history.steps), session.isRaw),
+          session.recipe
+        )
+      ) {
         // Changed where no history is written (a paste or sync in the
         // library, an older version's undo): record where it stands now.
         const saved = await api.develop.historyAppend(key, tk('Opened as saved'), session.recipe)
