@@ -76,9 +76,12 @@ export const RAW_DEVELOP_REV = 's'
  * mixer) renders differently. (A RAW's develop is `Container`, 0.16.0's
  * pixels, so `RAW_DEVELOP_REV` and the steps laid on it stand.) 3 is engine
  * 0.18: Dehaze v2, the Color Mixer's luminance in stops, Denoise's reach,
- * the Smoothing slider.
+ * the Smoothing slider. 4 is engine 0.21: smoothed adjustments near zero
+ * (E63, E53), and saved edits on the engine's exact colour ops (the region
+ * curve, Hue vs Lum and Sat vs Sat, the Log wheels, Temp and Tint beside
+ * the Primaries).
  */
-export const ENGINE_RENDER_REV = 3
+export const ENGINE_RENDER_REV = 4
 
 /**
  * A step on a RAW made from another develop than the photo's now (rawler's,
