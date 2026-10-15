@@ -138,6 +138,34 @@ test('an eraser takes from the brush alone: the brush leads a union, else it is 
   assert.equal(brushRoute(l.components, 0), 'plane')
 })
 
+test('an eraser never takes from another component: a brush erasing alone is nothing, one brush leads', () => {
+  const l = newLocalLayer('Brush')
+  // Erase strokes alone paint nothing: no Subtract takes from the gradient.
+  l.components = [radial('r'), brush([erase])]
+  assert.notEqual(brushRoute(l.components, 1), 'strokes')
+  const m = layerMask(l, 'Normal', {})!
+  assert.deepEqual(
+    m.components.map((c) => [Object.keys(c.shape)[0], c.mode]),
+    [['RadialGradient', 'Add']]
+  )
+  // A subtracting brush that only erases: its plane (nothing taken away).
+  l.components = [radial('r'), brush([erase], { mode: 'Subtract' })]
+  assert.equal(brushRoute(l.components, 1), 'plane')
+  // Two brushes that erase: the first leads, the second is a plane, so
+  // neither eraser reaches the other's paint.
+  const second = { ...brush([again, erase]), id: 'b2' }
+  l.components = [radial('r'), brush([paint, erase]), second]
+  assert.equal(brushRoute(l.components, 1), 'lead')
+  assert.equal(brushRoute(l.components, 2), 'plane')
+  // First in the mask, a brush is already first: a later one can't lead.
+  l.components = [brush([paint, erase]), radial('r'), second]
+  assert.equal(brushRoute(l.components, 0), 'strokes')
+  assert.equal(brushRoute(l.components, 2), 'plane')
+  // Painting alone, a later brush still goes as its strokes.
+  l.components = [brush([paint, erase]), radial('r'), { ...brush([again]), id: 'b3' }]
+  assert.equal(brushRoute(l.components, 2), 'strokes')
+})
+
 test('an older brush’s plane goes under its new strokes; a brush with no strokes is its plane', () => {
   const l = newLocalLayer('Brush')
   l.components = [brush([paint], { png: 'iVBOR', ref: 'abc' })]

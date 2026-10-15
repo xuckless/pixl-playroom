@@ -103,8 +103,11 @@ export function brushRoute(components: MaskComponentSetting[], index: number): B
   const w = Math.max(1, c.width)
   const h = Math.max(1, c.height)
   if (runs.some((r) => !paintable(r.strokes, w, h))) return 'plane'
+  const erases = runs.some((r) => r.erase)
   const pieces = (c.png || c.ref ? 1 : 0) + runs.length
-  if (pieces === 1) return 'strokes'
+  // One run of paint: the brush itself. (Erasing alone, it is nothing: a
+  // `Subtract` of its own would take from the mask before it.)
+  if (pieces === 1 && !erases) return 'strokes'
   // Opacity, inversion, feather and the edge apply to each piece, not to
   // the brush: only a brush with none of them goes in pieces.
   const plain =
@@ -112,10 +115,17 @@ export function brushRoute(components: MaskComponentSetting[], index: number): B
   if (!plain) return 'plane'
   const mode = effectiveMode(index, c.mode)
   // Unions (and subtractions of them) in a row: the same as one of the whole.
-  if (runs.every((r) => !r.erase) && (mode === 'Add' || mode === 'Subtract')) return 'strokes'
+  if (!erases && (mode === 'Add' || mode === 'Subtract')) return 'strokes'
   if (mode !== 'Add') return 'plane'
-  if (index === 0) return 'strokes'
+  // Its eraser takes from the brush alone only first in the mask, and one
+  // brush can be first: an earlier one that erases in pieces already is.
   const before = components.slice(0, index)
+  const taken = before.some(
+    (d, i) =>
+      hasStrokes(d) && d.strokes.some((s) => s.erase) && brushRoute(components, i) !== 'plane'
+  )
+  if (taken) return 'plane'
+  if (index === 0) return 'strokes'
   return before.every((d, i) => effectiveMode(i, d.mode) === 'Add') ? 'lead' : 'plane'
 }
 
