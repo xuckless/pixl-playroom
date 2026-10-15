@@ -312,6 +312,8 @@ export function baseToDisplayMatrixNear(g: ViewGeometry, b: P): Projective {
  * screen pixel, say), as √|det J|, the scale an area keeps. The same both
  * ways across under a turn or a straighten; under an Upright warp, a dab
  * keeps its area where a stretch along one axis only would have it grow.
+ * Onto the masks' frame when they are on another lens (`ViewGeometry.lens`):
+ * a dab painted with Optics off is as big on the picture as the cursor.
  */
 export function localScale(
   g: ViewGeometry,
@@ -319,7 +321,7 @@ export function localScale(
   display: { w: number; h: number },
   base: { w: number; h: number }
 ): number {
-  const m = displayToBaseMatrix(g)
+  const m = displayToBaseMatrixNear(g, p)
   const w = m[6] * p.x + m[7] * p.y + m[8]
   const q = applyProjective(m, p)
   // ∂(X/w)/∂x = (m0 − X·m6) / w, and so on.
