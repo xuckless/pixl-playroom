@@ -151,7 +151,33 @@ the Windows release test, masks stated on the source frame), in
 
 - [x] **S** · What's new for the release (`shared/releasenotes.ts`, the
       house style), translations.
-- [ ] **S** · Release-As 0.6.0-beta, the PR.
+- [x] **S** · Release-As 0.6.0-beta, the PR. (0.6.1-beta, a silent patch
+      for the disposed-frame crash below, followed the same day.)
+
+### Later — A limit for the develop cache · 4 pts
+
+Found by the owner 2026-10-15: `userData` at 61 GB, 58 GB of it
+`cache/photos`. Each photo opened in Develop keeps its working copies for
+good: `proxy`/`mid`/`draft` ≈ 77 MB a photo (≈ 31 GB over 437 photos), and
+a RAW's float masters at 275 MB each, often several per photo (`sp1`,
+`-dn`, `-pd`, `-pdg`, `-px-…`, `-s-pd`; ≈ 21 GB over ~100 photos), plus
+`region`/`bounded`/`companion` (≈ 3 GB). Today only the small files are
+swept (`sweep.ts`), other demosaics' masters go when a master is re-made
+(`proxy.ts` `keptMasterTags`, that photo only), and a changed source clears
+its set (`proxy.ts` `build`). There is no cap and no Clear; Settings →
+Storage covers only Library previews (≈ 2 MB). Chromium's own `Cache_Data`
+was 1.2 GB too. Owner: add later.
+
+- [ ] **M** · A size cap on `cache/photos` (default 20 GB, choosable),
+      least recently opened photos first, masters before the small copies,
+      never the open photo or one with a develop running; checked at launch
+      and as a photo is left.
+- [ ] **M** · Settings → Storage: "Develop cache", its size in use, Up to
+      …, and **Clear develop cache** (says a RAW's master is made again on
+      its next open, which takes a while). Five translations.
+- [ ] **S** · Chromium's HTTP cache (`Cache_Data`): a bound
+      (`session.clearCache` on a size, or a smaller cache) and the same Clear.
+- [ ] **S** · Tests: the eviction order and the open photo kept.
 
 ### Found in testing — "Render frame was disposed" in main · 1 pt
 
