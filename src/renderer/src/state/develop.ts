@@ -824,7 +824,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   },
 
   onError(message, invariant = null) {
-    set({ error: message, invariant, rendering: false })
+    // A develop that failed is not "Developing…": the first look goes.
+    set({ error: message, invariant, rendering: false, firstLook: null })
   },
 
   async addVersion(name) {

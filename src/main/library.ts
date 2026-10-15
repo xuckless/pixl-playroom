@@ -824,7 +824,8 @@ export class Library {
    * Display P3 as the develop's pictures are, so the photo shows at once and
    * its develop fades in over it. Null for an edited photo (the camera's
    * rendering would read as the edit: the renderer shows its thumbnail), for
-   * anything that is not a RAW, and for a RAW with no preview to decode.
+   * anything that is not a RAW, and for a RAW with no preview to decode or
+   * one no bigger than its thumbnail.
    * `engine`: the interactive one, beside the open's own work.
    */
   async firstLook(
@@ -837,12 +838,16 @@ export class Library {
     const row = await this.photoRow(key)
     if (row.is_raw !== 1) return null
     const info = await this.probe(row, engine)
-    const plan = previewPlan(info, true, Math.max(256, Math.min(8192, Math.round(edge))))
-    if (plan === 'develop') return null
+    // The renderer's number, held to a sane size before it names a file.
+    const side = Number.isFinite(edge) ? Math.max(256, Math.min(8192, Math.round(edge))) : 2560
+    const plan = previewPlan(info, true, side)
+    // A preview no bigger than the thumbnail (an older body's, a DNG's
+    // small one) adds nothing to the thumbnail already showing.
+    if (plan === 'develop' || plan.long <= THUMB_EDGE) return null
     // Swept with the photo's other renders as it leaves Develop (sweep.ts).
     const dir = join(paths.photoCache(row.id), 'renders')
     await mkdir(dir, { recursive: true })
-    const stamp = `${versionOf(row)}:${edge}`
+    const stamp = `${versionOf(row)}:${side}`
     const out = join(dir, `first-${hash32(stamp).toString(16)}.jpg`)
     const request = (reduce: PreviewPlan['reduce'], factor: number): ConvertRequest => ({
       ...blankRequest(row.path, out, info.input, info),
@@ -857,7 +862,7 @@ export class Library {
     const report = await engine.convert(request(plan.reduce, plan.factor)).catch((err) => {
       if (!(err instanceof EngineError) || !plan.reduce || !reduceRefused(err.code, err.detail))
         throw err
-      return engine.convert(request(null, Math.min(1, edge / plan.long)))
+      return engine.convert(request(null, Math.min(1, side / plan.long)))
     })
     return { url: cacheUrl(out, stamp), width: report.width, height: report.height }
   }
