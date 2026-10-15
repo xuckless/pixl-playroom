@@ -22,6 +22,7 @@ import type { LookMeta } from './looks/types'
 import type { SmartPart } from './looks/smart'
 
 import type { ReleaseNotes } from './releasenotes'
+import type { FoundProfile, ProofSettings } from './proof'
 
 export const IPC = {
   /** The native menus (shared/appmenu.ts). */
@@ -204,6 +205,12 @@ export const IPC = {
     scopes: 'develop:scopes',
     /** The graded picture's gamut coverage (Metrics), measured before its egress (E76). */
     gamutCoverage: 'develop:gamut-coverage',
+    /** The ICC profiles on this computer, scanned again (the proof setup opening): `FoundProfile[]`. */
+    proofProfiles: 'develop:proof-profiles',
+    /** A profile chosen from a file (Browse…, Locate…): `ProofBrowsed`, or null when none was chosen. */
+    proofBrowse: 'develop:proof-browse',
+    /** A proof's settings tried on the engine before they are used: `ProofCheck`. */
+    proofCheck: 'develop:proof-check',
     autoWb: 'develop:auto-wb',
     /** A painted plane (grey PNG, base64) into the plane store; its reference back. */
     putPlane: 'develop:put-plane',
@@ -750,6 +757,8 @@ export interface DevelopSession {
   developMark?: string | null
   /** Why it is on the earlier pipeline (shared/rebuild.ts); empty when it is on today's. */
   rebuild?: RebuildReason[]
+  /** A proof copy's proof (shared/proof.ts): it opens proofed, with these settings. */
+  proof?: ProofSettings | null
 }
 
 export interface ViewState {
@@ -785,10 +794,44 @@ export interface ViewState {
   float?: boolean
   /**
    * The gamut warning (E22, soft proofing): also render, beside a settled
-   * SDR picture, where its colours fall outside the export's colour space.
+   * SDR picture, where its colours fall outside the export's colour space
+   * (the proof's profile while proofing).
    */
   gamut?: boolean
+  /**
+   * Soft proofing: the settled picture, the before and the 1:1 tiles as
+   * this proof makes them (shared/proof.ts). Drafts stay unproofed; `display`
+   * is null while proofing (paper has no light above white).
+   */
+  proof?: ProofSettings | null
+  /** Screen | Proof: also render the settled picture unproofed, for the split's other side. */
+  proofScreen?: boolean
 }
+
+/** What a proofed picture was proofed with (`proofKey`), and the profile's name. */
+export interface ProofShown {
+  key: string
+  name: string
+  /** A CMYK or grey profile: engine 0.21 measures the gamut warning against it, but makes no preview. */
+  warnOnly?: boolean
+}
+
+/** Why a picture asked to be proofed was not: its profile is nowhere, or the engine refused it. */
+export interface ProofIssue {
+  kind: 'missing' | 'unusable'
+  key: string
+  name: string
+  /** The engine's or the header's reason (unusable). */
+  why?: string
+}
+
+/** A proof's settings tried on the engine: usable (with the paper's white, 0…255 Display P3), or why not. */
+export type ProofCheck =
+  | { ok: true; warnOnly: boolean; paper: [number, number, number] | null }
+  | { ok: false; issue: ProofIssue }
+
+/** A profile file chosen with Browse… or Locate…: the profile, or why it cannot be used. */
+export type ProofBrowsed = { profile: FoundProfile } | { error: string }
 
 export interface RenderReport {
   totalMs: number
@@ -809,7 +852,8 @@ export interface RenderEvent {
   seq: number
   /** The renderer's number for the recipe this was rendered from (see `develop.update`). */
   rev?: number
-  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom' | 'gamut'
+  /** `screen`: the settled picture unproofed, beside a proof (Screen | Proof). */
+  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom' | 'gamut' | 'screen'
   url: string
   /**
    * Full HDR's settled picture: its SDR companion as a file, for what reads
@@ -837,6 +881,12 @@ export interface RenderEvent {
   stops?: number
   /** A gamut warning's plane: the space it proofs against (the export's). */
   gamutTo?: ExportSettings['colorSpace']
+  /** A gamut warning's plane made against the proof's profile instead: its name. */
+  gamutProof?: string
+  /** A settled picture or a before made as a soft proof. */
+  proof?: ProofShown
+  /** A settled picture asked to be proofed and shown unproofed, and why. */
+  proofIssue?: ProofIssue
   /**
    * A Full HDR render: the display's ceiling over SDR white (the master's
    * `display.headroom`), where its light stops: what the clipping overlay
@@ -912,6 +962,8 @@ export interface RegionResult {
   width: number
   height: number
   ms: number
+  /** The proof it was made for (`proofKey`), or absent when none was asked. */
+  proof?: string
 }
 
 export interface SampleResult {

@@ -115,6 +115,12 @@ export function encodePng16(
 /** A PNG's `cICP` chunk saying Display P3 (P3 primaries, the sRGB curve, RGB, full range). */
 export const CICP_DISPLAY_P3 = chunk('cICP', Buffer.from([12, 13, 0, 1]))
 
+/** A PNG's `iCCP` chunk embedding an ICC profile: its pixels are in that profile's space. */
+export function iccpChunk(icc: Uint8Array | number[]): Buffer {
+  const name = Buffer.from('ICC\0\0', 'latin1')
+  return chunk('iCCP', Buffer.concat([name, deflateSync(Buffer.from(icc))]))
+}
+
 /**
  * An 8-bit RGBA PNG of `w × h` pixels, unfiltered: Full HDR's SDR companion
  * kept as a file for what measures the picture (so `level` is low).
