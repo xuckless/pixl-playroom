@@ -127,6 +127,29 @@ test('a plane that could not be prepared is left out; past the cap the least use
   assert.equal((await mp.namesFor(gradeOf('/c/3/b.png'), 100, 50, '/c/3/')).length, 2)
 })
 
+test('a frame size refused twice prepares no planes until its photo closes; a lost host is no refusal', async () => {
+  const host = fakeHost()
+  const mp = new MaskPlanes(host, 1e9, () => 4)
+  const g = gradeOf('/c/1/a.png')
+  // The host lost: made again, however often.
+  for (let i = 0; i < 3; i++) mp.forget(await mp.namesFor(g, 100, 50, '/c/1/'), false)
+  assert.equal((await mp.namesFor(g, 100, 50, '/c/1/')).length, 2)
+  // Refused once (a file changed since): made again.
+  mp.forget(await mp.namesFor(g, 100, 50, '/c/1/'))
+  assert.equal((await mp.namesFor(g, 100, 50, '/c/1/')).length, 2)
+  // Twice: the engine plans the masks at another size; every render would be made twice.
+  mp.forget(await mp.namesFor(g, 100, 50, '/c/1/'))
+  const prepares = host.calls.filter((c) => c.op === 'prepare').length
+  assert.deepEqual(await mp.namesFor(g, 100, 50, '/c/1/'), [])
+  assert.equal(host.calls.filter((c) => c.op === 'prepare').length, prepares)
+  // Another size, and another photo, are their own.
+  assert.equal((await mp.namesFor(g, 50, 25, '/c/1/')).length, 2)
+  assert.equal((await mp.namesFor(gradeOf('/c/2/x.png'), 100, 50, '/c/2/')).length, 2)
+  // The photo closed and opened again: tried afresh.
+  mp.releaseUnder('/c/1/')
+  assert.equal((await mp.namesFor(g, 100, 50, '/c/1/')).length, 2)
+})
+
 test('what a refusal for the planes looks like', () => {
   assert.ok(planeRefused({ code: 'InvalidRequest', field: 'mask_planes[0]', message: 'x' }))
   assert.ok(planeRefused({ code: 'Stale', message: 'mask plane p3 is not loaded in this engine' }))
@@ -244,6 +267,28 @@ test(
       const plain = await e.convert(request)
       const prepared = await e.convert(request, { maskPlanes: names.map((n) => kept.get(n)) })
       assert.deepEqual(prepared.output, plain.output)
+      // Cropped and straightened too: the masks are planned on the turned
+      // source, not the crop, so the same planes serve.
+      r.geometry.crop = { x: 0.1, y: 0.2, width: 0.6, height: 0.5 }
+      r.geometry.straighten = 3
+      const cropped = compile(r, {
+        isRaw: false,
+        asShot: null,
+        sourceOrientation: 'Normal',
+        frameWidth: w,
+        frameHeight: h,
+        scale: 1,
+        seed: 1,
+        brushPaths: { b: plane },
+        applyCrop: true
+      })
+      assert.ok(cropped.framing?.crop, 'the photo is cropped')
+      const again = await mp.namesFor(cropped.grade, h, w, dir + sep)
+      assert.deepEqual(again, names)
+      const cut = { ...request, grade: cropped.grade, framing: cropped.framing }
+      const cutPlain = await e.convert(cut)
+      const cutPrepared = await e.convert(cut, { maskPlanes: again.map((n) => kept.get(n)) })
+      assert.deepEqual(cutPrepared.output, cutPlain.output)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

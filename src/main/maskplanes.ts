@@ -73,6 +73,8 @@ export interface PlaneHost {
 
 interface Kept {
   id: string
+  /** The photo's folder and the frame's size: where a refusal counts. */
+  at: string
   bytes: number
   /** Resolves true once prepared, false if it could not be. */
   ready: Promise<boolean>
@@ -80,11 +82,21 @@ interface Kept {
 }
 
 /**
+ * Refusals at one photo's frame size before its planes stop being prepared
+ * there: one can be a file changed since it was prepared (prepared again,
+ * it is used), a second means the engine plans its masks at another size,
+ * and every render would be made twice.
+ */
+const STRIKES = 2
+
+/**
  * The planes the interactive host keeps, least recently used going first
  * past `capBytes`. One host's: `clear` when a new one starts.
  */
 export class MaskPlanes {
   private kept = new Map<string, Kept>()
+  /** Renders refused for their planes, by photo folder and frame size (`Kept.at`). */
+  private strikes = new Map<string, number>()
   private tick = 0
   private nextId = 0
   private readonly host: PlaneHost
@@ -118,13 +130,21 @@ export class MaskPlanes {
       (k) => k.startsWith(dir) && k.endsWith(size) && !keys.has(k)
     )
     if (gone.length) this.release(gone)
+    const at = `${dir}${size}`
+    if ((this.strikes.get(at) ?? 0) >= STRIKES) return []
     const now = ++this.tick
     const wanted = sources.map((s) => {
       const key = planeKey(s, width, height)
       let k = this.kept.get(key)
       if (!k) {
         const id = `p${++this.nextId}`
-        const made: Kept = { id, bytes: width * height * 4, ready: Promise.resolve(false), used: 0 }
+        const made: Kept = {
+          id,
+          at,
+          bytes: width * height * 4,
+          ready: Promise.resolve(false),
+          used: 0
+        }
         made.ready = this.host
           .planes({
             op: 'prepare',
@@ -160,15 +180,22 @@ export class MaskPlanes {
     return wanted.filter((_, i) => ready[i]).map((k) => k.id)
   }
 
-  /** Planes a render was refused for (or the host lost): made again when next asked. */
-  forget(ids: string[]): void {
-    const keys = [...this.kept].filter(([, k]) => ids.includes(k.id)).map(([key]) => key)
-    this.release(keys)
+  /**
+   * Planes a render was refused for (`refused`), or the host lost: made
+   * again when next asked, unless that frame size was refused too often.
+   */
+  forget(ids: string[], refused = true): void {
+    const gone = [...this.kept].filter(([, k]) => ids.includes(k.id))
+    if (refused)
+      for (const at of new Set(gone.map(([, k]) => k.at)))
+        this.strikes.set(at, (this.strikes.get(at) ?? 0) + 1)
+    this.release(gone.map(([key]) => key))
   }
 
   /** Every plane of a photo's (its folder), when it closes. */
   releaseUnder(dir: string): void {
     this.release([...this.kept.keys()].filter((k) => k.startsWith(dir)))
+    for (const at of [...this.strikes.keys()]) if (at.startsWith(dir)) this.strikes.delete(at)
   }
 
   /** A new host holds none of them. */
