@@ -160,7 +160,8 @@ test('the grade input is the guide’s exact request', async () => {
   assert.equal(r.grade, null)
   assert.equal(r.inspect, 'GradeInput')
   assert.deepEqual(r.encode, { Pixels: { sample: 'F16' } })
-  assert.deepEqual(r.pixel, { depth: 'F32', channels: null })
+  // RGBA from the engine (0.21.0, E61): the upload has alpha, every drag frame too.
+  assert.deepEqual(r.pixel, { depth: 'F32', channels: 4 })
   assert.equal(r.dither, 'None')
   assert.equal(r.upscaler, null)
   assert.deepEqual(r.metadata, { exif: false, icc: true, xmp: false, iptc: false })
@@ -374,11 +375,12 @@ test(
       )
     }
     try {
-      // SDR: the upload, then a drag, whose RGB pixels the host lays out RGBA.
+      // SDR: the upload, then a drag, RGBA from the engine (E61): no pass lays in an alpha.
       const frame = await upload(p3)
       const drag = { grade: g, color: p3, hdr: false, region: null, measure: null, threads: 2 }
       const r = await e.convert(gpuDragRequest(drag), { gpu, frame })
-      assert.equal(toRgba(r.output, r.width, r.height).byteLength, w * h * 4)
+      assert.equal(r.output.byteLength, w * h * 4)
+      assert.equal(toRgba(r.output, r.width, r.height), r.output)
       // What 0.19.2 refuses, each by its field: channels on a frame, and no grade.
       await assert.rejects(
         e.convert(
@@ -403,7 +405,7 @@ test(
         threads: 2
       }
       const m = await e.convert(gpuDragRequest(hdr), { gpu, frame: hdrFrame })
-      assert.equal(toRgba(m.output, m.width, m.height).byteLength, w * h * 8)
+      assert.equal(m.output.byteLength, w * h * 8)
       assert.ok(m.companion)
       const c = m.companion!
       assert.equal(toRgba(c.data, c.width, c.height).byteLength, c.width * c.height * 4)

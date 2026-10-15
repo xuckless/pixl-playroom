@@ -428,9 +428,9 @@ function deliver(frame: string, result: unknown, companionEdge?: number): void {
     companion?: { width: number; height: number; data: Uint8Array } | null
   } | null
   if (!r?.output) return
-  // A GPU drag of an opaque photo is RGB (it names no channels): RGBA, as
-  // the window and main's relay both take a frame.
-  r.output = toRgba(r.output, r.width, r.height)
+  // The picture is RGBA from the engine (E61: the GPU frame is uploaded
+  // with alpha). A Full HDR drag's SDR companion follows the master's
+  // render, not the frame: RGBA here, as the window and main's relay take it.
   if (r.companion)
     r.companion.data = toRgba(r.companion.data, r.companion.width, r.companion.height)
   // Four bytes a pixel is RGBA U8; eight is RGBA half floats (Full HDR, or an SDR picture in float).
