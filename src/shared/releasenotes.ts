@@ -18,13 +18,32 @@ export interface ReleaseNotes {
 }
 
 export const RELEASE_NOTES: ReleaseNotes[] = [
-  // Engine 0.21.0 (TODO.md Phase P): the colour tools on the engine's exact ops.
+  // Engine 0.21.0 (TODO.md Phase P): one set of colour tools on the engine's
+  // exact ops, film effects, cancellable RAW develops, the engine's scopes,
+  // masks that follow geometry, the security audit (branch feat/engine-0.21).
   {
     version: '0.6.0-beta',
     headline: tk(
-      'Engine 0.21: the colour tools stop approximating and start meaning it, and the last two curves finally work.'
+      'One set of colour tools, film that glows, RAWs that stop when you walk away, and masks that finally stay where you put them.'
     ),
     sections: [
+      {
+        title: tk('One set of colour tools'),
+        items: [
+          tk(
+            'The Lightroom or Resolve switch is gone. There’s one set now, Playroom’s, and it does everything the Lightroom set did. Nobody has to pick a side at dinner any more.'
+          ),
+          tk(
+            'The tone curve moved into Curves, region sliders and all. HSL has Point colour back, and Add colour sits under the Primaries’ wheels.'
+          ),
+          tk(
+            'Lightroom’s Colour grading wheels only show on a photo that already uses them. They still work there; reset them and they bow out politely.'
+          ),
+          tk(
+            'Every built-in look was rebuilt on the new tools. They look the same (about ΔE 1 on average, which is squinting territory), and a few gained a gentler roll-off in the highlights.'
+          )
+        ]
+      },
       {
         title: tk('Colour, exactly'),
         items: [
@@ -50,7 +69,132 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
             'Saved edits take the new maths, and edited photos’ thumbnails are made again once so the library agrees with them.'
           )
         ]
+      },
+      {
+        title: tk('Film, minus the chemicals'),
+        items: [
+          tk(
+            'Halation, in Effects: the warm red glow film gets around bright lights, with its own Threshold, Size and Hue.'
+          ),
+          tk(
+            'Bloom, right beside it: Diffusion softens the whole picture like a filter on the lens, Glow haloes just the lights.'
+          ),
+          tk(
+            'Grain gained a Colour slider and a Response: Film (the midtones, as before), Even, or Scanned negative, strongest in the shadows.'
+          ),
+          tk(
+            'HSL has a Density tab, for colours that feel thick and rich, as on slide film, rather than just louder.'
+          ),
+          tk(
+            'The looks use all of it: twenty halation and bloom looks are the real thing now, colour negatives have colour grain, slide looks are denser, and three false-colour looks swap their colours the whole way.'
+          )
+        ]
+      },
+      {
+        title: tk('RAWs, faster and more honest'),
+        items: [
+          tk(
+            'Leave a photo while its RAW develops and the develop stops. Unless it’s about 70% done: then it finishes quietly, so coming back is instant.'
+          ),
+          tk(
+            'The Developing RAW bar shows real progress and, once it knows, about how long is left. Enhance and AI Denoise show real progress too.'
+          ),
+          tk(
+            'Zoom to 100% on a fresh RAW and it’s sharp in a second or two. Panning at 100% over a mask snapped to edges is several times quicker.'
+          ),
+          tk(
+            'PIXL Enhance sees the detail in a RAW’s highlights around white instead of a flat plateau. And on a Mac the AI models start sooner: each is prepared for your chip once and kept.'
+          ),
+          tk(
+            'Most RAWs our demosaic developed in 0.5.0 are developed once more when you open them. AI steps made on the old develop are marked, and Rebuild offers to make them again.'
+          ),
+          tk(
+            'A RAW’s noise is never borrowed from another camera’s. If Playroom can’t tell, that photo takes the standard develop and says why.'
+          ),
+          tk(
+            'A heal with Edge snap on a flat patch, with no edge to snap to, now heals anyway and tells you so, instead of quietly doing nothing.'
+          )
+        ]
+      },
+      {
+        title: tk('Opening and browsing'),
+        items: [
+          tk(
+            'A photo shows up the moment you open it, from the camera’s own preview, and melts into Playroom’s develop when that’s ready. An edited photo shows its thumbnail instead; the camera has no idea what you did.'
+          ),
+          tk(
+            'Thumbnails are sharper and quicker, especially from Sony, Nikon and Fujifilm RAWs, whose full-size previews we now use.'
+          ),
+          tk('Large JPEGs open sooner.'),
+          tk(
+            'DNG camera profiles, in White balance: Adobe’s are found for you if you have Lightroom or the DNG Converter, and Import .dcp… takes your own. Only ones made for your camera are offered.'
+          ),
+          tk(
+            'A third vignette style, Colour priority: the corners brighten without washing out to white.'
+          ),
+          tk('About names the exact engine build, for the curious and for bug reports.')
+        ]
+      },
+      {
+        title: tk('Scopes, now with fewer opinions'),
+        items: [
+          tk(
+            'Let go of a slider and the scopes switch to the engine’s exact measurement of every pixel shown.'
+          ),
+          tk(
+            'Every scope agrees on what brightness means (BT.709, as Resolve has it), so they’ve stopped arguing with each other.'
+          ),
+          tk('Metrics → Gamut coverage shows real numbers for how far the photo’s colours reach.'),
+          tk(
+            'Gamut warning (Shift+J), beside Clipping, paints green where the photo holds colours your export can’t. Soft proofing, part one.'
+          )
+        ]
+      },
+      {
+        title: tk('Masks that stay put'),
+        items: [
+          tk(
+            'Masks no longer drift under Upright or Transform: the overlay, the brush and Auto Mask follow the warp exactly.'
+          ),
+          tk(
+            'No stale mask after a crop or a turn: you see the mask for the picture in front of you.'
+          ),
+          tk('Switch Crop & straighten or Geometry off and the masks stay where they belong.'),
+          tk(
+            'AI masks are found on the picture as you see it, so a click lands on what you clicked.'
+          ),
+          tk('Change the lens correction and the masks stay on their subject, in the export too.')
+        ]
+      },
+      {
+        title: tk('Safe and sound'),
+        items: [
+          tk(
+            'A shared project or sidecar can’t read or write anything outside Playroom’s cache, and can’t send Playroom to a network share or a folder you haven’t added. Double-click away.'
+          ),
+          tk(
+            'LUTs are found by name in Playroom’s LUT folder, so a project from another computer finds yours, and says when one is missing.'
+          ),
+          tk(
+            'Updates are checked against Pixl’s own signature before they download. No signature, no update.'
+          ),
+          tk('Release builds ship without the developer tools. Those were for us.'),
+          tk('Thumbnails that failed because of us, not your file, get another go.')
+        ]
       }
+    ],
+    next: [
+      {
+        title: tk('Light above white, kept'),
+        text: tk('PIXL Enhance keeping the highlights it makes, not only the ones it reads.')
+      },
+      {
+        title: tk('Drags on the graphics chip'),
+        text: tk(
+          'The new colour tools and film effects on the graphics chip too, so slider drags fly again, once the engine can.'
+        )
+      },
+      { title: tk('And yet another cookie'), text: tk('Three for three. Respect. 🍪🍪🍪') }
     ]
   },
   // Engine 0.20.0 (PIXL's own models), the Resolve colour tools and
