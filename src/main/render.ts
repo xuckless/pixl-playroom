@@ -434,6 +434,12 @@ class Session {
   private abort: AbortController | null = null
   /** The 1:1 region being rendered: a newer one stops it. */
   private regionAbort: AbortController | null = null
+  /**
+   * What this photo's view waits on its RAW develop with (on open and at
+   * 1:1): aborted when the photo is left, so a develop nobody else waits
+   * for stops (engine 0.21.0, E6). A pan never stops it.
+   */
+  private readonly developAbort = new AbortController()
   private pending: Kind | null = null
   /** The render running now, or the last one. */
   private current: Promise<void> = Promise.resolve()
@@ -646,13 +652,13 @@ class Session {
         await new Promise((r) => setTimeout(r, DEVELOP_ON_OPEN_MS))
         if (this.closed || this.developedTag || !(await this.pixlPlan())) return
         this.setPixl('developing')
-        await ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+        await ensureMaster(this.owner.bgEngine, this.row, this.file, ask, this.developAbort.signal)
       }
       // The engine refused the model: the released develop stood in, and is planned from now on.
       if (!(await this.pixlPlan())) return this.setPixl('refused')
       await this.adoptDeveloped()
     } catch (err) {
-      if (this.closed) return
+      if (this.closed || isCancelled(err)) return
       this.setPixl('refused')
       this.masterRefused(err)
     }
@@ -2396,10 +2402,10 @@ class Session {
     const ask = askOf(this.recipe)
     const plan = await scenePlan(this.file.raw_cfa, ask)
     const plain = (): Promise<ProxyFile> =>
-      ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+      ensureMaster(this.owner.bgEngine, this.row, this.file, ask, this.developAbort.signal)
     if (plan.demosaic === 'pixl')
       return plain().catch((err: unknown) => {
-        this.masterRefused(err)
+        if (!isCancelled(err)) this.masterRefused(err)
         throw err
       })
     // A linear DNG has no demosaic to wait for (`isLinearRaw`): its one master, at once.
@@ -2416,7 +2422,9 @@ class Session {
         const note = takeDevelopedNote(this.row.id) ?? undefined
         if (!this.closed) this.owner.send(IPC.develop.tileStale, { key, note })
       },
-      (err: unknown) => log.warn('RAW master for 1:1 not made', (err as Error).message)
+      (err: unknown) => {
+        if (!isCancelled(err)) log.warn('RAW master for 1:1 not made', (err as Error).message)
+      }
     )
     return ensureQuickMaster(this.owner.bgEngine, this.row)
   }
@@ -3123,6 +3131,8 @@ class Session {
     clearTimeout(this.letGo)
     this.abort?.abort()
     this.regionAbort?.abort()
+    // Its RAW develop stops, unless something else waits for it or it is nearly done.
+    this.developAbort.abort()
     // Corrected proxies for any other correction are no longer read.
     void pruneLensed(this.row, this.key, this.lensKey(this.recipe))
     void sweepPhoto(this.dir, paths.photoCache(this.row.id))
@@ -3184,7 +3194,8 @@ export class DevelopSessions {
         if (s.row.id === e.photoId) {
           this.send(IPC.develop.master, {
             key,
-            expectedMs: e.phase === 'start' ? e.expectedMs : null
+            phase: e.phase,
+            ...(e.progress ? { progress: e.progress } : {})
           } satisfies MasterEvent)
           if (e.phase !== 'end') continue
           // With a development kit, what developed it and how long it took (devkit.ts).

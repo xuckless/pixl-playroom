@@ -263,6 +263,11 @@ function codeOf(err: unknown): { code: string | null; field: string | null } {
   return { code, field }
 }
 
+/** A stop the caller asked for (`Cancelled`), not a refusal. */
+function cancelled(err: unknown): boolean {
+  return codeOf(err).code === 'Cancelled'
+}
+
 /** What a develop refused for its models says, for an error without a code. */
 const MODEL_WORDS = /raw\.(demosaic|mosaic_denoise)|onnx|session|provider|coreml/i
 
@@ -364,7 +369,9 @@ export async function withScene<T>(
     if (plan.demosaic === 'pixl') remember(shot, planesOf(value))
     return { value, classic: false, ran: plan.tag }
   } catch (err) {
-    if (signal.aborted) throw err
+    // A develop stopped (its photo left: engine 0.21.0, E6) is neither the
+    // model's trouble nor the frame's: nothing is planned around, nothing said.
+    if (signal.aborted || cancelled(err)) throw err
     const trouble = modelTrouble(err)
     if (plan.demosaic === 'pixl') {
       const id = demosaicModel(plan)!
@@ -403,7 +410,7 @@ export async function withScene<T>(
           traceRegion({ step: 'stated', tag: plan.tag, from: stated.source })
           return { value, classic: false, ran: plan.tag, statedFrom: stated.source }
         } catch (again) {
-          if (signal.aborted) throw again
+          if (signal.aborted || cancelled(again)) throw again
           why = `${why}; with its noise stated from ${stated.source}: ${inWords(again)}`
         }
       }
