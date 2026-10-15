@@ -57,18 +57,34 @@ const toneSmoothed = (grade: Grade): boolean =>
     )
   )
 
+/** The grade with Tone off the Smoothing slider, every other op as it is. */
+function toneUnsmoothed(grade: Grade): Grade {
+  const g = structuredClone(grade)
+  for (const l of g.layers)
+    for (const s of l.stages) for (const o of s.ops) if ('Tone' in o) o.Tone.smoothing = null
+  return g
+}
+
 /**
  * Full HDR's form of it, on extended linear Display P3 floats: what the edit
- * (which only darkens) took from dark to at or past white, and blue patches.
+ * (which only darkens) took from dark to at or past white, and blue patches
+ * the same grade with Tone unsmoothed (`unsmoothed`) does not have: a
+ * photo's own sky, saturated by the edit, is blue either way.
  */
-function brokenHdr(plain: Float32Array, edit: Float32Array): { white: number; blue: number } {
+function brokenHdr(
+  plain: Float32Array,
+  unsmoothed: Float32Array,
+  edit: Float32Array
+): { white: number; blue: number } {
+  const isBlue = (a: Float32Array, i: number): boolean =>
+    a[i + 2] > 0.5 && a[i + 2] > 3 * Math.max(a[i], a[i + 1], 0.01)
   let white = 0
   let blue = 0
   for (let i = 0; i < edit.length; i += 3) {
     const [R, G, B] = [edit[i], edit[i + 1], edit[i + 2]]
     const was = 0.2289746 * plain[i] + 0.6917385 * plain[i + 1] + 0.0792869 * plain[i + 2]
     if (was < 0.2 && R >= 0.98 && G >= 0.98 && B >= 0.98) white++
-    if (B > 0.5 && B > 3 * Math.max(R, G, 0.01)) blue++
+    if (isBlue(edit, i) && !isBlue(unsmoothed, i)) blue++
   }
   return { white, blue }
 }
@@ -188,7 +204,11 @@ test('IMG_3198: Shadows and Blacks render without E63’s white patches', { skip
     assert.ok(now.white < 50, `${name}: ${now.white} whitened pixels`)
     assert.ok(now.garish < 500, `${name}: ${now.garish} garish pixels`)
     const hdr = graded(r, true)
-    const inHdr = brokenHdr(plainHdr, await renderHdr(hdr.grade, hdr.framing))
+    const inHdr = brokenHdr(
+      plainHdr,
+      await renderHdr(toneUnsmoothed(hdr.grade), hdr.framing),
+      await renderHdr(hdr.grade, hdr.framing)
+    )
     assert.ok(inHdr.white < 50, `${name}, Full HDR: ${inHdr.white} whitened pixels`)
     assert.ok(inHdr.blue < 500, `${name}, Full HDR: ${inHdr.blue} blue pixels`)
   }
