@@ -57,7 +57,7 @@ test('the disc moves colour at constant luma, and reads back where it was put', 
 })
 
 test('untouched primaries compile to nothing', () => {
-  assert.equal(primariesOp(defaultPrimaries()), null)
+  assert.deepEqual(primariesOp(defaultPrimaries()), [])
   const before = JSON.stringify(ops(defaultRecipe(false)))
   const r = defaultRecipe(false)
   r.primaries = normalisePrimaries({})
@@ -69,7 +69,7 @@ test('Offset folds into lift and gain: the same as adding it after them', () => 
   p.lift = { y: 0.05, r: 0.02, g: 0, b: 0 }
   p.gain = { y: 1.2, r: 1, g: 0.9, b: 1 }
   p.offset = { y: 0.03, r: 0, g: 0, b: -0.01 }
-  const op = (primariesOp(p) as { Primary: Primary }).Primary
+  const op = (primariesOp(p)[0] as { Primary: Primary }).Primary
   const run = (v: number, c: 'r' | 'g' | 'b'): number => op.lift[c] + v * (op.gain[c] - op.lift[c])
   for (const c of ['r', 'g', 'b'] as const)
     for (const v of [0, 0.3, 0.8, 1]) {
@@ -136,6 +136,52 @@ test('Temp and Tint stay inside Display P3 at a mask’s Amount of 200, pulled t
   assert.ok(corner.tint > 0.01 && corner.tint < 100 / 3000)
 })
 
+test('Lum Mix at 0 is the one Primary it always was; above 0 the Y rings are a LumaPrimary (E78)', () => {
+  const p = defaultPrimaries()
+  p.lift = { y: 0.05, r: 0.02, g: 0, b: 0 }
+  p.gamma = { y: 0.2, r: 0, g: 0, b: -0.1 }
+  p.gain = { y: 1.1, r: 1, g: 0.95, b: 1 }
+  p.offset = { y: 0.01, r: 0, g: 0, b: 0 }
+  p.contrast = 1.2
+  p.saturation = 55
+  const folded = primariesOp(p)
+  assert.equal(folded.length, 1)
+  const one = (folded[0] as { Primary: Primary }).Primary
+  assert.equal(one.lift.r, 0.08)
+  assert.equal(one.contrast, 1.2)
+  // Normalised, an old recipe has none.
+  assert.equal(normalisePrimaries({}).lumMix, 0)
+  assert.equal(normalisePrimaries({ lumMix: 250 }).lumMix, 100)
+
+  p.lumMix = 100
+  const ops = primariesOp(p)
+  assert.deepEqual(
+    ops.map((o) => Object.keys(o)[0]),
+    ['Primary', 'LumaPrimary', 'Primary']
+  )
+  const wheels = (ops[0] as { Primary: Primary }).Primary
+  // The wheels' own colour and the Offset, no Y.
+  assert.deepEqual(wheels.lift, { r: 0.03, g: 0.01, b: 0.01 })
+  assert.deepEqual(wheels.gain, { r: 1.01, g: 0.96, b: 1.01 })
+  assert.equal(wheels.gamma.r, 1)
+  assert.equal(wheels.contrast, 1)
+  assert.deepEqual(ops[1], {
+    LumaPrimary: { lift: 0.05, gamma: Math.round(2 ** 0.15 * 1e4) / 1e4, gain: 1.1, mix: 1 }
+  })
+  const after = (ops[2] as { Primary: Primary }).Primary
+  assert.equal(after.contrast, 1.2)
+  assert.equal(after.saturation, 1.1)
+  assert.deepEqual(after.lift, { r: 0, g: 0, b: 0 })
+  // No Y ring moved: Lum Mix has nothing to mix, the one Primary as at 0.
+  const noY = { ...p, lift: { ...p.lift, y: 0 }, gamma: { ...p.gamma, y: 0 }, gain: { ...p.gain, y: 1 } }
+  assert.deepEqual(primariesOp(noY), primariesOp({ ...noY, lumMix: 0 }))
+  // A mask's Amount leaves it as set; it compiles in the look stage.
+  assert.equal(scaleSettings({ ...neutralSettings(), primaries: p }, 50).primaries.lumMix, 100)
+  const r = defaultRecipe(false)
+  r.primaries = p
+  assert.ok(ops.length > 0 && ops.every((o) => JSON.stringify(compile(r, ctx)).includes(JSON.stringify(o))))
+})
+
 test('a mask carries primaries, scaled by its Amount; switched off they compile as defaults', () => {
   const s = neutralSettings()
   s.primaries.lift = { y: 0.1, r: 0, g: 0, b: 0 }
@@ -145,7 +191,7 @@ test('a mask carries primaries, scaled by its Amount; switched off they compile 
   assert.ok(Math.abs(half.lift.y - 0.05) < 1e-9)
   assert.ok(Math.abs(half.gain.y - Math.SQRT2) < 1e-9)
   assert.equal(half.saturation, 60)
-  assert.equal(primariesOp(scaleSettings(s, 0).primaries), null)
+  assert.deepEqual(primariesOp(scaleSettings(s, 0).primaries), [])
 
   const r = defaultRecipe(false)
   r.primaries.contrast = 1.3

@@ -133,6 +133,16 @@ export function PrimariesBody(): React.JSX.Element | null {
         write={(r, v) => (r.primaries.tint = v)}
         track={TINT_TRACK}
       />
+      <RS
+        label={tk('Lum Mix')}
+        tip={TIPS['primaries.lumMix']}
+        read={(r) => r.primaries.lumMix}
+        write={(r, v) => (r.primaries.lumMix = v)}
+        min={0}
+        max={100}
+        step={1}
+        def={0}
+      />
       <div className="gwheels">
         {wheel('lift')}
         {wheel('gamma')}

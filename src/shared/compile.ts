@@ -1425,8 +1425,7 @@ function settingsStages(
   // and Tint, the gain balance just before them) tone it.
   const balance = primariesBalance(r.primaries)
   if (balance) tail.push(balance)
-  const prim = primariesOp(r.primaries)
-  if (prim) tail.push(prim)
+  tail.push(...primariesOp(r.primaries))
   tail.push(...logWheelsOps(r.logWheels))
   // Resolve's vs curves need colour: a black-and-white photo's are kept, not
   // applied (its Curves card says so and points to the B&W mix). A mask's

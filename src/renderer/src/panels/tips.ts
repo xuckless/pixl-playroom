@@ -451,6 +451,14 @@ export const TIPS = {
     what: tk('Toward magenta or toward green, on top of the white balance.'),
     expect: tk('For the green of fluorescent light, or a magenta cast.')
   },
+  'primaries.lumMix': {
+    what: tk(
+      'How much the Y rings of Lift, Gamma and Gain change brightness alone. At 0 they move red, green and blue alike; at 100 they keep every colour’s hue and saturation.'
+    ),
+    expect: tk(
+      'At 0 a lifted black fades the colour too, the matte look; higher keeps the shadows’ colour as you lift them. 0 is how every photo was made; Resolve starts at 100.'
+    )
+  },
 
   // ── Resolve: Log wheels ────────────────────────────────────────────
   'log.shadow': {

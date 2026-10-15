@@ -43,6 +43,13 @@ export interface PrimariesSetting {
   /** −100…100 each, 0 untouched: Resolve's Temp and Tint. */
   temp: number
   tint: number
+  /**
+   * 0…100, how much the wheels' Y rings move luminance alone (Resolve's Lum
+   * Mix): 0 moves each channel alike (YRGB, which desaturates a lifted
+   * black), 100 keeps hue and saturation. 0 by default, as every photo and
+   * look was made (Resolve's own default is 100).
+   */
+  lumMix: number
 }
 
 const zero = (): Yrgb => ({ y: 0, r: 0, g: 0, b: 0 })
@@ -62,7 +69,8 @@ export function defaultPrimaries(): PrimariesSetting {
     saturation: 50,
     hue: 50,
     temp: 0,
-    tint: 0
+    tint: 0,
+    lumMix: 0
   }
 }
 
@@ -96,7 +104,8 @@ export function normalisePrimaries(v: unknown): PrimariesSetting {
     saturation: clamp(num(o.saturation, 50), 0, 100),
     hue: clamp(num(o.hue, 50), 0, 100),
     temp: clamp(num(o.temp, 0), -100, 100),
-    tint: clamp(num(o.tint, 0), -100, 100)
+    tint: clamp(num(o.tint, 0), -100, 100),
+    lumMix: clamp(num(o.lumMix, 0), 0, 100)
   }
 }
 
@@ -144,39 +153,63 @@ const IDENTITY: Primary = {
   hue_shift: 0
 }
 
+const isIdentity = (p: Primary): boolean =>
+  CH.every((c) => p.lift[c] === 0 && p.gamma[c] === 1 && p.gain[c] === 1) &&
+  p.contrast === 1 &&
+  p.saturation === 1 &&
+  p.hue_shift === 0
+
+/** A gamma number (−1…1, 0 untouched) as `Primary`'s exponent. */
+const gammaOf = (v: number): number => r4(Math.pow(2, v * GAMMA_STOPS * 0.5))
+
 /**
- * The primaries as one engine `Primary` for the look stage, or null when
- * they change nothing (Temp and Tint are `primariesBalance`'s).
+ * The primaries as engine ops for the look stage, none when they change
+ * nothing (Temp and Tint are `primariesBalance`'s). With Lum Mix at 0 (as
+ * every photo and look was made) one `Primary`, the Y rings folded into
+ * each channel. Above 0 and with a Y ring moved, the Y rings are their own
+ * `LumaPrimary` (engine 0.21, E78) between the wheels' `Primary` and one
+ * holding Contrast, Saturation and Hue, so the order is the folded one's
+ * and Lum Mix just above 0 renders as at 0. Offset is not part of Lum Mix:
+ * it stays with the wheels.
  */
-export function primariesOp(p: PrimariesSetting): GradeOp | null {
+export function primariesOp(p: PrimariesSetting): GradeOp[] {
+  const split = p.lumMix > 0 && (p.lift.y !== 0 || p.gamma.y !== 0 || p.gain.y !== 1)
   const lift = { r: 0, g: 0, b: 0 }
   const gamma = { r: 1, g: 1, b: 1 }
   const gain = { r: 1, g: 1, b: 1 }
   for (const c of CH) {
     const o = p.offset.y + p.offset[c]
-    const l = p.lift.y + p.lift[c]
-    const g = p.gain.y * p.gain[c]
+    const l = (split ? 0 : p.lift.y) + p.lift[c]
+    const g = (split ? 1 : p.gain.y) * p.gain[c]
     // Offset after lift and gain: (l + v(g − l)) + o = (l + o) + v((g + o) − (l + o)).
     lift[c] = r4(l + o)
     gain[c] = r4(g + o)
-    gamma[c] = r4(Math.pow(2, (p.gamma.y + p.gamma[c]) * GAMMA_STOPS * 0.5))
+    gamma[c] = gammaOf((split ? 0 : p.gamma.y) + p.gamma[c])
   }
-  const op: Primary = {
-    ...IDENTITY,
-    lift,
-    gamma,
-    gain,
+  const look = {
     contrast: r4(p.contrast),
     contrast_pivot: r4(p.pivot),
     saturation: r4(p.saturation / 50),
     hue_shift: r4((p.hue - 50) * 3.6)
   }
-  const same =
-    CH.every((c) => lift[c] === 0 && gamma[c] === 1 && gain[c] === 1) &&
-    op.contrast === 1 &&
-    op.saturation === 1 &&
-    op.hue_shift === 0
-  return same ? null : { Primary: op }
+  if (!split) {
+    const op: Primary = { ...IDENTITY, lift, gamma, gain, ...look }
+    return isIdentity(op) ? [] : [{ Primary: op }]
+  }
+  const wheels: Primary = { ...IDENTITY, lift, gamma, gain }
+  const after: Primary = { ...IDENTITY, ...look }
+  return [
+    ...(isIdentity(wheels) ? [] : [{ Primary: wheels }]),
+    {
+      LumaPrimary: {
+        lift: r4(p.lift.y),
+        gamma: gammaOf(p.gamma.y),
+        gain: r4(p.gain.y),
+        mix: r4(p.lumMix / 100)
+      }
+    },
+    ...(isIdentity(after) ? [] : [{ Primary: after }])
+  ]
 }
 
 /** Display P3's primaries: the look stage's, where Temp and Tint run. */
@@ -240,8 +273,8 @@ export function primariesBalance(p: PrimariesSetting): GradeOp | null {
 
 /**
  * A mask's Amount on its primaries: every change scaled by `k` (0…2) from
- * untouched, gain in stops so it never goes negative; the pivot, which says
- * where rather than how much, stays.
+ * untouched, gain in stops so it never goes negative; the pivot and Lum
+ * Mix, which say where and how rather than how much, stay.
  */
 export function scalePrimaries(p: PrimariesSetting, k: number): PrimariesSetting {
   const lin = (w: Yrgb): Yrgb => ({ y: w.y * k, r: w.r * k, g: w.g * k, b: w.b * k })
@@ -256,7 +289,8 @@ export function scalePrimaries(p: PrimariesSetting, k: number): PrimariesSetting
     saturation: 50 + (p.saturation - 50) * k,
     hue: 50 + (p.hue - 50) * k,
     temp: p.temp * k,
-    tint: p.tint * k
+    tint: p.tint * k,
+    lumMix: p.lumMix
   }
 }
 
