@@ -175,6 +175,28 @@ test('a receipt says how it went', async () => {
   assert.equal(outcome(full), 'partial')
 })
 
+test('a receipt lists failures by name, then what was written short, each said once', async () => {
+  const { receiptLines } = await import('../src/renderer/src/lib/activity')
+  const p = exp('a', {
+    finished: true,
+    outputs: ['x', 'y', 'z'],
+    errors: [
+      { name: 'a.CR2', message: 'XMP was not written', warning: true },
+      { name: 'b.CR2', message: 'the engine refused it' },
+      { name: 'c.CR2', message: 'XMP was not written', warning: true },
+      { name: 'c.CR2', message: 'Classic develop stood in', warning: true }
+    ],
+    skipped: ['d.CR2']
+  })
+  assert.deepEqual(receiptLines(p), [
+    'b.CR2: the engine refused it',
+    'd.CR2: skipped, offline',
+    'XMP was not written · 2 photos',
+    'c.CR2: Classic develop stood in'
+  ])
+  assert.deepEqual(receiptLines(exp('b', { finished: true, outputs: ['x'] })), [])
+})
+
 test('a receipt is said for a few seconds, then is a dot until the list is opened', async () => {
   const { freshReceipt, receiptDot, RECEIPT_SHOWN_MS } =
     await import('../src/renderer/src/lib/activity')

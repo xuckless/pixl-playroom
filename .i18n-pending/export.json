@@ -470,5 +470,21 @@
     "ja": "写真{{count}}枚を書き出し中",
     "vi": "Đang xuất {{count}} ảnh",
     "zh-Hans": "正在导出 {{count}} 张照片"
+  },
+  "{{message}} · {{count}} photos_one": {
+    "en": "{{message}} · {{count}} photo",
+    "fr": "{{message}} · {{count}} photo",
+    "de": "{{message}} · {{count}} Foto",
+    "ja": "{{message}} · 写真{{count}}枚",
+    "vi": "{{message}} · {{count}} ảnh",
+    "zh-Hans": "{{message}} · {{count}} 张照片"
+  },
+  "{{message}} · {{count}} photos_other": {
+    "en": "{{message}} · {{count}} photos",
+    "fr": "{{message}} · {{count}} photos",
+    "de": "{{message}} · {{count}} Fotos",
+    "ja": "{{message}} · 写真{{count}}枚",
+    "vi": "{{message}} · {{count}} ảnh",
+    "zh-Hans": "{{message}} · {{count}} 张照片"
   }
 }

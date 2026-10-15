@@ -10,7 +10,7 @@ import type { AiJobEvent } from '../../../shared/ai'
 import type { ExportProgress, ModelInfo } from '../../../shared/ipc'
 import type { Job } from '../state/busy'
 // Straight from shared (not ./i18n): tested in Node, without the preload's bridge.
-import { t } from '../../../shared/i18n'
+import { t, tp } from '../../../shared/i18n'
 
 /** How long a finished export says how it went in the pill, before it is only a dot. */
 export const RECEIPT_SHOWN_MS = 8000
@@ -62,6 +62,28 @@ export function receiptTitle(p: ExportProgress): string {
   if (failed > 0 && !p.diskFull) parts.push(t('{{count}} failed', { count: failed }))
   if (p.skipped.length > 0) parts.push(t('{{count}} offline', { count: p.skipped.length }))
   return parts.join(' · ')
+}
+
+/**
+ * What a receipt lists under its title: each failure by name, the photos
+ * passed over offline, then what was written short of the settings (no
+ * XMP, another develop stood in), each said once however many photos it was.
+ */
+export function receiptLines(p: ExportProgress): string[] {
+  const noted = new Map<string, string[]>()
+  for (const e of p.errors)
+    if (e.warning) noted.set(e.message, [...(noted.get(e.message) ?? []), e.name])
+  return [
+    ...failures(p).map((e) => `${e.name}: ${e.message}`),
+    ...p.skipped.map((name) => t('{{name}}: skipped, offline', { name })),
+    ...[...noted].map(([message, names]) =>
+      names.length === 1
+        ? `${names[0]}: ${message}`
+        : tp('{{message}} · {{count}} photo', '{{message}} · {{count}} photos', names.length, {
+            message
+          })
+    )
+  ]
 }
 
 /** An export as the list shows it: running, waiting its turn, or its receipt. */

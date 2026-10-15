@@ -7,17 +7,17 @@ import { Spinner } from '../fx'
 import {
   activities,
   activitySummary,
-  failures,
   freshReceipt,
   outcome,
   overall,
   receiptDot,
+  receiptLines,
   receiptTitle,
   RECEIPT_SHOWN_MS,
   type Activity
 } from '../lib/activity'
 import { revealLabel } from '../lib/menus'
-import { api } from '../lib/api'
+import { api, errorText } from '../lib/api'
 import { useModels } from '../lib/models'
 import { useBusy } from '../state/busy'
 import { useExports } from '../state/exports'
@@ -85,11 +85,11 @@ const RECEIPT_NAMES = 5
 /** A finished export in the queue: how it went, its files, its failures to try again. */
 function ReceiptRow({ p }: { p: ExportProgress }): React.JSX.Element {
   const dismiss = useExports((s) => s.dismiss)
-  const failed = failures(p)
-  const notes = [
-    ...failed.map((e) => `${e.name}: ${e.message}`),
-    ...p.skipped.map((name) => t('{{name}}: skipped, offline', { name }))
-  ]
+  const notes = receiptLines(p)
+  const retry = (): void =>
+    void api.export
+      .retry(p.jobId)
+      .catch((err) => useLibrary.getState().say(errorText(err), 'error'))
   return (
     <li className={`receipt ${outcome(p)}`}>
       <span className="activity-what">
@@ -108,11 +108,7 @@ function ReceiptRow({ p }: { p: ExportProgress }): React.JSX.Element {
           </button>
         )}
         {p.retryable > 0 && (
-          <button
-            className="sm"
-            title={t('Export the photos that failed again')}
-            onClick={() => void api.export.retry(p.jobId)}
-          >
+          <button className="sm" title={t('Export the photos that failed again')} onClick={retry}>
             {t('Retry')}
           </button>
         )}
@@ -128,7 +124,9 @@ function ReceiptRow({ p }: { p: ExportProgress }): React.JSX.Element {
       {notes.length > 0 && (
         <ul className="receipt-notes">
           {notes.slice(0, RECEIPT_NAMES).map((n, i) => (
-            <li key={i}>{n}</li>
+            <li key={i} title={n}>
+              {n}
+            </li>
           ))}
           {notes.length > RECEIPT_NAMES && (
             <li className="muted">
