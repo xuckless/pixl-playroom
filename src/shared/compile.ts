@@ -47,6 +47,7 @@ import { compose, swapsAxes, transformPoint, userOrientation } from './orientati
 import { effectiveMode } from './masks'
 import { EDGE_SHIFT_SPAN, offsetPolygon } from './maskedge'
 import { gradientShape, rasterGradient } from './gradients'
+import { basePlaneId, brushRoute, engineStrokes, strokeRuns, type BrushRoute } from './strokes'
 import { engineEdge, engineRefine, engineShift } from './refine'
 import {
   HSL_BANDS,
@@ -169,7 +170,8 @@ export interface CompileContext {
   /**
    * The raster planes (painted brushes and drawn gradients), by component id,
    * as grey PNG paths already turned into the user-oriented frame (the main
-   * process writes them).
+   * process writes them). A brush whose strokes go as they are has its
+   * plane, if any, under `basePlaneId(id)` (shared/strokes.ts).
    */
   brushPaths: Record<string, string>
   /** False while the crop tool is open: show the whole, unrotated frame. */
@@ -957,6 +959,10 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
   }
 }
 
+/**
+ * A component as the engine's: one, or a brush's pieces (its plane, then
+ * each run of strokes: shared/strokes.ts), or none when it can't be drawn.
+ */
 function maskComponent(
   c: MaskComponentSetting,
   user: Orientation,
@@ -964,8 +970,22 @@ function maskComponent(
   /** The frame as the user turned it: what a lasso's offset is measured on. */
   frame: { width: number; height: number },
   /** A drag frame: a refine that reads the whole frame stands aside (refine.ts `refineFor`). */
-  draft = false
-): MaskComponent | null {
+  draft = false,
+  /** A brush's way to the engine (`brushRoute`). */
+  route: BrushRoute = 'plane'
+): MaskComponent[] {
+  const one = maskShape(c, user, brushPaths, frame, draft, route)
+  return Array.isArray(one) ? one : one ? [one] : []
+}
+
+function maskShape(
+  c: MaskComponentSetting,
+  user: Orientation,
+  brushPaths: Record<string, string>,
+  frame: { width: number; height: number },
+  draft: boolean,
+  route: BrushRoute
+): MaskComponent | MaskComponent[] | null {
   const smooth = c.kind === 'range' ? smoothnessFeather(c.smoothness ?? 0) : 0
   const base = {
     mode: c.mode,
@@ -994,10 +1014,34 @@ function maskComponent(
       return shape ? { ...base, shape } : null
     }
     case 'brush': {
-      // A painted plane: written to disk by the main process.
-      const path = brushPaths[c.id]
-      if (!path) return null
-      return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
+      // One plane, written to disk by the main process: an older brush's, a
+      // model's, or a brush whose strokes can't go as they are, painted in.
+      if (route === 'plane') {
+        const path = brushPaths[c.id]
+        if (!path) return null
+        return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
+      }
+      // Its strokes as the engine's (E36): the plane under them first, then
+      // each run, painting in the brush's mode and erasing as a Subtract.
+      const pieces: MaskComponent[] = []
+      if (c.png || c.ref) {
+        const path = brushPaths[basePlaneId(c.id)]
+        if (!path) return null
+        pieces.push({
+          ...base,
+          shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } }
+        })
+      }
+      for (const run of strokeRuns(c.strokes ?? [])) {
+        const strokes = engineStrokes(run.strokes, user)
+        if (strokes.strokes.length === 0) continue
+        pieces.push({
+          ...base,
+          mode: run.erase ? 'Subtract' : base.mode,
+          shape: { Strokes: strokes }
+        })
+      }
+      return pieces
     }
     case 'polygon': {
       if (c.points.length < 3) return null
@@ -1079,12 +1123,23 @@ export function layerMask(
   frame: { width: number; height: number } = { width: 1, height: 1 },
   draft = false
 ): Mask | null {
-  // The first component always adds (as the masks panel shows it).
-  const drawn = l.components
-    .map((c, i) =>
-      maskComponent({ ...c, mode: effectiveMode(i, c.mode) }, user, brushPaths, frame, draft)
+  // The first component always adds (as the masks panel shows it). A brush
+  // whose eraser must take from it alone leads, where a union lets it.
+  const lead: MaskComponent[] = []
+  const rest: MaskComponent[] = []
+  l.components.forEach((c, i) => {
+    const route = c.kind === 'brush' ? brushRoute(l.components, i) : 'plane'
+    const made = maskComponent(
+      { ...c, mode: effectiveMode(i, c.mode) },
+      user,
+      brushPaths,
+      frame,
+      draft,
+      route
     )
-    .filter((c): c is MaskComponent => c !== null)
+    ;(route === 'lead' ? lead : rest).push(...made)
+  })
+  const drawn = [...lead, ...rest]
   // One that could not be drawn (a brush whose plane is missing, a lasso of
   // one point) leaves a Subtract or Intersect first: taken from nothing it
   // selects nothing, and the engine refuses one first, so it goes. (Made an

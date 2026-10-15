@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { readable } from '../../../lib/frames'
-import { maskJoins } from '../../../../../shared/maskpreview'
-import type { LocalLayer } from '../../../../../shared/recipe'
+import { maskJoins, strokesSig } from '../../../../../shared/maskpreview'
+import type { BrushComponent, LocalLayer } from '../../../../../shared/recipe'
 import { displayToBase, type P, type ViewGeometry } from '../../../../../shared/view'
-import { planePng } from '../../../lib/planes'
+import { paintedBitmap, planePng } from '../../../lib/planes'
 import { lastSentRev, useDevelop } from '../../../state/develop'
 import { useUi, type OverlayMode } from '../../../state/ui'
 import { BASE_EDGE, MaskGl, type Join, type ViewMode } from './MaskGl'
@@ -88,10 +88,14 @@ async function bitmapOf(url: string, width?: number): Promise<ImageBitmap> {
   )
 }
 
-/** Painted planes, decoded, by what the component holds (its reference or its PNG). */
+/**
+ * Painted planes, decoded, by what the component holds (its reference or
+ * its PNG, and its strokes, painted over it here as the engine paints them).
+ */
 const brushBitmaps = new Map<string, ImageBitmap | Promise<ImageBitmap | null>>()
-function brushKey(c: { ref?: string; png: string }): string {
-  return c.ref ?? `png:${c.png.length}:${c.png.slice(-64)}`
+function brushKey(c: BrushComponent): string {
+  const plane = c.ref ?? `png:${c.png.length}:${c.png.slice(-64)}`
+  return c.strokes?.length ? `${plane}|${strokesSig(c.strokes)}` : plane
 }
 
 function viewOf(mode: OverlayMode): ViewMode {
@@ -307,11 +311,13 @@ export function MaskCanvas({
       else {
         waiting = true
         if (!got) {
-          const p = planePng(comp)
-            .then((b64) => {
-              const bytes = Uint8Array.from(atob(b64), (x) => x.charCodeAt(0))
-              return createImageBitmap(new Blob([bytes], { type: 'image/png' }), decodeOpts)
-            })
+          const made = comp.strokes?.length
+            ? paintedBitmap(comp, decodeOpts)
+            : planePng(comp).then((b64) => {
+                const bytes = Uint8Array.from(atob(b64), (x) => x.charCodeAt(0))
+                return createImageBitmap(new Blob([bytes], { type: 'image/png' }), decodeOpts)
+              })
+          const p = made
             .then((bmp) => {
               brushBitmaps.set(key, bmp)
               if (brushBitmaps.size > 24) {

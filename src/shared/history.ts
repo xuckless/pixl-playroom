@@ -71,11 +71,16 @@ function isEntityList(path: Seg[]): boolean {
       path[0] === 'retouch' ||
       path[0] === 'pixels'
     )
-  // A mask's components, and the point colours among its settings.
+  // A mask's components, the point colours among its settings, and a
+  // brush's strokes (a step adds its stroke, not the brush's every stroke).
   if (path[0] !== 'layers' || typeof path[1] === 'string') return false
   return (
     (path.length === 3 && path[2] === 'components') ||
-    (path.length === 4 && path[2] === 'settings' && path[3] === 'pointColors')
+    (path.length === 4 && path[2] === 'settings' && path[3] === 'pointColors') ||
+    (path.length === 5 &&
+      path[2] === 'components' &&
+      typeof path[3] !== 'string' &&
+      path[4] === 'strokes')
   )
 }
 

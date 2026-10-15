@@ -207,3 +207,80 @@ test(
     }
   }
 )
+
+test(
+  'the engine paints strokes as Playroom draws them; an eraser takes from its brush alone',
+  { skip },
+  async () => {
+    const e = realEngine!
+    const f = await fixture()
+    const { compile } = await import('../src/shared/compile')
+    const { paintStrokes } = await import('../src/shared/brush')
+    const { defaultRecipe, newLocalLayer } = await import('../src/shared/recipe')
+    try {
+      const strokes = [
+        { id: 's1', dabs: [0.2, 0.3, 0.12, 1, 0.7, 0.6, 0.15, 0.6], softness: 0.4, flow: 0.9 },
+        { id: 's2', dabs: [0.45, 0.45, 0.08, 1], softness: 0, flow: 1, erase: true as const },
+        { id: 's3', dabs: [0.8, 0.2, 0.1, 1, 0.9, 0.8, 0.05, 1], softness: 0.2, flow: 0.5 }
+      ]
+      const brush = {
+        id: 'b',
+        kind: 'brush',
+        mode: 'Add',
+        opacity: 100,
+        invert: false,
+        feather: 0,
+        width: 96,
+        height: 64,
+        png: '',
+        strokes
+      }
+      const radial = {
+        id: 'r',
+        kind: 'radial',
+        mode: 'Add',
+        opacity: 100,
+        invert: false,
+        feather: 0,
+        centre: { x: 0.3, y: 0.7 },
+        radiusX: 0.25,
+        radiusY: 0.25,
+        angle: 0,
+        softness: 0,
+        width: 64,
+        height: 64
+      }
+      const planeOf = async (components: unknown[]): Promise<Uint8Array> => {
+        const r = defaultRecipe(false)
+        const l = newLocalLayer('Brush')
+        l.components = components as never
+        l.settings.basic.exposure = 1
+        r.layers = [l]
+        const c = compile(r, f.ctx)
+        await e.convert(f.plane(c.grade, { LayerMask: { layer: c.layerIndex[l.id] } }))
+        return f.read().data
+      }
+      // The brush alone: the engine's plane is Playroom's rasteriser's, to a level.
+      const engine = await planeOf([brush])
+      const ours = new Float32Array(96 * 64)
+      paintStrokes(ours, 96, 64, strokes)
+      let worst = 0
+      for (let i = 0; i < ours.length; i++)
+        worst = Math.max(worst, Math.abs(engine[i] - Math.round(ours[i] * 255)))
+      assert.ok(worst <= 1, `off by ${worst}`)
+      // After a gradient: the brush leads, so its eraser takes from it alone
+      // and the mask is their union.
+      const both = await planeOf([radial, brush])
+      const disc = await planeOf([radial])
+      let off = 0
+      for (let i = 0; i < both.length; i++) {
+        const a = disc[i] / 255
+        const b = engine[i] / 255
+        off = Math.max(off, Math.abs(both[i] - Math.round((a + b - a * b) * 255)))
+      }
+      assert.ok(off <= 2, `union off by ${off}`)
+    } finally {
+      f.done()
+    }
+  }
+)

@@ -9,6 +9,7 @@ import type { Worker } from 'worker_threads'
 import type { Orientation } from '../../shared/engine-types'
 import type { MaskEdge } from '../../shared/maskedge'
 import type { GradientComponent } from '../../shared/recipe'
+import type { PaintedStrokes } from '../planes'
 import createPixels from './pixels.worker?nodeWorker'
 
 export type PixelsJob =
@@ -27,6 +28,8 @@ export type PixelsJob =
       edge?: MaskEdge
       /** The object the stroke is kept to (Snap to edges), at the frame's size. */
       object?: { data: Uint8Array; width: number; height: number }
+      /** Strokes painted over the plane first (shared/strokes.ts `brushRoute` 'plane'). */
+      strokes?: PaintedStrokes
     }
   /** A masked pixel step's overlay (pixels/ops.ts). */
   | { op: 'compose'; image: string; mask: string; out: string }
