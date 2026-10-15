@@ -1534,6 +1534,15 @@ function settingsStages(
  */
 function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vignette['style'] {
   const exposure = { Exposure: { highlights: clamp(e.vignetteHighlights / 100, 0, 1) } }
+  if (e.vignetteStyle === 'colour') {
+    // Engine 0.21 (E24): darkening is highlight priority's at 0; lightening
+    // stops each pixel at white, which a picture with headroom has none of.
+    if (!hdr || e.vignetteAmount <= 0) return 'ColorPriority'
+    notes.push(
+      tk('Colour priority lightening needs an SDR picture; this HDR photo keeps highlight priority')
+    )
+    return { Exposure: { highlights: 0 } }
+  }
   if (e.vignetteStyle !== 'paint') return exposure
   if (hdr) {
     notes.push(tk('Paint overlay needs an SDR picture; this HDR photo keeps highlight priority'))

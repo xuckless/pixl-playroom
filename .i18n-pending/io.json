@@ -22,5 +22,37 @@
     "ja": "機能：{{list}}",
     "vi": "tính năng: {{list}}",
     "zh-Hans": "功能：{{list}}"
+  },
+  "Colour priority": {
+    "en": "Colour priority",
+    "fr": "Priorité aux couleurs",
+    "de": "Farbpriorität",
+    "ja": "カラー優先",
+    "vi": "Ưu tiên màu sắc",
+    "zh-Hans": "颜色优先"
+  },
+  "Colour priority lightening needs an SDR picture; this HDR photo keeps highlight priority": {
+    "en": "Colour priority lightening needs an SDR picture; this HDR photo keeps highlight priority",
+    "fr": "L’éclaircissement avec priorité aux couleurs nécessite une image SDR ; cette photo HDR garde la priorité aux hautes lumières",
+    "de": "Aufhellen mit Farbpriorität braucht ein SDR-Bild; dieses HDR-Foto behält die Lichterpriorität",
+    "ja": "カラー優先で明るくするには SDR 画像が必要です。この HDR 写真ではハイライト優先のままになります",
+    "vi": "Làm sáng với ưu tiên màu sắc cần ảnh SDR; ảnh HDR này giữ chế độ ưu tiên vùng sáng",
+    "zh-Hans": "颜色优先的提亮需要 SDR 图片；此 HDR 照片保持高光优先"
+  },
+  "Colour priority lightening needs an SDR picture: this HDR photo keeps highlight priority": {
+    "en": "Colour priority lightening needs an SDR picture: this HDR photo keeps highlight priority",
+    "fr": "L’éclaircissement avec priorité aux couleurs nécessite une image SDR : cette photo HDR garde la priorité aux hautes lumières",
+    "de": "Aufhellen mit Farbpriorität braucht ein SDR-Bild: Dieses HDR-Foto behält die Lichterpriorität",
+    "ja": "カラー優先で明るくするには SDR 画像が必要です。この HDR 写真ではハイライト優先のままになります",
+    "vi": "Làm sáng với ưu tiên màu sắc cần ảnh SDR: ảnh HDR này giữ chế độ ưu tiên vùng sáng",
+    "zh-Hans": "颜色优先的提亮需要 SDR 图片：此 HDR 照片保持高光优先"
+  },
+  "Highlight priority darkens like light falling off; colour priority lightens without washing colours toward white; paint overlay mixes toward black or white": {
+    "en": "Highlight priority darkens like light falling off; colour priority lightens without washing colours toward white; paint overlay mixes toward black or white",
+    "fr": "Priorité aux hautes lumières assombrit comme une lumière qui décroît ; Priorité aux couleurs éclaircit sans délaver les couleurs vers le blanc ; Incrustation peinte mélange vers le noir ou le blanc",
+    "de": "Lichterpriorität dunkelt ab wie abfallendes Licht; Farbpriorität hellt auf, ohne Farben zu Weiß auszuwaschen; Malüberlagerung mischt in Richtung Schwarz oder Weiß",
+    "ja": "ハイライト優先は光が落ちるように暗くし、カラー優先は色を白に褪せさせずに明るくし、ペイントオーバーレイは黒または白に向かって混ぜます",
+    "vi": "Ưu tiên vùng sáng làm tối như ánh sáng suy giảm; ưu tiên màu sắc làm sáng mà không làm màu bạc về phía trắng; lớp phủ tô màu pha về phía đen hoặc trắng",
+    "zh-Hans": "高光优先的压暗如同光线衰减；颜色优先提亮时不会让颜色褪向白色；绘画叠加会向黑色或白色混合"
   }
 }

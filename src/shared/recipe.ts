@@ -245,8 +245,12 @@ export interface EffectsSetting {
   vignetteRoundness: number
   vignetteFeather: number
   vignetteHighlights: number
-  /** Highlight priority darkens like light falling off; paint overlay mixes toward black or white. */
-  vignetteStyle: 'highlight' | 'paint'
+  /**
+   * Highlight priority darkens like light falling off; colour priority
+   * (engine 0.21) lightens without washing colours toward white; paint
+   * overlay mixes toward black or white.
+   */
+  vignetteStyle: 'highlight' | 'colour' | 'paint'
   /** A lift toward a colour on the look's code values (see `addcolor.ts`). */
   wash: AddColourSetting
   grainAmount: number

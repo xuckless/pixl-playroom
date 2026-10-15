@@ -272,6 +272,30 @@ test('paint overlay is the paint style, and highlight priority on an HDR photo',
   assert.ok(c.notes.some((n) => /Paint overlay/.test(n)))
 })
 
+test('colour priority is its own style; an HDR photo lightening keeps highlight priority', () => {
+  const r = defaultRecipe(false)
+  r.effects.vignetteAmount = 40
+  r.effects.vignetteHighlights = 70
+  r.effects.vignetteStyle = 'colour'
+  const style = (c: ReturnType<typeof compile>): unknown => {
+    const v = c.grade!.layers[0].stages.flatMap((s) => s.ops).find((o) => 'Vignette' in o)
+    assert.ok(v && 'Vignette' in v)
+    return v.Vignette.style
+  }
+  const sdr = compile(r, ctx)
+  assert.equal(style(sdr), 'ColorPriority')
+  assert.ok(!sdr.notes.some((n) => /Colour priority/.test(n)))
+  // Lightening with headroom is refused by the engine: highlight priority at 0, said.
+  const hdr = compile(r, { ...ctx, hdr: true })
+  assert.deepEqual(style(hdr), { Exposure: { highlights: 0 } })
+  assert.ok(hdr.notes.some((n) => /Colour priority lightening/.test(n)))
+  // Darkening is allowed on an HDR photo.
+  r.effects.vignetteAmount = -40
+  const dark = compile(r, { ...ctx, hdr: true })
+  assert.equal(style(dark), 'ColorPriority')
+  assert.ok(!dark.notes.some((n) => /Colour priority/.test(n)))
+})
+
 test('added light ends the linear stage; the wash comes just before the grain', () => {
   const r = defaultRecipe(false)
   r.basic.exposure = 0.5

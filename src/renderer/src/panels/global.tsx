@@ -1376,7 +1376,10 @@ export function EffectsBody(): React.JSX.Element | null {
   const { recipe, edit, commit, layer } = useScope()
   const isHdr = useDevelop((s) => s.session?.isHdr === true)
   if (!recipe) return null
-  const paint = recipe.effects.vignetteStyle === 'paint'
+  const style = recipe.effects.vignetteStyle
+  const paint = style === 'paint'
+  // Colour priority lightening has no headroom to stop at (engine 0.21).
+  const colourFallsBack = isHdr && style === 'colour' && recipe.effects.vignetteAmount > 0
   return (
     <ToolPanel>
       <Section id="effects.vignette" title={t('Post-crop vignette')} tip={TIPS['effects.vignette']}>
@@ -1385,14 +1388,19 @@ export function EffectsBody(): React.JSX.Element | null {
           value={recipe.effects.vignetteStyle}
           options={[
             { value: 'highlight', label: t('Highlight priority') },
+            { value: 'colour', label: t('Colour priority') },
             { value: 'paint', label: t('Paint overlay') }
           ]}
           title={
             isHdr && paint
               ? t('Paint overlay needs an SDR picture: this HDR photo keeps highlight priority')
-              : t(
-                  'Highlight priority darkens like light falling off; paint overlay mixes toward black or white'
-                )
+              : colourFallsBack
+                ? t(
+                    'Colour priority lightening needs an SDR picture: this HDR photo keeps highlight priority'
+                  )
+                : t(
+                    'Highlight priority darkens like light falling off; colour priority lightens without washing colours toward white; paint overlay mixes toward black or white'
+                  )
           }
           onChange={(v) => {
             edit((r) => (r.effects.vignetteStyle = v))
@@ -1425,7 +1433,7 @@ export function EffectsBody(): React.JSX.Element | null {
           max={100}
           def={50}
         />
-        {(!paint || isHdr) && (
+        {(style === 'highlight' || (paint && isHdr)) && (
           <RS
             label={tk('Highlights')}
             read={(r) => r.effects.vignetteHighlights}
@@ -1434,7 +1442,9 @@ export function EffectsBody(): React.JSX.Element | null {
             max={100}
           />
         )}
-        {isHdr && paint && <p className="note small">{t('HDR photos keep highlight priority.')}</p>}
+        {((isHdr && paint) || colourFallsBack) && (
+          <p className="note small">{t('HDR photos keep highlight priority.')}</p>
+        )}
       </Section>
       <Section id="effects.wash" title={t('Colour wash')}>
         <AddColourControl
