@@ -73,6 +73,32 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
             '⌘C copies a photo’s settings in the Library as well, and ⌘V pastes them at once, with an Undo. ⇧⌘V lets you choose what to paste, and Sync names the photo it copies from.'
           )
         ]
+      },
+      {
+        title: tk('Culling'),
+        items: [
+          tk(
+            'The Library has four views: Grid (G), Loupe (E), Compare (C) and Survey (N). Space flips between the Grid and the Loupe, Esc comes back, D develops. E used to develop; it opens the Loupe now, and says so once.'
+          ),
+          tk(
+            'Z shows every pixel: the camera’s own full-size preview where there is one, else the part you are looking at, rendered on the spot. No trip to Develop. Checking focus is no longer guesswork.'
+          ),
+          tk(
+            'Compare puts the Select and a Candidate side by side, zoomed together (L lets them wander apart). ← and → bring the next Candidate, Tab swaps them, ↑ crowns the Candidate.'
+          ),
+          tk(
+            'Survey lays out up to twelve photos at once, and / drops one (⌘Z if you change your mind). N on a single photo shows its burst, or the shots that look nearly the same.'
+          ),
+          tk(
+            'Auto advance (⇧A, or the chip at the bottom) moves on after each rating, flag or label. It is off unless you want it, and Caps Lock flips it while it is down, as in Lightroom.'
+          ),
+          tk(
+            'The filters have a row of their own: stars, flags, labels, edited, and More… for the rest, each one a chip you can clear. It also admits that rejects are hidden, which they always were. ⇧\\ tucks it away.'
+          ),
+          tk(
+            'The Loupe’s pictures are kept so they come up at once, under a limit you choose in Settings, the ones you saw longest ago going first.'
+          )
+        ]
       }
     ]
   },
