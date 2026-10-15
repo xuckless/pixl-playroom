@@ -32,7 +32,9 @@ import type {
   Retouch,
   SourceInfo
 } from '../shared/engine-types'
-import type { EngineClient } from './engine/client'
+import { EngineError, type EngineClient } from './engine/client'
+import { reduceRefused } from '../shared/engine-types'
+import { proxyReduce, reducedSide, uprightSize } from '../shared/thumbsize'
 import {
   keptMasterTags,
   PLAIN_DEVELOP,
@@ -253,11 +255,15 @@ async function build(
   // whose developed frame is a little smaller than its mosaic; either way the
   // report's frame size is the truth, and the scale here only has to be close.
   const long = Math.max(info.width, info.height)
+  // A large camera JPEG decodes at half size (engine 0.21's `decode_reduce`,
+  // the owner's choice: only at twice the proxy's edge), Lanczos the rest.
+  let reduce = raw ? null : proxyReduce(info, PROXY_EDGE)
   const develop = (mode: RawMode | null, across: number): ReturnType<EngineClient['convert']> => {
-    const factor = Math.min(1, PROXY_EDGE / across)
+    const factor = Math.min(1, PROXY_EDGE / reducedSide(across, reduce))
     return engine.convert({
       ...blankRequest(photo.path, proxyPath, info.input, info),
       raw: mode,
+      decode_reduce: reduce,
       resize: factor < 1 ? { Scale: { factor } } : 'None',
       resampler: 'Lanczos3',
       // Averaging in linear light keeps a downscale's tones honest; an HDR
@@ -282,7 +288,13 @@ async function build(
   let byCell = raw !== null && !linear && proxyByCell(long, cell, PROXY_EDGE)
   let report = byCell
     ? await develop(rawProxyMaster(colour), long / cell).catch(() => null)
-    : await develop(raw, long)
+    : await develop(raw, long).catch((err) => {
+        // A JPEG the scaled decode cannot read (a lossless one): whole, then.
+        if (!reduce || !(err instanceof EngineError) || !reduceRefused(err.code, err.detail))
+          throw err
+        reduce = null
+        return develop(raw, long)
+      })
   // A sensor the cells were not as expected on (or a develop that refused
   // them): the full develop, as before.
   if (
@@ -301,6 +313,11 @@ async function build(
     ...(float ? { float } : {})
   }
   const scaleUp = byCell ? cell : 1
+  // A reduced decode's report states the reduced frame (`⌈w / 2⌉`, a pixel
+  // off): the frame is the probe's, upright.
+  const frame = reduce
+    ? uprightSize(info, orientation)
+    : { width: report.frame_width * scaleUp, height: report.frame_height * scaleUp }
 
   const draftPath = join(dir, `draft-${s}.${ext}`)
   const dFactor = Math.min(1, DRAFT_EDGE / Math.max(proxy.width, proxy.height))
@@ -330,8 +347,8 @@ async function build(
     draft,
     // The develop's frame (its cells' times their width when it was a half
     // size one): what masks and every normalised size are fractions of.
-    frameWidth: report.frame_width * scaleUp,
-    frameHeight: report.frame_height * scaleUp
+    frameWidth: frame.width,
+    frameHeight: frame.height
   }
   await writeFile(meta, JSON.stringify(out))
   return out
