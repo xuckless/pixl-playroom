@@ -984,12 +984,20 @@ export function registerIpc(s: Services): void {
     return r.canceled || !r.filePaths[0] ? null : readWatermark(r.filePaths[0])
   })
   handle(IPC.export.readWatermark, (path: string) => readWatermark(path))
-  handle(IPC.export.start, (keys: string[], settings: ExportSettings) => {
+  handle(IPC.export.start, (keys: string[], settings: ExportSettings, label?: string | null) => {
     requireLicence('export')
+    // Export with previous: these settings, and the preset they were (null: the person's own).
     void s.index.setSetting('export.last', settings).catch(() => {})
-    return s.exporter.start(keys, settings)
+    void s.index.setSetting('export.lastLabel', label ?? null).catch(() => {})
+    return s.exporter.enqueue(keys, settings, label ?? null)
   })
   handle(IPC.export.cancel, (id: string) => s.exporter.cancel(id))
+  handle(IPC.export.jobs, () => s.exporter.jobs())
+  handle(IPC.export.retry, (id: string) => {
+    requireLicence('export')
+    return s.exporter.retry(id)
+  })
+  handle(IPC.export.show, (id: string) => s.exporter.show(id))
   handle(IPC.export.preview, (key: string, settings: ExportSettings) =>
     s.exporter.preview(key, settings)
   )

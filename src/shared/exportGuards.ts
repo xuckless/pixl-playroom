@@ -24,11 +24,17 @@ import { t, tk } from './i18n'
 /** The wizard's steps; a guard says which one holds the setting to change. */
 export type ExportStep = 'format' | 'size' | 'delivery' | 'review'
 
+/** The export's cards, each a group of settings; a guard names the one that holds its setting. */
+export type ExportCard =
+  'format' | 'size' | 'colour' | 'sharpen' | 'hdr' | 'metadata' | 'location' | 'watermark'
+
 export interface Guard {
   id: string
   /** `minor`: worth saying, not worth a warning's weight. */
   severity: 'block' | 'warn' | 'minor'
   step: ExportStep
+  /** The card that holds the setting to change; null when no setting does (a photo offline). */
+  card: ExportCard | null
   message: string
 }
 
@@ -74,6 +80,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'avif-speed',
       severity: 'block',
       step: 'format',
+      card: 'format',
       message: t('AVIF speed 10 is not available: use 9 or lower.')
     })
   if ((mode === 'keep' || mode === 'expand') && !supportsHdr(s.format))
@@ -81,6 +88,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'hdr-format',
       severity: 'block',
       step: 'delivery',
+      card: 'hdr',
       message: t('{{format}} cannot hold HDR. Choose AVIF, JPEG XL or PNG, or set HDR to SDR.', {
         format: name
       })
@@ -90,6 +98,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'gainmap-format',
       severity: 'block',
       step: 'delivery',
+      card: 'hdr',
       message: t(
         '{{format}} has no place for a gain map. Choose JPEG or AVIF, or set HDR to SDR.',
         { format: name }
@@ -100,6 +109,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'avif-lossless-chroma',
       severity: 'block',
       step: 'format',
+      card: 'format',
       message: t('Lossless AVIF keeps full colour: set Chroma to 4:4:4 or turn Lossless off.')
     })
   // The engine's HDR path and a gain map's base reach the linear light through the profile.
@@ -114,6 +124,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'icc-needed',
       severity: 'block',
       step: 'delivery',
+      card: 'metadata',
       message: t('This HDR output describes its colour with the ICC profile: turn ICC on.')
     })
   const r = s.resize
@@ -123,6 +134,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
         id: 'size-empty',
         severity: 'block',
         step: 'size',
+        card: 'size',
         message: t('Enter a size above zero.')
       })
     else if (r.mode === 'percent' && r.value > 1000)
@@ -130,6 +142,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
         id: 'size-percent',
         severity: 'block',
         step: 'size',
+        card: 'size',
         message: t('A scale past 1000% is not allowed.')
       })
   }
@@ -138,6 +151,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'name-empty',
       severity: 'block',
       step: 'review',
+      card: 'location',
       message: t('The file name is empty.')
     })
   // The same name beside the original would write over it.
@@ -151,6 +165,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'overwrite-original',
       severity: 'block',
       step: 'review',
+      card: 'location',
       message: t(
         'This name, beside the original and in its format, would write over the original: change the name or the folder.'
       )
@@ -162,6 +177,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'hdr-to-sdr',
       severity: 'warn',
       step: 'delivery',
+      card: 'hdr',
       message: t('HDR photos are tone mapped to SDR: the highlights above white are compressed.')
     })
   if (s.colorSpace === 'Srgb' && any(wide))
@@ -169,6 +185,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'gamut-narrow',
       severity: 'warn',
       step: 'size',
+      card: 'colour',
       message: t(
         'Colours beyond sRGB (RAW files and HDR photos have them) are compressed into sRGB. Display P3 or Adobe RGB keep more.'
       )
@@ -178,6 +195,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'banding',
       severity: 'warn',
       step: 'format',
+      card: 'format',
       message: t('8-bit output of a RAW or HDR photo can band in smooth skies: turn Dither on.')
     })
   if (s.metadata.iptc && NO_IPTC.includes(s.format) && s.metaMode === 'all')
@@ -185,6 +203,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'iptc',
       severity: 'warn',
       step: 'delivery',
+      card: 'metadata',
       message: t('{{format}} has no place for IPTC: it will not be written.', { format: name })
     })
   if (s.format === 'jpeg' || s.format === 'webp' || s.format === 'avif')
@@ -192,6 +211,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'alpha',
       severity: 'minor',
       step: 'format',
+      card: 'format',
       message: t(
         '{{format}} is written without transparency; a photo that has some is flattened.',
         { format: name }
@@ -202,6 +222,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'chroma-jpeg',
       severity: 'minor',
       step: 'format',
+      card: 'format',
       message:
         s.jpegSubsampling === 'Half'
           ? t('Colour is stored at half resolution (4:2:2). 4:4:4 keeps it whole.')
@@ -212,6 +233,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'chroma-avif',
       severity: 'minor',
       step: 'format',
+      card: 'format',
       message:
         s.chroma === 'Wide'
           ? t('Colour is stored at half width resolution. 4:4:4 keeps it whole.')
@@ -222,6 +244,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'enlarge',
       severity: 'minor',
       step: 'size',
+      card: 'size',
       message: t('Enlarging makes a bigger picture, not a sharper one.')
     })
   if (s.colorSpace === 'Rec2020' && (s.format === 'jpeg' || s.format === 'webp'))
@@ -229,6 +252,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       id: 'rec2020-8bit',
       severity: 'warn',
       step: 'size',
+      card: 'colour',
       message: t(
         'Rec.2020 in an 8-bit {{format}} is a very wide space for 256 steps: many viewers will show it dull.',
         { format: name }

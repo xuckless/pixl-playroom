@@ -287,6 +287,14 @@ export class EngineClient {
     this.yieldTo = other
   }
 
+  /** Calls waiting behind the interactive engine's work just now (`holdFor`). */
+  private holding = 0
+
+  /** Whether any call waits behind the interactive engine's work (an export says it is paused). */
+  get heldBack(): boolean {
+    return this.holding > 0
+  }
+
   /**
    * Send preview frames (`convert` with `frame`) straight from the host to
    * this window, over a channel of their own: the pixels never pass through
@@ -582,7 +590,14 @@ export class EngineClient {
     })
     if (!hold && !drain) return this.post(method, message, signal, onProgress)
     return (async () => {
-      if (hold) await this.yieldTo!.quiet(HOLD_MAX_MS)
+      if (hold) {
+        this.holding++
+        try {
+          await this.yieldTo!.quiet(HOLD_MAX_MS)
+        } finally {
+          this.holding--
+        }
+      }
       if (drain) await this.drained(DRAIN_MAX_MS)
       return this.post(method, message, signal, onProgress)
     })()

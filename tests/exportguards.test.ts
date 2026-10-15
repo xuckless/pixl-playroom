@@ -107,6 +107,43 @@ test('the minor notes are minor, and blocks sort first', () => {
   assert.equal(g.find((x) => x.id === 'chroma-jpeg')!.severity, 'minor')
 })
 
+test('every guard names the card that holds its setting', () => {
+  const cardOf = (g: Guard[], id: string): string | null | undefined =>
+    g.find((x) => x.id === id)?.card
+  // Metadata (IPTC, the profile) and HDR shared the wizard's one step: each has its own card.
+  const pngKeep = exportGuards(set({ format: 'png' }, { mode: 'keep' }), [pq])
+  assert.equal(
+    cardOf(exportGuards(set({ format: 'jpeg' }, { mode: 'keep' }), [pq]), 'hdr-format'),
+    'hdr'
+  )
+  assert.equal(cardOf(exportGuards(set({ format: 'png' }), [jpg]), 'iptc'), 'metadata')
+  assert.equal(
+    cardOf(
+      exportGuards(
+        set(
+          { format: 'jxl', metadata: { exif: true, icc: false, xmp: true, iptc: false } },
+          { mode: 'keep' }
+        ),
+        [pq]
+      ),
+      'icc-needed'
+    ),
+    'metadata'
+  )
+  assert.equal(cardOf(exportGuards(set({}), [raw]), 'gamut-narrow'), 'colour')
+  assert.equal(cardOf(exportGuards(set({ dither: false }), [raw]), 'banding'), 'format')
+  assert.equal(cardOf(exportGuards(set({ template: ' ' }), [jpg]), 'name-empty'), 'location')
+  assert.equal(
+    cardOf(
+      exportGuards(set({ resize: { mode: 'long', value: 0, valueH: 0, enlarge: false } }), [jpg]),
+      'size-empty'
+    ),
+    'size'
+  )
+  for (const g of [...pngKeep, ...exportGuards(set({ template: '' }), [raw, pq, map])])
+    assert.notEqual(g.card, undefined, g.id)
+})
+
 test('Fit inside a box keeps the shape and never enlarges unless allowed', () => {
   const s = (more: Partial<ExportSettings['resize']>): ExportSettings => {
     const d = defaultExportSettings()

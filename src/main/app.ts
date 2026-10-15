@@ -5,7 +5,7 @@ import { PIXL_ENHANCE } from '../shared/pixlenhance'
 import type { AiJobEvent } from '../shared/ai'
 import type { AiRunner } from './ai/jobs'
 import { t } from '../shared/i18n'
-import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
 import log from 'electron-log/main'
 import { rm } from 'fs/promises'
 import { join } from 'path'
@@ -42,6 +42,7 @@ import { BrainStore } from './ai/brain'
 import { ModelStore } from './ai/models'
 import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
+import { quitQuestion } from './exportqueue'
 import { openIndex } from './indexer/client'
 import { registerIpc } from './ipc'
 import { LensProfileStore } from './lensprofiles'
@@ -96,6 +97,8 @@ if (secondary) app.exit(0)
 
 /** Opens are sent here; undefined while every window is closed (macOS). */
 let mainWindow: BrowserWindow | undefined
+/** Exports, queued and running: quitting asks first while there are some. */
+let exporting: Exporter | undefined
 
 function focusWindow(): void {
   if (!mainWindow || hidden) return
@@ -370,7 +373,14 @@ app.whenReady().then(() => {
   }, 20_000).unref()
   const lenses = new LensProfileStore()
   void lenses.start()
-  const exporter = new Exporter(library, sessions, bgEngine)
+  // A scripted run is never at the window: its exports never open a folder.
+  const exporter = new Exporter(
+    library,
+    sessions,
+    bgEngine,
+    () => hidden || BrowserWindow.getFocusedWindow() !== null
+  )
+  exporting = exporter
   const select = new SelectService(selectEngine, bgEngine, library, planes, models, () => sessions)
   // A stroke with Snap to edges is kept to the object SAM finds under it.
   setBrushSnapper({
@@ -512,6 +522,23 @@ let drained = false
 
 app.on('before-quit', (e) => {
   if (drained) return
+  // Exports would stop part-way: asked first (closing the last window on
+  // macOS does not quit, and needs no asking; the export goes on).
+  const ask = exporting?.busy && !hidden ? quitQuestion(exporting.jobs()) : null
+  if (ask) {
+    const opts = {
+      type: 'question' as const,
+      buttons: [t('Quit'), t('Keep exporting')],
+      defaultId: 1,
+      cancelId: 1,
+      message: ask.message,
+      detail: ask.detail
+    }
+    const w = BrowserWindow.getFocusedWindow() ?? mainWindow
+    const choice = w ? dialog.showMessageBoxSync(w, opts) : dialog.showMessageBoxSync(opts)
+    if (choice !== 0) return e.preventDefault()
+  }
+  exporting?.stopAll()
   // Pending edits go to the index host, and it closes the database, before
   // anything stops: once, and never for longer than QUIT_DRAIN_MS.
   e.preventDefault()

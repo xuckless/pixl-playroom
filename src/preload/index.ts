@@ -380,9 +380,17 @@ const api = {
     chooseWatermark: () => call<WatermarkFile | null>(IPC.export.chooseWatermark),
     /** A chosen watermark again (a preset's), or an error when it is gone. */
     readWatermark: (path: string) => call<WatermarkFile>(IPC.export.readWatermark, path),
-    start: (keys: string[], settings: ExportSettings) =>
-      call<string>(IPC.export.start, keys, settings),
+    /** Queue an export; `label` names the preset it was made with (null: settings of one's own). */
+    start: (keys: string[], settings: ExportSettings, label: string | null = null) =>
+      call<string>(IPC.export.start, keys, settings, label),
+    /** Stop an export: the one running at the engine's next stage, a queued one before it begins. */
     cancel: (id: string) => call<void>(IPC.export.cancel, id),
+    /** Every export queued, running, or lately finished. */
+    jobs: () => call<ExportProgress[]>(IPC.export.jobs),
+    /** An export's failures again, as a new export (its id), or null when none are left. */
+    retry: (id: string) => call<string | null>(IPC.export.retry, id),
+    /** An export's files in the system's file browser. */
+    show: (id: string) => call<void>(IPC.export.show, id),
     presets: () => call<ExportPreset[]>(IPC.export.presets),
     savePreset: (p: Omit<ExportPreset, 'id'> & { id?: string }) =>
       call<ExportPreset>(IPC.export.savePreset, p),
