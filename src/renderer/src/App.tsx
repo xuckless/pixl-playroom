@@ -28,6 +28,7 @@ import { useDevelop } from './state/develop'
 import { openPhotos } from './lib/openPhotos'
 import { useBoot } from './state/boot'
 import { startCullUpkeep } from './state/cull'
+import { startExportUpkeep } from './state/exports'
 import { startUpdateNotice } from './lib/updates'
 import { UpdateDialog } from './views/UpdateDialog'
 import { useLibrary } from './state/library'
@@ -512,6 +513,7 @@ export default function App(): React.JSX.Element {
       startStaleUpkeep(),
       startDisplayUpkeep(),
       startCullUpkeep(),
+      startExportUpkeep(),
       startUpdateNotice(),
       startMenuUpkeep(),
       // Full HDR toggled, or the display's numbers moved: render for it again.

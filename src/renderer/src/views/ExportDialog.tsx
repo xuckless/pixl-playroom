@@ -30,7 +30,7 @@ import {
   type ExportStep,
   type Guard
 } from '../../../shared/exportGuards'
-import type { ExportPreset, ExportPreview, ExportProgress } from '../../../shared/ipc'
+import type { ExportPreset, ExportPreview } from '../../../shared/ipc'
 import { BUY_URL } from '../../../shared/licence'
 import { InfoTip, type Tip } from '../components/InfoTip'
 import { LocationField } from '../components/LocationField'
@@ -38,6 +38,7 @@ import { useLocations } from '../lib/useLocations'
 import { Card, Modal, Slider, StepSlider } from '../components/ui'
 import { Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
+import { useExports } from '../state/exports'
 import { useLibrary, useTargets } from '../state/library'
 import { WatermarkSection } from './WatermarkSection'
 import { t, tk, tp } from '../lib/i18n'
@@ -171,11 +172,9 @@ const intentTip = (): Tip => ({
 export function ExportDialog(): React.JSX.Element {
   const targets = useTargets()
   const setDialog = useLibrary((s) => s.setDialog)
-  const say = useLibrary((s) => s.say)
   const items = useLibrary((s) => s.items)
   const [s, setS] = useState<ExportSettings>(defaultExportSettings())
   const [presets, setPresets] = useState<ExportPreset[]>([])
-  const [progress, setProgress] = useState<ExportProgress | null>(null)
   const [presetName, setPresetName] = useState('')
   const [step, setStep] = useState<ExportStep>('format')
   /** Why a lapsed licence refuses exporting (never while licensing isn't enforced). */
@@ -198,10 +197,8 @@ export function ExportDialog(): React.JSX.Element {
     void api.export.presets().then(setPresets)
     void api.licence.status().then((l) => setLocked(l.locked))
     const offLicence = api.licence.onChange((l) => setLocked(l.locked))
-    const offProgress = api.export.onProgress(setProgress)
     return () => {
       offLicence()
-      offProgress()
       void api.export.cancelPreview()
     }
   }, [])
@@ -257,12 +254,11 @@ export function ExportDialog(): React.JSX.Element {
   }, [local, remote])
   const stop = blocked(guards)
 
-  const start = async (): Promise<void> => {
-    try {
-      await api.export.start(targets, s)
-    } catch (err) {
-      say(errorText(err), 'error')
-    }
+  // Queued in main, from the photos as they are now: the dialog closes, and
+  // the top bar's pill follows the export and keeps its receipt.
+  const start = (): void => {
+    setDialog(null)
+    void useExports.getState().start(targets, s, null)
   }
   const settingsKey = JSON.stringify(s)
   const makePreview = async (): Promise<void> => {
@@ -278,9 +274,6 @@ export function ExportDialog(): React.JSX.Element {
     }
   }
 
-  const running = progress !== null && !progress.finished
-  const failed = progress?.errors.filter((e) => !e.warning) ?? []
-  const warned = progress?.errors.filter((e) => e.warning) ?? []
   const depths = depthsFor(s.format)
   const hdrOut = s.hdr.mode !== 'sdr'
   const at = STEPS.findIndex((x) => x.id === step)
@@ -300,36 +293,7 @@ export function ExportDialog(): React.JSX.Element {
       className="export-wizard"
       footer={
         <>
-          {progress && (
-            <span className="progress">
-              <Spinner
-                size={34}
-                progress={progress.total > 0 ? progress.done / progress.total : null}
-              />
-              <span className="big">
-                {progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0}%
-              </span>
-              <span>
-                {progress.done}/{progress.total}{' '}
-                {progress.current
-                  ? `· ${progress.current}`
-                  : progress.finished
-                    ? `· ${t('done')}`
-                    : ''}
-                {failed.length > 0 && (
-                  <span className="error">
-                    {' '}
-                    ·{' '}
-                    {t('{{count}} failed: {{message}}', {
-                      count: failed.length,
-                      message: failed[0].message
-                    })}
-                  </span>
-                )}
-              </span>
-            </span>
-          )}
-          {!progress && guards.some((g) => g.severity !== 'minor') && (
+          {guards.some((g) => g.severity !== 'minor') && (
             <button
               className={`ew-chip ${stop ? 'block' : 'warn'}`}
               onClick={() => setStep('review')}
@@ -344,19 +308,13 @@ export function ExportDialog(): React.JSX.Element {
                   })}
             </button>
           )}
-          {!running && at > 0 && (
-            <button onClick={() => setStep(STEPS[at - 1].id)}>{t('Back')}</button>
-          )}
-          {running ? (
-            <button onClick={() => void api.export.cancel(progress.jobId)}>
-              {t('Cancel after this file')}
-            </button>
-          ) : last ? (
+          {at > 0 && <button onClick={() => setStep(STEPS[at - 1].id)}>{t('Back')}</button>}
+          {last ? (
             <button
               className="primary"
               disabled={targets.length === 0 || locked !== null || stop}
               title={stop ? t('Fix what is marked first') : undefined}
-              onClick={() => void start()}
+              onClick={start}
             >
               {t('Export')}
             </button>
@@ -1112,28 +1070,6 @@ export function ExportDialog(): React.JSX.Element {
               </figure>
             )}
           </Card>
-          {progress?.finished && (
-            <Card id="export.receipt" title={t('Receipt')} defaultOpen>
-              <p className="ew-summary">
-                {failed.length > 0
-                  ? t('{{count}} written, {{failed}} failed.', {
-                      count: progress.outputs.length,
-                      failed: failed.length
-                    })
-                  : t('{{count}} written.', { count: progress.outputs.length })}
-              </p>
-              {failed.map((e, i) => (
-                <p key={`f${i}`} className="error small">
-                  {e.name}: {e.message}
-                </p>
-              ))}
-              {warned.map((e, i) => (
-                <p key={`w${i}`} className="muted small">
-                  {e.name}: {e.message}
-                </p>
-              ))}
-            </Card>
-          )}
         </div>
       )}
     </Modal>

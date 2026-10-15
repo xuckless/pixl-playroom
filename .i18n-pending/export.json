@@ -1,0 +1,210 @@
+{
+  "Disk full · {{count}} written": {
+    "en": "Disk full · {{count}} written",
+    "fr": "Disque plein · {{count}} écrites",
+    "de": "Datenträger voll · {{count}} geschrieben",
+    "ja": "ディスクがいっぱい · {{count}}件を書き出し",
+    "vi": "Đĩa đầy · đã ghi {{count}}",
+    "zh-Hans": "磁盘已满 · 已写入 {{count}} 个"
+  },
+  "Dismiss": {
+    "en": "Dismiss",
+    "fr": "Masquer",
+    "de": "Ausblenden",
+    "ja": "閉じる",
+    "vi": "Bỏ qua",
+    "zh-Hans": "关闭"
+  },
+  "Export done": {
+    "en": "Export done",
+    "fr": "Exportation terminée",
+    "de": "Export abgeschlossen",
+    "ja": "書き出しが完了しました",
+    "vi": "Đã xuất xong",
+    "zh-Hans": "导出完成"
+  },
+  "Export done · {{label}}": {
+    "en": "Export done · {{label}}",
+    "fr": "Exportation terminée · {{label}}",
+    "de": "Export abgeschlossen · {{label}}",
+    "ja": "書き出しが完了しました · {{label}}",
+    "vi": "Đã xuất xong · {{label}}",
+    "zh-Hans": "导出完成 · {{label}}"
+  },
+  "Export the photos that failed again": {
+    "en": "Export the photos that failed again",
+    "fr": "Exporter à nouveau les photos en échec",
+    "de": "Die fehlgeschlagenen Fotos erneut exportieren",
+    "ja": "失敗した写真をもう一度書き出す",
+    "vi": "Xuất lại các ảnh bị lỗi",
+    "zh-Hans": "重新导出失败的照片"
+  },
+  "Exporting {{progress}}": {
+    "en": "Exporting {{progress}}",
+    "fr": "Exportation {{progress}}",
+    "de": "Exportiere {{progress}}",
+    "ja": "書き出し中 {{progress}}",
+    "vi": "Đang xuất {{progress}}",
+    "zh-Hans": "正在导出 {{progress}}"
+  },
+  "Keep exporting": {
+    "en": "Keep exporting",
+    "fr": "Continuer l’exportation",
+    "de": "Weiter exportieren",
+    "ja": "書き出しを続ける",
+    "vi": "Tiếp tục xuất",
+    "zh-Hans": "继续导出"
+  },
+  "Nothing running.": {
+    "en": "Nothing running.",
+    "fr": "Rien en cours.",
+    "de": "Nichts läuft.",
+    "ja": "実行中の処理はありません。",
+    "vi": "Không có gì đang chạy.",
+    "zh-Hans": "没有正在运行的任务。"
+  },
+  "Paused while you edit": {
+    "en": "Paused while you edit",
+    "fr": "En pause pendant la retouche",
+    "de": "Pausiert, während Sie bearbeiten",
+    "ja": "編集中は一時停止",
+    "vi": "Tạm dừng khi bạn chỉnh sửa",
+    "zh-Hans": "编辑时暂停"
+  },
+  "Quit": {
+    "en": "Quit",
+    "fr": "Quitter",
+    "de": "Beenden",
+    "ja": "終了",
+    "vi": "Thoát",
+    "zh-Hans": "退出"
+  },
+  "Quit while exporting?": {
+    "en": "Quit while exporting?",
+    "fr": "Quitter pendant l’exportation ?",
+    "de": "Während des Exports beenden?",
+    "ja": "書き出し中に終了しますか？",
+    "vi": "Thoát khi đang xuất?",
+    "zh-Hans": "要在导出过程中退出吗？"
+  },
+  "Retry": {
+    "en": "Retry",
+    "fr": "Réessayer",
+    "de": "Erneut versuchen",
+    "ja": "再試行",
+    "vi": "Thử lại",
+    "zh-Hans": "重试"
+  },
+  "Select photos first": {
+    "en": "Select photos first",
+    "fr": "Sélectionnez d’abord des photos",
+    "de": "Wählen Sie zuerst Fotos aus",
+    "ja": "先に写真を選択してください",
+    "vi": "Hãy chọn ảnh trước",
+    "zh-Hans": "请先选择照片"
+  },
+  "Stopped · {{count}} written": {
+    "en": "Stopped · {{count}} written",
+    "fr": "Arrêtée · {{count}} écrites",
+    "de": "Gestoppt · {{count}} geschrieben",
+    "ja": "停止 · {{count}}件を書き出し",
+    "vi": "Đã dừng · đã ghi {{count}}",
+    "zh-Hans": "已停止 · 已写入 {{count}} 个"
+  },
+  "The disk is full: the export stopped here.": {
+    "en": "The disk is full: the export stopped here.",
+    "fr": "Le disque est plein : l’exportation s’est arrêtée ici.",
+    "de": "Der Datenträger ist voll: Der Export wurde hier gestoppt.",
+    "ja": "ディスクがいっぱいです。書き出しはここで停止しました。",
+    "vi": "Đĩa đã đầy: quá trình xuất dừng tại đây.",
+    "zh-Hans": "磁盘已满：导出在此处停止。"
+  },
+  "and {{count}} more": {
+    "en": "and {{count}} more",
+    "fr": "et {{count}} de plus",
+    "de": "und {{count}} weitere",
+    "ja": "ほか {{count}} 件",
+    "vi": "và {{count}} mục khác",
+    "zh-Hans": "以及另外 {{count}} 个"
+  },
+  "{{count}} failed": {
+    "en": "{{count}} failed",
+    "fr": "{{count}} en échec",
+    "de": "{{count}} fehlgeschlagen",
+    "ja": "{{count}}件が失敗",
+    "vi": "{{count}} thất bại",
+    "zh-Hans": "{{count}} 个失败"
+  },
+  "{{count}} offline": {
+    "en": "{{count}} offline",
+    "fr": "{{count}} hors ligne",
+    "de": "{{count}} offline",
+    "ja": "{{count}}件がオフライン",
+    "vi": "{{count}} ngoại tuyến",
+    "zh-Hans": "{{count}} 个离线"
+  },
+  "{{count}} written": {
+    "en": "{{count}} written",
+    "fr": "{{count}} écrites",
+    "de": "{{count}} geschrieben",
+    "ja": "{{count}}件を書き出し",
+    "vi": "Đã ghi {{count}}",
+    "zh-Hans": "已写入 {{count}} 个"
+  },
+  "{{name}}: skipped, offline": {
+    "en": "{{name}}: skipped, offline",
+    "fr": "{{name}} : ignorée, hors ligne",
+    "de": "{{name}}: übersprungen, offline",
+    "ja": "{{name}}：オフラインのためスキップ",
+    "vi": "{{name}}: bỏ qua, ngoại tuyến",
+    "zh-Hans": "{{name}}：离线，已跳过"
+  },
+  "{{count}} photos are offline and will be skipped._one": {
+    "en": "{{count}} photo is offline and will be skipped.",
+    "fr": "{{count}} photo est hors ligne et sera ignorée.",
+    "de": "{{count}} Foto ist offline und wird übersprungen.",
+    "ja": "写真{{count}}枚がオフラインのため、スキップされます。",
+    "vi": "{{count}} ảnh đang ngoại tuyến và sẽ bị bỏ qua.",
+    "zh-Hans": "{{count}} 张照片离线，将被跳过。"
+  },
+  "{{count}} photos are offline and will be skipped._other": {
+    "en": "{{count}} photos are offline and will be skipped.",
+    "fr": "{{count}} photos sont hors ligne et seront ignorées.",
+    "de": "{{count}} Fotos sind offline und werden übersprungen.",
+    "ja": "写真{{count}}枚がオフラインのため、スキップされます。",
+    "vi": "{{count}} ảnh đang ngoại tuyến và sẽ bị bỏ qua.",
+    "zh-Hans": "{{count}} 张照片离线，将被跳过。"
+  },
+  "{{count}} photos are still to export. Quitting stops the export; the files written so far stay._one": {
+    "en": "{{count}} photo is still to export. Quitting stops the export; the files written so far stay.",
+    "fr": "Il reste {{count}} photo à exporter. Quitter arrête l’exportation ; les fichiers déjà écrits sont conservés.",
+    "de": "{{count}} Foto ist noch zu exportieren. Beenden stoppt den Export; die bereits geschriebenen Dateien bleiben erhalten.",
+    "ja": "書き出す写真がまだ{{count}}枚あります。終了すると書き出しは停止しますが、書き出し済みのファイルは残ります。",
+    "vi": "Còn {{count}} ảnh chưa xuất. Thoát sẽ dừng quá trình xuất; các tệp đã ghi vẫn được giữ.",
+    "zh-Hans": "还有 {{count}} 张照片待导出。退出会停止导出；已写入的文件会保留。"
+  },
+  "{{count}} photos are still to export. Quitting stops the export; the files written so far stay._other": {
+    "en": "{{count}} photos are still to export. Quitting stops the export; the files written so far stay.",
+    "fr": "Il reste {{count}} photos à exporter. Quitter arrête l’exportation ; les fichiers déjà écrits sont conservés.",
+    "de": "{{count}} Fotos sind noch zu exportieren. Beenden stoppt den Export; die bereits geschriebenen Dateien bleiben erhalten.",
+    "ja": "書き出す写真がまだ{{count}}枚あります。終了すると書き出しは停止しますが、書き出し済みのファイルは残ります。",
+    "vi": "Còn {{count}} ảnh chưa xuất. Thoát sẽ dừng quá trình xuất; các tệp đã ghi vẫn được giữ.",
+    "zh-Hans": "还有 {{count}} 张照片待导出。退出会停止导出；已写入的文件会保留。"
+  },
+  "Exporting {{count}} photos_one": {
+    "en": "Exporting {{count}} photo",
+    "fr": "Exportation de {{count}} photo",
+    "de": "{{count}} Foto wird exportiert",
+    "ja": "写真{{count}}枚を書き出し中",
+    "vi": "Đang xuất {{count}} ảnh",
+    "zh-Hans": "正在导出 {{count}} 张照片"
+  },
+  "Exporting {{count}} photos_other": {
+    "en": "Exporting {{count}} photos",
+    "fr": "Exportation de {{count}} photos",
+    "de": "{{count}} Fotos werden exportiert",
+    "ja": "写真{{count}}枚を書き出し中",
+    "vi": "Đang xuất {{count}} ảnh",
+    "zh-Hans": "正在导出 {{count}} 张照片"
+  }
+}
