@@ -299,31 +299,132 @@ test('a black-and-white photo keeps its vs curves but does not apply them; a mas
   assert.equal(c.grade!.layers.at(-1)!.name, 'black & white')
 })
 
-test('log wheels key their own part of the tones, and add rather than scale', async () => {
-  const { logBand, logWheelsOps, normaliseLogWheels } = await import('../src/shared/resolve')
+test('log wheels are one LogWheels op in a PixlLog stage of their own, untouched none (E74, E73)', async () => {
+  const { LOG_HIGH, LOG_LOW, LOG_TRANSITION, logWheelsOps, normaliseLogWheels, toPixlLog } =
+    await import('../src/shared/resolve')
+  const { LOG_GRADE_SPACE, LOOK_SPACE } = await import('../src/shared/compile')
   const l = normaliseLogWheels({})
   assert.deepEqual(logWheelsOps(l), [])
-  // Each band covers its range fully, within low/high.
-  const s = logBand('shadow', 0.333, 0.55)
-  assert.ok(Math.abs(s.centre + s.width / 2 - 0.333) < 1e-3)
-  const m = logBand('midtone', 0.333, 0.55)
-  assert.ok(Math.abs(m.centre - m.width / 2 - 0.333) < 1e-3)
-  assert.ok(Math.abs(m.centre + m.width / 2 - 0.55) < 1e-3)
-  const h = logBand('highlight', 0.333, 0.55)
-  assert.ok(Math.abs(h.centre - h.width / 2 - 0.55) < 1e-3)
+  // Resolve's ACEScct defaults at the same stops from grey: 1.41 under, 2.39 over.
+  assert.equal(LOG_LOW, 0.268)
+  assert.equal(LOG_HIGH, 0.66)
+  assert.ok(Math.abs(toPixlLog(0.18) - 0.405) < 1e-3)
+  assert.ok(Math.abs(toPixlLog(1) - 0.669) < 1e-3)
+  assert.ok(Math.abs(toPixlLog(0.18 * 2 ** -1.4119) - LOG_LOW) < 1e-3)
 
-  l.shadow = { y: 0, r: 0.02, g: 0, b: -0.02 }
+  l.shadow = { y: 0.01, r: 0.02, g: 0, b: -0.02 }
   l.offset = { y: 0.01, r: 0, g: 0, b: 0 }
   const ops = logWheelsOps(l)
-  assert.equal(ops.length, 2)
-  const q = (ops[0] as { Qualifier: { correction: Primary } }).Qualifier.correction
-  // v + o: lift o and gain 1 + o.
-  assert.equal(q.lift.r, 0.02)
-  assert.equal(q.gain.r, 1.02)
-  assert.equal(q.gain.b, 0.98)
-  // The range sliders keep low under high.
+  assert.equal(ops.length, 1)
+  const w = (ops[0] as { LogWheels: import('../src/shared/engine-types').LogWheels }).LogWheels
+  // Y folds into each channel.
+  assert.deepEqual(w.shadow, { r: 0.03, g: 0.01, b: -0.01 })
+  assert.deepEqual(w.offset, { r: 0.01, g: 0.01, b: 0.01 })
+  assert.deepEqual(w.midtone, { r: 0, g: 0, b: 0 })
+  assert.deepEqual([w.low_range, w.high_range, w.transition], [LOG_LOW, LOG_HIGH, LOG_TRANSITION])
+  // The engine's rule, low + t ≤ high − t, holds however close the sliders go.
   const n = normaliseLogWheels({ low: 0.8, high: 0.5 })
-  assert.ok(n.high > n.low)
+  assert.ok(n.low + LOG_TRANSITION < n.high - LOG_TRANSITION)
+  const tight = logWheelsOps({ ...l, low: 0.5, high: 0.52 })[0] as {
+    LogWheels: import('../src/shared/engine-types').LogWheels
+  }
+  const t = tight.LogWheels
+  assert.ok(t.low_range + t.transition < t.high_range - t.transition, JSON.stringify(t))
+
+  // Compiled: P3, then PixlLog for the wheels, then P3 again for what follows.
+  const r = defaultRecipe(false)
+  r.primaries.contrast = 1.2
+  r.logWheels = { ...l }
+  r.curvesVs.hueSat = [{ x: 0.6, y: 0.8 }]
+  r.effects.vignetteAmount = -20
+  const stages = compile(r, ctx).grade!.layers[0].stages
+  assert.deepEqual(
+    stages.map((s) => s.space),
+    [LOOK_SPACE, LOG_GRADE_SPACE, LOOK_SPACE]
+  )
+  assert.deepEqual(
+    stages[1].ops.map((o) => Object.keys(o)[0]),
+    ['LogWheels']
+  )
+  assert.ok(stages[2].ops.some((o) => 'Curves' in o))
+  assert.ok(stages[2].ops.some((o) => 'Vignette' in o))
+  // Contrast stays display-referred, in the Primary before the wheels.
+  const prim = stages[0].ops.find((o) => 'Primary' in o) as { Primary: Primary }
+  assert.equal(prim.Primary.contrast, 1.2)
+  assert.equal(prim.Primary.contrast_pivot, 0.435)
+  // Contrast alone makes no log stage.
+  r.logWheels = normaliseLogWheels({})
+  assert.ok(
+    compile(r, ctx).grade!.layers[0].stages.every((s) => s.space !== LOG_GRADE_SPACE)
+  )
+})
+
+test('a mask’s log wheels get their own log stage too; a black-and-white photo’s run after the mono conversion', async () => {
+  const { LOG_GRADE_SPACE, LOOK_SPACE } = await import('../src/shared/compile')
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('Sky')
+  l.components = [
+    {
+      id: 'c1',
+      kind: 'linear',
+      mode: 'add',
+      opacity: 100,
+      invert: false,
+      start: { x: 0.5, y: 0 },
+      end: { x: 0.5, y: 0.4 },
+      width: 512,
+      height: 512
+    } as never
+  ]
+  l.settings.logWheels.highlight = { y: 0, r: 0, g: 0, b: 0.02 }
+  l.settings.presence.saturation = 10
+  r.layers = [l]
+  r.treatment = 'bw'
+  r.logWheels.midtone = { y: 0, r: 0.01, g: 0, b: 0 }
+  const c = compile(normaliseRecipe(r, false), ctx)
+  const mask = c.grade!.layers[c.layerIndex[l.id]]
+  assert.deepEqual(
+    mask.stages.map((s) => s.space),
+    [LOOK_SPACE, LOG_GRADE_SPACE]
+  )
+  // The photo's own, after the conversion in the black & white layer: they tone it.
+  const finish = c.grade!.layers.at(-1)!
+  assert.equal(finish.name, 'black & white')
+  const kinds = finish.stages.map((s) => s.ops.map((o) => Object.keys(o)[0]))
+  assert.deepEqual(
+    finish.stages.map((s) => s.space),
+    [LOOK_SPACE, LOG_GRADE_SPACE]
+  )
+  assert.ok(kinds[0].includes('Primary') && kinds[1][0] === 'LogWheels', JSON.stringify(kinds))
+})
+
+test('an older recipe’s log ranges are carried to the same tones; Resolve’s defaults to the new ones', async () => {
+  const { LOG_HIGH, LOG_LOW, logRangeBefore021, toPixlLog } = await import('../src/shared/resolve')
+  const old = normaliseRecipe({ version: 5, logWheels: { low: 0.333, high: 0.55 } }, false)
+  assert.deepEqual([old.logWheels.low, old.logWheels.high], [LOG_LOW, LOG_HIGH])
+  // Moved ranges: display-encoded 0.2 is 3.3% light, 0.7 is 44.8%.
+  const moved = normaliseRecipe(
+    {
+      version: 5,
+      logWheels: { low: 0.2, high: 0.7, shadow: { y: 0.01, r: 0, g: 0, b: 0 } },
+      layers: [{ id: 'm', settings: { logWheels: { low: 0.333, high: 0.55 } } }]
+    },
+    false
+  )
+  assert.ok(Math.abs(moved.logWheels.low - toPixlLog(0.0331)) < 2e-3, `${moved.logWheels.low}`)
+  assert.ok(Math.abs(moved.logWheels.high - toPixlLog(0.4480)) < 2e-3, `${moved.logWheels.high}`)
+  assert.equal(moved.logWheels.shadow.y, 0.01)
+  assert.deepEqual(
+    [moved.layers[0].settings.logWheels.low, moved.layers[0].settings.logWheels.high],
+    [LOG_LOW, LOG_HIGH]
+  )
+  // None saved: the defaults; a recipe from 6 on is taken as it is.
+  assert.equal(logRangeBefore021(undefined), null)
+  assert.equal(normaliseRecipe({ version: 5 }, false).logWheels.low, LOG_LOW)
+  assert.equal(
+    normaliseRecipe({ version: 6, logWheels: { low: 0.333, high: 0.55 } }, false).logWheels.low,
+    0.333
+  )
 })
 
 test('each qualifier is its own layer after the photo’s grade, its key the layer’s Range mask', async () => {

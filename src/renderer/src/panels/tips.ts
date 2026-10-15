@@ -364,7 +364,7 @@ export const TIPS = {
     ),
     expect: tk('Small, contained moves: warming only the shadows, cooling only the highlights.'),
     tip: tk(
-      'Use them after the Primaries, for the finer split; they add colour rather than scale it.'
+      'Use them after the Primaries, for the finer split. They grade in log, as Resolve’s do, so a push is the same number of stops however bright the tone.'
     )
   },
   qualifier: {
@@ -475,15 +475,23 @@ export const TIPS = {
   },
   'log.offset': {
     what: tk('Adds the same colour or brightness to every tone.'),
-    expect: tk('The Primaries’ Offset, kept here so a log grade is all in one place.')
+    expect: tk(
+      'In log an offset is an exposure: every tone moves by the same number of stops, so a balance set here holds from the shadows to the highlights.'
+    )
   },
   'log.low': {
     what: tk('Where the shadows end: the Shadow wheel works below it, the Midtone wheel above.'),
-    expect: tk('Higher gives the Shadow wheel more of the picture.')
+    expect: tk('Higher gives the Shadow wheel more of the picture.'),
+    tip: tk(
+      '0.268 sits about a stop and a half under middle grey, where Resolve’s 0.333 sits in ACEScct.'
+    )
   },
   'log.high': {
     what: tk('Where the highlights begin: the Highlight wheel works above it.'),
-    expect: tk('Lower gives the Highlight wheel more of the picture.')
+    expect: tk('Lower gives the Highlight wheel more of the picture.'),
+    tip: tk(
+      '0.660 sits just under white, where Resolve’s 0.550 sits in ACEScct: the Highlight wheel takes the brightest parts. Lower it to reach the bright midtones too.'
+    )
   },
 
   // ── Resolve: Curves ────────────────────────────────────────────────

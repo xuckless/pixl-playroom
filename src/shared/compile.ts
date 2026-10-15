@@ -82,6 +82,15 @@ export const LOOK_SPACE: GradeSpace = {
   Encoded: { space: 'DisplayP3', intent: 'RelativeColorimetric', black_point_compensation: false }
 }
 
+/**
+ * Where the Log wheels run (engine 0.21, E73): PixlLog, the working space's
+ * own primaries through the models' log curve (grey 0.405, white 0.669),
+ * a stage of their own in the look, only where they are set.
+ */
+export const LOG_GRADE_SPACE: GradeSpace = {
+  Encoded: { space: 'PixlLog', intent: 'RelativeColorimetric', black_point_compensation: false }
+}
+
 /** 18% grey in the look space (sRGB transfer, shared by Display P3). */
 export const MID_GREY_ENCODED = 0.4613
 
@@ -1071,9 +1080,20 @@ function stage(space: GradeSpace, ops: GradeOp[]): { space: GradeSpace; ops: Gra
   return ops.length > 0 ? [{ space, ops }] : []
 }
 
-/** The look stage (display-referred, `LOOK_SPACE`). */
-function lookStage(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
-  return stage(LOOK_SPACE, ops)
+/**
+ * The look's stages: display-referred (`LOOK_SPACE`), but the Log wheels in
+ * a log stage of their own (`LOG_GRADE_SPACE`) where they fall, the look
+ * picking up after them. A photo without them keeps its one look stage.
+ */
+function lookStages(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
+  const out: { space: GradeSpace; ops: GradeOp[] }[] = []
+  for (const op of ops) {
+    const space = 'LogWheels' in op ? LOG_GRADE_SPACE : LOOK_SPACE
+    const last = out[out.length - 1]
+    if (last && last.space === space) last.ops.push(op)
+    else out.push({ space, ops: [op] })
+  }
+  return out
 }
 
 function sharpenOp(
@@ -1426,6 +1446,8 @@ function settingsStages(
   const balance = primariesBalance(r.primaries)
   if (balance) tail.push(balance)
   tail.push(...primariesOp(r.primaries))
+  // Resolve's Log wheels, in log (`lookStages` gives them their stage);
+  // Contrast and Pivot stay display-referred, in the Primary before them.
   tail.push(...logWheelsOps(r.logWheels))
   // Resolve's vs curves need colour: a black-and-white photo's are kept, not
   // applied (its Curves card says so and points to the B&W mix). A mask's
@@ -1487,7 +1509,7 @@ function settingsStages(
       }
     })
   }
-  return [...stage('LinearWorking', linear), ...lookStage(look)]
+  return [...stage('LinearWorking', linear), ...lookStages(look)]
 }
 
 /**
@@ -1545,7 +1567,7 @@ function qualifierLayer(
       edge: within?.edge ?? null
     },
     blend: { mode: 'Normal', space: 'LinearWorking' },
-    stages: lookStage([{ Primary: qualifierCorrection(q) ?? primary({}) }])
+    stages: lookStages([{ Primary: qualifierCorrection(q) ?? primary({}) }])
   }
 }
 
@@ -1625,7 +1647,7 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
       opacity: 1,
       mask: null,
       blend: { mode: 'Normal', space: 'LinearWorking' },
-      stages: lookStage(finish)
+      stages: lookStages(finish)
     })
   }
   for (const c of r.custom) {

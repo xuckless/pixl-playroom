@@ -17,6 +17,11 @@ import { TIPS } from './tips'
 import { InfoTip } from '../components/InfoTip'
 import {
   DEFAULT_PIVOT,
+  LOG_FLOOR,
+  LOG_HIGH,
+  LOG_LOW,
+  LOG_MIN_GAP,
+  LOG_TOP,
   MAX_QUALIFIERS,
   vsPeriodic,
   type KeyBandSetting,
@@ -290,8 +295,11 @@ const LOG_NAMES: Record<LogKey, string> = {
   offset: tk('Offset')
 }
 
-/** Log wheels add small amounts: the disc and ring reach less far than the primaries'. */
-const LOG_SCALE: WheelScale = { neutral: 0, reach: 0.08, ringStep: 0.0015, min: -1, max: 1 }
+/**
+ * Log wheels add small amounts: the disc and ring reach less far than the
+ * primaries'. In PixlLog 0.01 is about a tenth of a stop at grey.
+ */
+const LOG_SCALE: WheelScale = { neutral: 0, reach: 0.055, ringStep: 0.001, min: -1, max: 1 }
 
 export function LogWheelsBody(): React.JSX.Element | null {
   const { recipe, edit, commit } = useScope()
@@ -321,29 +329,24 @@ export function LogWheelsBody(): React.JSX.Element | null {
         label={tk('Low range')}
         tip={TIPS['log.low']}
         read={(r) => r.logWheels.low}
-        write={(r, v) => (r.logWheels.low = Math.min(v, r.logWheels.high - 0.05))}
-        min={0.02}
-        max={0.9}
+        write={(r, v) => (r.logWheels.low = Math.min(v, r.logWheels.high - LOG_MIN_GAP))}
+        min={LOG_FLOOR}
+        max={LOG_TOP - LOG_MIN_GAP}
         step={0.001}
-        def={0.333}
+        def={LOG_LOW}
         format={(v) => v.toFixed(3)}
       />
       <RS
         label={tk('High range')}
         tip={TIPS['log.high']}
         read={(r) => r.logWheels.high}
-        write={(r, v) => (r.logWheels.high = Math.max(v, r.logWheels.low + 0.05))}
-        min={0.07}
-        max={0.98}
+        write={(r, v) => (r.logWheels.high = Math.max(v, r.logWheels.low + LOG_MIN_GAP))}
+        min={LOG_FLOOR + LOG_MIN_GAP}
+        max={LOG_TOP}
         step={0.001}
-        def={0.55}
+        def={LOG_HIGH}
         format={(v) => v.toFixed(3)}
       />
-      <p className="muted small">
-        {t(
-          'Close to Resolve’s, not the same: each range is keyed on brightness with a soft edge until the engine grades in log (it has been asked to).'
-        )}
-      </p>
     </ToolPanel>
   )
 }

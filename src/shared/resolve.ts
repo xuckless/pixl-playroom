@@ -534,26 +534,50 @@ export function scaleCurvesVs(c: CurvesVsSetting, k: number): CurvesVsSetting {
 /**
  * Resolve's Log wheels: Shadow, Midtone and Highlight each move only their
  * part of the tonal range (below Low, between, above High), Offset all of
- * it; each adds to the values (an offset, not a gain), so a small push stays
- * small. Until the engine has a log grading space and its own op (E73, E74)
- * each part is a Qualifier keyed on luma with a soft edge: close to Resolve,
- * not the same, and the card says so.
+ * it; each adds to the values, and in log an added value is an even number
+ * of stops, so a small push stays small from the shadows to the highlights.
+ * They compile to the engine's `LogWheels` (engine 0.21, E74) in a stage of
+ * their own in PixlLog (E73): PixlRGB's primaries and the models' log curve,
+ * 18% grey at 0.405 and white at 0.669. The parts hand over by smoothsteps
+ * that always add up to one, so equal wheels are exactly an offset.
  */
 export interface LogWheelsSetting {
   shadow: Yrgb
   midtone: Yrgb
   highlight: Yrgb
   offset: Yrgb
-  /** 0…1, where the shadows end (Resolve's Low Range, 0.333). */
+  /** PixlLog code value where the shadows end (Resolve's Low Range). */
   low: number
-  /** 0…1, where the highlights begin (Resolve's High Range, 0.550). */
+  /** PixlLog code value where the highlights begin (Resolve's High Range). */
   high: number
 }
 
-export const LOG_LOW = 0.333
-export const LOG_HIGH = 0.55
-/** How far past its range a part's push fades out. */
-const LOG_SOFT = 0.12
+/** Linear light as a PixlLog code value: the models' log, gain 64, peak 8 (8× white is 1). */
+export const toPixlLog = (x: number): number =>
+  (Math.sign(x) * Math.log1p(64 * Math.abs(x))) / Math.log1p(64 * 8)
+
+/** An ACEScct code value as linear light (above its toe, where Resolve's ranges sit). */
+const fromAcesCct = (v: number): number => 2 ** (v * 17.52 - 9.72)
+
+const r3 = (v: number): number => Math.round(v * 1e3) / 1e3
+
+/**
+ * Resolve's default ranges, 0.333 and 0.550 in ACEScct, at the same stops
+ * from grey in PixlLog: Low about a stop and a half under grey (0.268),
+ * High about two and a half over it, just under white (0.660).
+ */
+export const LOG_LOW = r3(toPixlLog(fromAcesCct(0.333)))
+export const LOG_HIGH = r3(toPixlLog(fromAcesCct(0.55)))
+/** How soft each handover is, either side of Low and High (fixed: Resolve shows none). */
+export const LOG_TRANSITION = 0.05
+/**
+ * The least Low and High are apart: both handovers whole, and a hair more,
+ * as the engine refuses a High whose handover starts before Low's ends.
+ */
+export const LOG_MIN_GAP = 0.11
+/** How far the ranges reach: about a 500th of white up to 7× it. */
+export const LOG_FLOOR = 0.02
+export const LOG_TOP = 0.98
 
 export function defaultLogWheels(): LogWheelsSetting {
   return {
@@ -566,67 +590,73 @@ export function defaultLogWheels(): LogWheelsSetting {
   }
 }
 
+/** Low and High in range, High at least `LOG_MIN_GAP` above Low. */
+export function logRange(low: number, high: number): { low: number; high: number } {
+  const l = clamp(low, LOG_FLOOR, LOG_TOP - LOG_MIN_GAP)
+  return { low: l, high: clamp(high, l + LOG_MIN_GAP, LOG_TOP) }
+}
+
 export function normaliseLogWheels(v: unknown): LogWheelsSetting {
   const o = (v && typeof v === 'object' ? v : {}) as Partial<
     Record<keyof LogWheelsSetting, unknown>
   >
-  const low = clamp(num(o.low, LOG_LOW), 0.02, 0.9)
   return {
     shadow: yrgbOf(o.shadow, zero(), -1, 1),
     midtone: yrgbOf(o.midtone, zero(), -1, 1),
     highlight: yrgbOf(o.highlight, zero(), -1, 1),
     offset: yrgbOf(o.offset, zero(), -1, 1),
-    low,
-    high: clamp(num(o.high, LOG_HIGH), low + 0.05, 0.98)
+    ...logRange(num(o.low, LOG_LOW), num(o.high, LOG_HIGH))
   }
+}
+
+/**
+ * A recipe's Low and High from before engine 0.21 (the qualifier form's, on
+ * display-encoded luma) as PixlLog code values at the same tones; left at
+ * Resolve's defaults there (0.333, 0.550), the defaults here. Null when the
+ * recipe held none.
+ */
+export function logRangeBefore021(saved: unknown): { low: number; high: number } | null {
+  const o = (saved && typeof saved === 'object' ? saved : {}) as { low?: unknown; high?: unknown }
+  if (typeof o.low !== 'number' || typeof o.high !== 'number') return null
+  if (Math.abs(o.low - 0.333) < 1e-6 && Math.abs(o.high - 0.55) < 1e-6)
+    return { low: LOG_LOW, high: LOG_HIGH }
+  const decode = (v: number): number =>
+    v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  return logRange(r3(toPixlLog(decode(o.low))), r3(toPixlLog(decode(o.high))))
 }
 
 const isZero = (w: Yrgb): boolean => w.y === 0 && w.r === 0 && w.g === 0 && w.b === 0
 
-/** A wheel's push as a Primary that adds it: `v + o` is `lift o, gain 1 + o`. */
-function offsetPrimary(w: Yrgb): Primary {
-  const lift = { r: 0, g: 0, b: 0 }
-  const gain = { r: 1, g: 1, b: 1 }
-  for (const c of CH) {
-    const o = w.y + w[c]
-    lift[c] = r4(o)
-    gain[c] = r4(1 + o)
-  }
-  return { ...IDENTITY, lift, gain }
-}
+/** A wheel's push per channel: Y moves all three. */
+const rgbOf = (w: Yrgb): { r: number; g: number; b: number } => ({
+  r: r4(w.y + w.r),
+  g: r4(w.y + w.g),
+  b: r4(w.y + w.b)
+})
 
-/** The luma band a part keys: centre, width and the soft edge past it. */
-export function logBand(
-  part: 'shadow' | 'midtone' | 'highlight',
-  low: number,
-  high: number
-): { centre: number; width: number; softness: number } {
-  if (part === 'shadow') return { centre: 0, width: r4(2 * low), softness: LOG_SOFT }
-  if (part === 'highlight') return { centre: 1, width: r4(2 * (1 - high)), softness: LOG_SOFT }
-  return { centre: r4((low + high) / 2), width: r4(high - low), softness: LOG_SOFT }
-}
-
-/** The log wheels as engine ops for the look stage (empty when untouched). */
+/**
+ * The log wheels as the engine's `LogWheels`, for the log stage (none when
+ * untouched, so no log stage is made: one that changes nothing is not
+ * bit-identical).
+ */
 export function logWheelsOps(l: LogWheelsSetting): GradeOp[] {
-  const out: GradeOp[] = []
-  for (const part of ['shadow', 'midtone', 'highlight'] as const) {
-    if (isZero(l[part])) continue
-    out.push({
-      Qualifier: {
-        key: {
-          hue: null,
-          saturation: null,
-          luma: logBand(part, l.low, l.high),
-          blur_radius: 0,
-          invert: false
-        },
-        correction: offsetPrimary(l[part]),
+  if ([l.shadow, l.midtone, l.highlight, l.offset].every(isZero)) return []
+  // A mask's settings are filled, not normalised: held here too.
+  const { low, high } = logRange(l.low, l.high)
+  return [
+    {
+      LogWheels: {
+        shadow: rgbOf(l.shadow),
+        midtone: rgbOf(l.midtone),
+        highlight: rgbOf(l.highlight),
+        offset: rgbOf(l.offset),
+        low_range: r4(low),
+        high_range: r4(high),
+        transition: LOG_TRANSITION,
         smoothing: null
       }
-    })
-  }
-  if (!isZero(l.offset)) out.push({ Primary: offsetPrimary(l.offset) })
-  return out
+    }
+  ]
 }
 
 export function scaleLogWheels(l: LogWheelsSetting, k: number): LogWheelsSetting {

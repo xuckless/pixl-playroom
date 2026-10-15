@@ -111,6 +111,21 @@ test('what it refuses, by the field the engine would name', async () => {
     ]
   })
   assert.equal(gpuRefusal(grade(icc)), 'grade.layers[0].stages[0].space')
+  // A log stage (engine 0.21), such as the Log wheels': every log space, by the stage's space.
+  for (const space of ['PixlLog', 'AcesCct', 'DavinciIntermediate'] as const) {
+    const log = layer([PRIMARY], {
+      stages: [
+        { space: 'LinearWorking', ops: [PRIMARY] },
+        {
+          space: {
+            Encoded: { space, intent: 'RelativeColorimetric', black_point_compensation: false }
+          },
+          ops: [PRIMARY]
+        }
+      ]
+    })
+    assert.equal(gpuRefusal(grade(log)), 'grade.layers[0].stages[1].space')
+  }
   // A disabled layer is left to the engine (it isn't graded).
   assert.equal(gpuRefusal(grade(layer([PRIMARY]), layer([wb], { enabled: false }))), null)
 })
