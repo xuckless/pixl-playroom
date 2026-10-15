@@ -4,7 +4,9 @@
  * of mask, and each mask (exposure −3) is drawn on its marker: a radial, a
  * linear (a half disk: the gradient's line through a disk), a bidirectional
  * (its band through a disk), a lasso, a painted plane, a model's plane, a
- * depth range, a clone spot, and a colour range as the control. For every
+ * depth range, a clone spot, and a colour range as the control; and, in the
+ * lens cases, a radial and a lasso near the corners, where a correction moves
+ * the picture most and its map is read nearest its edge. For every
  * framing and lens case the recipe is rendered through `compile` as
  * render.ts does it, the masks carried to the lens rendered as main does
  * (maskframe.ts, its planes re-warped as brushes.ts writes them), and:
@@ -54,6 +56,8 @@ type Kind =
   | 'depth'
   | 'clone spot'
   | 'range'
+  | 'corner radial'
+  | 'corner lasso'
 
 /** Each kind's marker: centre (base frame, normalised) and colour (linear 0…1). */
 const MARKS: Record<Kind, { at: P; rgb: [number, number, number] }> = {
@@ -65,8 +69,16 @@ const MARKS: Record<Kind, { at: P; rgb: [number, number, number] }> = {
   lasso: { at: { x: 0.46, y: 0.52 }, rgb: [0.05, 0.1, 0.9] },
   brush: { at: { x: 0.62, y: 0.52 }, rgb: [0.08, 0.8, 0.08] },
   'model plane': { at: { x: 0.28, y: 0.68 }, rgb: [0.05, 0.8, 0.8] },
-  depth: { at: { x: 0.44, y: 0.68 }, rgb: [0.85, 0.08, 0.85] }
+  depth: { at: { x: 0.44, y: 0.68 }, rgb: [0.85, 0.08, 0.85] },
+  // Near the corners, where a lens moves the picture most and its map is
+  // read nearest its edge (held to the lens cases: a warp crops them away).
+  'corner radial': { at: { x: 0.075, y: 0.1 }, rgb: [0.55, 0.95, 0.3] },
+  'corner lasso': { at: { x: 0.925, y: 0.88 }, rgb: [0.95, 0.6, 0.7] }
 }
+/** Kinds measured only where the framing keeps the corners (the lens cases). */
+const CORNERS: Kind[] = ['corner radial', 'corner lasso']
+const isLensCase = (name: string): boolean =>
+  /distortion|Optics|lens|^none$/.test(name) && !/straighten|crop|turn|Upright/.test(name)
 const KINDS = Object.keys(MARKS) as Kind[]
 /** Where the clone spot copies from: a white patch. */
 const PATCH = { x: 0.67, y: 0.69 }
@@ -85,7 +97,8 @@ function chart(): Uint16Array {
         const dx = x + 0.5 - m.at.x * W
         const dy = y + 0.5 - m.at.y * H
         const r = k === 'clone spot' ? 5 : R
-        if (k === 'lasso' ? Math.max(Math.abs(dx), Math.abs(dy)) < r : Math.hypot(dx, dy) < r)
+        const square = k === 'lasso' || k === 'corner lasso'
+        if (square ? Math.max(Math.abs(dx), Math.abs(dy)) < r : Math.hypot(dx, dy) < r)
           if (k !== 'linear' || inHalf(dx)) c = m.rgb
       }
       if (Math.abs(x + 0.5 - PATCH.x * W) < 60 && Math.abs(y + 0.5 - PATCH.y * H) < 45)
@@ -133,8 +146,21 @@ function masksAt(
     height: 341
   })
   const lassoHalf = (R * frame.k) / H
+  const square = (k: Kind, id: string): MaskComponentSetting => ({
+    ...base,
+    id,
+    kind: 'polygon',
+    points: [
+      { x: pos[k].x - (lassoHalf * H) / W, y: pos[k].y - lassoHalf },
+      { x: pos[k].x + (lassoHalf * H) / W, y: pos[k].y - lassoHalf },
+      { x: pos[k].x + (lassoHalf * H) / W, y: pos[k].y + lassoHalf },
+      { x: pos[k].x - (lassoHalf * H) / W, y: pos[k].y + lassoHalf }
+    ]
+  })
   const layers: Record<Kind, MaskComponentSetting[]> = {
     radial: [disk('radial', 'radial')],
+    'corner radial': [disk('corner radial', 'corner-radial')],
+    'corner lasso': [square('corner lasso', 'corner-lasso')],
     linear: [
       disk('linear', 'linear-disk'),
       {
@@ -162,19 +188,7 @@ function masksAt(
         height: 341
       }
     ],
-    lasso: [
-      {
-        ...base,
-        id: 'lasso',
-        kind: 'polygon',
-        points: [
-          { x: pos.lasso.x - (lassoHalf * H) / W, y: pos.lasso.y - lassoHalf },
-          { x: pos.lasso.x + (lassoHalf * H) / W, y: pos.lasso.y - lassoHalf },
-          { x: pos.lasso.x + (lassoHalf * H) / W, y: pos.lasso.y + lassoHalf },
-          { x: pos.lasso.x - (lassoHalf * H) / W, y: pos.lasso.y + lassoHalf }
-        ]
-      }
-    ],
+    lasso: [square('lasso', 'lasso')],
     brush: [{ ...base, id: 'brush', kind: 'brush', width: W / 2, height: H / 2, png: 'x' }],
     'model plane': [
       {
@@ -311,6 +325,17 @@ const CASES: Case[] = [
       lens50(r)
       r.off = { optics: true }
     }
+  },
+  {
+    // Drawn on the picture with no correction; the correction set with Optics
+    // off, which settles the masks onto it (rebased), and the render carries
+    // them back: both ways through the maps.
+    name: 'drawn with no lens, +50 set with Optics off, settled',
+    edit: (r) => {
+      lens50(r)
+      r.off = { optics: true }
+    },
+    rebase: true
   },
   {
     name: 'model plane found with Optics off, on again',
@@ -605,8 +630,11 @@ test(
           const c = comp(k === 'model plane' ? 'model' : k)
           return onMasks(c, planeAt[c.id])
         }
-        if (k === 'lasso') {
-          const c = comp('lasso') as Extract<MaskComponentSetting, { kind: 'polygon' }>
+        if (k === 'lasso' || k === 'corner lasso') {
+          const c = comp(k === 'lasso' ? 'lasso' : 'corner-lasso') as Extract<
+            MaskComponentSetting,
+            { kind: 'polygon' }
+          >
           const n = c.points.length
           return onMasks(c, {
             x: c.points.reduce((t, p) => t + p.x, 0) / n,
@@ -614,13 +642,20 @@ test(
           })
         }
         const disk = comp(
-          k === 'radial' ? 'radial' : k === 'linear' ? 'linear-disk' : 'bi-disk'
+          k === 'radial'
+            ? 'radial'
+            : k === 'corner radial'
+              ? 'corner-radial'
+              : k === 'linear'
+                ? 'linear-disk'
+                : 'bi-disk'
         ) as Extract<MaskComponentSetting, { kind: 'radial' }>
         // The linear keeps the disk's start side: its centroid, 4r / 3π from the centre.
         const off = k === 'linear' ? (4 * disk.radiusY * H) / (3 * Math.PI) / W : 0
         return onMasks(disk, { x: disk.centre.x - off, y: disk.centre.y })
       }
       for (const k of KINDS) {
+        if (CORNERS.includes(k) && !isLensCase(kase.name)) continue
         const own = stored(k)
         // Where its content landed, near where it was put on the chart.
         const guess = own ? baseToDisplay(g, own) : null
