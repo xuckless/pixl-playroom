@@ -276,6 +276,13 @@ export const TIPS = {
     expect: tk('A small negative amount draws the eye to the centre.'),
     tip: tk('Raise Feather for a vignette nobody notices but everybody feels.')
   },
+  'effects.vignette.style': {
+    what: tk(
+      'How the corners change: Highlight priority darkens like light falling off, Colour priority lightens without washing colours out, Paint overlay mixes toward black or white.'
+    ),
+    expect: tk('Colour priority keeps hue and saturation: a lightening stops each pixel at white.'),
+    tip: tk('On an HDR photo a lightening keeps highlight priority: there is no white to stop at.')
+  },
   'effects.grain': {
     what: tk('Adds film-like grain.'),
     expect: tk('Hides banding and noise and adds texture; Size and Roughness shape its character.'),

@@ -1406,6 +1406,7 @@ export function EffectsBody(): React.JSX.Element | null {
             edit((r) => (r.effects.vignetteStyle = v))
             commit(tk('Vignette style'))
           }}
+          tip={TIPS['effects.vignette.style']}
         />
         <RS
           label={tk('Amount')}
