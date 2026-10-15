@@ -175,38 +175,72 @@ test('log wheels key their own part of the tones, and add rather than scale', as
   assert.ok(n.high > n.low)
 })
 
-test('each qualifier is its own layer after the photo’s grade, its key the layer’s Range mask', async () => {
+test('each qualifier is an op in the base layer’s look, before the effects, addressed for its key view', async () => {
   const { qualifierFromSample, qualifierKey, qualifierLayerId, normaliseQualifiers } =
     await import('../src/shared/resolve')
+  const { maskProbe, probeInspect } = await import('../src/shared/compile')
   const r = defaultRecipe(false)
   r.presence.saturation = 10
+  r.effects.grainAmount = 30
+  r.effects.vignetteAmount = -20
+  // A point colour is a Qualifier op too, earlier in the look: counted, not named.
+  r.pointColors = [
+    {
+      id: 'p1',
+      hue: 30,
+      saturation: 0.5,
+      luminance: 0.5,
+      shiftHue: 10,
+      shiftSat: 0,
+      shiftLum: 0,
+      range: 50
+    }
+  ]
   const q = qualifierFromSample('q1', { hue: 210, saturation: 0.5, luminance: 0.6 })
   q.gain = { y: 1, r: 1, g: 1, b: 1.2 }
+  q.blur = 50
   const grey = qualifierFromSample('q2', { hue: 0, saturation: 0.02, luminance: 0.5 })
   r.qualifiers = [q, grey]
   r.layers.push(newLocalLayer('Mask'))
   const c = compile(r, ctx)
-  const i = c.layerIndex[qualifierLayerId('q1')]
-  assert.equal(i, 1, 'right after the base layer')
-  const layer = c.grade!.layers[i]
-  const shape = layer.mask!.components[0].shape
-  assert.ok('Range' in shape)
-  assert.deepEqual(shape.Range, qualifierKey(q))
-  assert.ok(
-    layer.stages.flatMap((s) => s.ops).some((o) => 'Primary' in o && o.Primary.gain.b === 1.2)
-  )
-  // A grey has no hue to key on; it is still a layer, to look at its key.
+  // No layer of their own: the base and nothing after it but masks.
+  assert.equal(c.grade!.layers.length, 1)
+  assert.equal(c.layerIndex[qualifierLayerId('q1')], undefined)
+  const look = c.grade!.layers[0].stages.flatMap((s) => s.ops)
+  const quals = look.filter((o): o is Extract<GradeOp, { Qualifier: unknown }> => 'Qualifier' in o)
+  assert.equal(quals.length, 3, 'the point colour and both qualifiers')
+  const op = quals[1].Qualifier
+  assert.deepEqual(op.key.hue, qualifierKey(q)!.hue)
+  // The key's blur: up to 1% of the shorter side, in the buffer's pixels.
+  assert.equal(op.key.blur_radius, Math.round(0.5 * 0.01 * 3000 * 0.5))
+  assert.equal(op.correction.gain.b, 1.2)
+  // Before the effects: grain never gets into a key.
+  const at = look.indexOf(quals[2])
+  assert.ok(at < look.findIndex((o) => 'Vignette' in o))
+  assert.ok(at < look.findIndex((o) => 'Grain' in o))
+  // Addressed as the engine counts them: the n-th Qualifier of its layer.
+  assert.deepEqual(c.qualifierIndex[qualifierLayerId('q1')], { layer: 0, qualifier: 1 })
+  assert.deepEqual(c.qualifierIndex[qualifierLayerId('q2')], { layer: 0, qualifier: 2 })
+  const probe = maskProbe(c, qualifierLayerId('q1'))
+  assert.deepEqual(probe, { QualifierKey: { layer: 0, qualifier: 1 } })
+  assert.deepEqual(probeInspect(probe!), { QualifierKey: { layer: 0, qualifier: 1 } })
+  // A grey has no hue to key on; it is still there, to look at its key.
   assert.equal(qualifierKey(grey)!.hue, null)
-  assert.equal(c.layerIndex[qualifierLayerId('q2')], 2)
-  // Switched off, it is still there (its key can be looked at), only not applied.
+  // Untouched, its correction is the identity: there, so its key can be looked at.
+  assert.equal(quals[2].Qualifier.correction.gain.r, 1)
+  // Switched off, it is left out, and has no key to look at.
   r.qualifiers[0].enabled = false
-  assert.equal(compile(r, ctx).grade!.layers[1].enabled, false)
+  const off = compile(r, ctx)
+  assert.equal(off.qualifierIndex[qualifierLayerId('q1')], undefined)
+  assert.equal(maskProbe(off, qualifierLayerId('q1')), null)
+  assert.deepEqual(off.qualifierIndex[qualifierLayerId('q2')], { layer: 0, qualifier: 1 })
   // Saved ones are made whole; duplicates and strays dropped.
   assert.equal(normaliseQualifiers([q, q, { nope: 1 }]).length, 1)
 })
 
-test('a mask’s qualifier keys only inside the mask, inverted masks too', async () => {
+test('a mask’s qualifier keys inside the mask’s own layer, scaled by its Amount', async () => {
   const { qualifierFromSample, qualifierLayerId } = await import('../src/shared/resolve')
+  const { maskProbe } = await import('../src/shared/compile')
   const r = defaultRecipe(false)
   const l = newLocalLayer('Sky')
   l.components = [
@@ -222,27 +256,22 @@ test('a mask’s qualifier keys only inside the mask, inverted masks too', async
       height: 512
     } as never
   ]
-  l.settings.qualifiers = [qualifierFromSample('mq', { hue: 210, saturation: 0.4, luminance: 0.6 })]
+  const mq = qualifierFromSample('mq', { hue: 210, saturation: 0.4, luminance: 0.6 })
+  mq.sat = 70
+  l.settings.qualifiers = [mq]
+  l.amount = 50
   r.layers = [l]
   const c = compile(normaliseRecipe(r, false), ctx)
   const maskIndex = c.layerIndex[l.id]
-  const qi = c.layerIndex[qualifierLayerId('mq')]
-  assert.equal(qi, maskIndex + 1, 'right after its mask')
-  const own = c.grade!.layers[maskIndex].mask!
-  const m = c.grade!.layers[qi].mask!
-  assert.equal(m.components.length, own.components.length + 1)
-  const key = m.components[m.components.length - 1]
-  assert.ok('Range' in key.shape)
-  assert.equal(key.mode, 'Intersect')
-  assert.equal(m.invert, false)
-  // Inverted: NOT(mask ∪ NOT key).
-  l.invert = true
-  const ci = compile(normaliseRecipe(r, false), ctx)
-  const mi = ci.grade!.layers[ci.layerIndex[qualifierLayerId('mq')]].mask!
-  const ki = mi.components[mi.components.length - 1]
-  assert.equal(ki.mode, 'Add')
-  assert.equal(ki.invert, true)
-  assert.equal(mi.invert, true)
+  // In the mask's own layer, which its mask (inverted or not) already bounds.
+  assert.equal(c.grade!.layers.length, maskIndex + 1)
+  assert.deepEqual(c.qualifierIndex[qualifierLayerId('mq')], { layer: maskIndex, qualifier: 0 })
+  assert.deepEqual(maskProbe(c, l.id), { LayerMask: { layer: maskIndex } })
+  const op = c
+    .grade!.layers[maskIndex].stages.flatMap((s) => s.ops)
+    .find((o): o is Extract<GradeOp, { Qualifier: unknown }> => 'Qualifier' in o)!
+  // Amount 50: Sat 70 (1.4) halfway to 50 (1.2).
+  assert.equal(op.Qualifier.correction.saturation, 1.2)
 })
 
 test('the vs curves’ presets: each a curve the recipe keeps as written, Flat first', async () => {

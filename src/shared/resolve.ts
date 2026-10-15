@@ -563,9 +563,11 @@ export interface KeyBandSetting {
 /**
  * Resolve's qualifier as a tool: a key on hue, saturation and luminance
  * (an HSL key, as the eyedropper samples it), blurred and perhaps inverted,
- * and the correction it lets through: a Gain wheel, Sat and Hue. Each runs
- * as its own engine layer after the photo's own grade and before the
- * masks, its key a Range mask, so the key view is the engine's own key.
+ * and the correction it lets through: a Gain wheel, Sat and Hue. Each is the
+ * engine's own Qualifier op where it sits in the grade (0.21.0, E77): the
+ * photo's after its primaries and curves and before its effects, a mask's
+ * in the mask's own layer, so it keys only inside the mask. The key view is
+ * the engine's key there (`Inspect::QualifierKey`).
  */
 export interface QualifierSetting {
   id: string
@@ -575,7 +577,7 @@ export interface QualifierSetting {
   /** Saturation and luminance 0…1. */
   keySat: KeyBandSetting
   keyLum: KeyBandSetting
-  /** 0…100: the key's edge softened (a range mask's smoothness). */
+  /** 0…100: the key's edge softened, up to 1% of the shorter side (as a range mask's smoothness). */
   blur: number
   invert: boolean
   gain: Yrgb
@@ -677,7 +679,7 @@ export function qualifierCorrection(q: QualifierSetting): Primary | null {
   return same ? null : p
 }
 
-/** The engine layer a qualifier compiles to, by name in `Compiled.layerIndex` (its key view's). */
+/** A qualifier's key view, by name: what `Compiled.qualifierIndex` finds its op by. */
 export const qualifierLayerId = (id: string): string => `q:${id}`
 
 /** A mask's Amount on a qualifier's correction: the key stays, the change scales by `k`. */
