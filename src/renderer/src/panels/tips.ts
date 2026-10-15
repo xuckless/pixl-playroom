@@ -123,7 +123,7 @@ export const TIPS = {
       'Keeps colour and tone changes smooth across flat areas such as sea, sky and skin, so they don’t go blotchy or show the file’s compression blocks.'
     ),
     expect: tk(
-      'Works on Dehaze, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.'
+      'Works on Highlights, Shadows, Whites and Blacks, the Color Mixer, Dehaze, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.'
     ),
     tip: tk('Turn it down only if you want each pixel to follow an adjustment exactly.')
   },

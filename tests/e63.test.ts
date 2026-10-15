@@ -1,16 +1,16 @@
 // E63 (engine 0.19.2): a smoothed Tone with Shadows or Blacks moved paints
 // patches of pure white over dark and mid tones, and the colour ops after it
 // turn its output into magenta and green blocks. Found by the owner
-// 2026-10-12 (Full HDR and exports; a draft, unsmoothed, is clean). The
-// stopgap: Tone leaves the Smoothing slider alone (`TONE_SMOOTHING`,
-// compile.ts).
+// 2026-10-12 (Full HDR and exports; a draft, unsmoothed, is clean). Engine
+// 0.21 fixed it (smoothing near zero takes the change whole as remainder,
+// and the smoothed gain is held in its footprint's range), and Tone takes
+// the Smoothing slider again.
 //
 // The RAW is the owner's, never in the repository: name a folder holding
 // IMG_3198.CR2 in PIXL_E53_RAWS to run it (the folder tests/e53.test.ts reads).
 //
-// - Today's compile (Tone unsmoothed) renders clean.
-// - Tone smoothed still breaks: when that check fails, E63 is fixed and the
-//   stopgap can go.
+// - Today's compile (Tone smoothed) renders clean, as the draft (unsmoothed)
+//   does, in SDR and in Full HDR (blue patches were Full HDR's form of it).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
@@ -49,14 +49,28 @@ const EDITS: Record<string, (r: Recipe) => void> = {
   }
 }
 
-/** The grade as it would be with Tone on the Smoothing slider (at 100). */
-function smoothTone(grade: Grade): Grade {
-  const g = structuredClone(grade)
-  for (const l of g.layers)
-    for (const s of l.stages)
-      for (const o of s.ops)
-        if ('Tone' in o) o.Tone.smoothing = { radius: SMOOTHING_RADIUS, strength: 1 }
-  return g
+/** Whether Tone is on the Smoothing slider in a grade (as a new photo's, at 100). */
+const toneSmoothed = (grade: Grade): boolean =>
+  grade.layers.some((l) =>
+    l.stages.some((s) =>
+      s.ops.some((o) => 'Tone' in o && o.Tone.smoothing?.radius === SMOOTHING_RADIUS)
+    )
+  )
+
+/**
+ * Full HDR's form of it, on extended linear Display P3 floats: what the edit
+ * (which only darkens) took from dark to at or past white, and blue patches.
+ */
+function brokenHdr(plain: Float32Array, edit: Float32Array): { white: number; blue: number } {
+  let white = 0
+  let blue = 0
+  for (let i = 0; i < edit.length; i += 3) {
+    const [R, G, B] = [edit[i], edit[i + 1], edit[i + 2]]
+    const was = 0.2289746 * plain[i] + 0.6917385 * plain[i + 1] + 0.0792869 * plain[i + 2]
+    if (was < 0.2 && R >= 0.98 && G >= 0.98 && B >= 0.98) white++
+    if (B > 0.5 && B > 3 * Math.max(R, G, 0.01)) blue++
+  }
+  return { white, blue }
 }
 
 /**
@@ -105,7 +119,7 @@ test('IMG_3198: Shadows and Blacks render without E63’s white patches', { skip
     x: number
     y: number
   }
-  const graded = (r: Recipe): { grade: Grade; framing: unknown } => {
+  const graded = (r: Recipe, hdr = false): { grade: Grade; framing: unknown } => {
     const c = compile(r, {
       isRaw: true,
       asShot,
@@ -116,7 +130,7 @@ test('IMG_3198: Shadows and Blacks render without E63’s white patches', { skip
       seed: 1,
       brushPaths: {},
       applyCrop: true,
-      hdr: false
+      hdr
     })
     return { grade: c.grade!, framing: c.framing }
   }
@@ -134,19 +148,48 @@ test('IMG_3198: Shadows and Blacks render without E63’s white patches', { skip
         threads: 6
       })
     ).output
+  /** Full HDR's settled picture: the master to a 200 / 1600 nit display, floats. */
+  const renderHdr = async (grade: Grade, framing: unknown): Promise<Float32Array> => {
+    const o = await engine.convert({
+      ...blankRequest(proxy, '', 'Tiff'),
+      sink: 'Bytes',
+      pixel: { depth: 'F32', channels: 3 },
+      encode: { Pixels: { sample: 'F32' } },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color: {
+        Master: {
+          headroom: true,
+          peak: 'Measured',
+          ceiling: { Display: { white_nits: 200, peak_nits: 1600 } },
+          reach: 'Measured',
+          look: 'Colorimetric',
+          float: 'ExtendedLinearDisplayP3',
+          companion: null
+        }
+      },
+      grade,
+      framing,
+      threads: 6
+    })
+    const b = o.output
+    return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4)
+  }
   const untouched = graded(defaultRecipe(true))
   const plain = await render(untouched.grade, untouched.framing)
-  let stillBroken = 0
+  const untouchedHdr = graded(defaultRecipe(true), true)
+  const plainHdr = await renderHdr(untouchedHdr.grade, untouchedHdr.framing)
   for (const [name, set] of Object.entries(EDITS)) {
     const r = defaultRecipe(true)
     set(r)
     const { grade, framing } = graded(r)
+    assert.ok(toneSmoothed(grade), `${name}: Tone is smoothed`)
+    // Measured on 0.19.2, smoothed: 798, 19 019 and 3834 whitened pixels.
     const now = broken(plain, await render(grade, framing))
     assert.ok(now.white < 50, `${name}: ${now.white} whitened pixels`)
     assert.ok(now.garish < 500, `${name}: ${now.garish} garish pixels`)
-    stillBroken += broken(plain, await render(smoothTone(grade), framing)).white
+    const hdr = graded(r, true)
+    const inHdr = brokenHdr(plainHdr, await renderHdr(hdr.grade, hdr.framing))
+    assert.ok(inHdr.white < 50, `${name}, Full HDR: ${inHdr.white} whitened pixels`)
+    assert.ok(inHdr.blue < 500, `${name}, Full HDR: ${inHdr.blue} blue pixels`)
   }
-  // Measured on 0.19.2: 798, 19 019 and 3834. Clean here means E63 is fixed:
-  // turn TONE_SMOOTHING on and give the tip its "Highlights and Shadows" back.
-  assert.ok(stillBroken > 1000, `Tone smoothed left only ${stillBroken} whitened pixels`)
 })

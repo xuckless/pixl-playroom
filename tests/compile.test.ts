@@ -5,7 +5,6 @@ import {
   calibrationMatrix,
   compile,
   cropFits,
-  isP3Floor,
   parametricCurve,
   shoulderCube,
   vignettePlacement,
@@ -26,9 +25,7 @@ const ctx: CompileContext = {
   applyCrop: true
 }
 
-// The look stage's floor (isP3Floor) is left out: what each test is about follows it.
-const kinds = (ops: GradeOp[]): string[] =>
-  ops.filter((o) => !isP3Floor(o)).map((o) => Object.keys(o)[0])
+const kinds = (ops: GradeOp[]): string[] => ops.map((o) => Object.keys(o)[0])
 
 test('an untouched JPEG compiles to nothing at all', () => {
   const c = compile(defaultRecipe(false), ctx)
@@ -513,7 +510,7 @@ test('engine 0.19.2: the look stage no longer floors Scene’s wide colours firs
   const r = defaultRecipe(true)
   r.presence.dehaze = 30
   const look = compile(r, { ...ctx, isRaw: true, scale: 1 }).grade!.layers[0].stages.at(-1)!
-  assert.ok(!look.ops.some(isP3Floor))
+  assert.ok(!look.ops.some((o) => 'Lut' in o))
   assert.ok('Dehaze' in look.ops[0])
   // Nothing in the look stage, no floor either.
   assert.equal(compile(defaultRecipe(false), ctx).grade, null)

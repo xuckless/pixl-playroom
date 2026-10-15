@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { compile, isP3Floor, type CompileContext } from '../src/shared/compile'
+import { compile, type CompileContext } from '../src/shared/compile'
 import type { ShotLens } from '../src/shared/engine-types'
 import {
   defaultLens,
@@ -175,7 +175,6 @@ test('defringe keys its bands on edges and runs before the look is graded', () =
   assert.equal(op.Defringe.green.amount, 0)
   const look = compile(r, ctx).grade!.layers[0].stages.at(-1)!
   // First in the look stage (no floor before it since engine 0.19.2).
-  assert.ok(!isP3Floor(look.ops[0]))
   assert.equal(Object.keys(look.ops[0])[0], 'Defringe')
 })
 

@@ -2,7 +2,6 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   compile,
-  isP3Floor,
   layerMask,
   scaleSettings,
   smoothnessFeather,
@@ -140,7 +139,7 @@ test('a version 1 mask becomes settings that give the engine the same operations
   // At 1:1, where sharpening shows.
   const stages = compile(r, { ...ctx, scale: 1 }).grade!.layers[0].stages
   const kinds = (i: number): string[] =>
-    stages[i].ops.filter((o: GradeOp) => !isP3Floor(o)).map((o: GradeOp) => Object.keys(o)[0])
+    stages[i].ops.map((o: GradeOp) => Object.keys(o)[0])
   assert.deepEqual(kinds(0), ['WhiteBalance', 'Primary', 'AddColor'])
   assert.deepEqual(
     [...kinds(1)].sort(),

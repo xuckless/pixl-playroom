@@ -6,10 +6,12 @@
 // name a folder holding IMG_2347.CR2, IMG_3198.CR2 and the planes
 // (IMG_2347.<component id>.png) in PIXL_E53_RAWS to run it.
 //
-// - Today's compile (the Color Mixer unsmoothed, the stopgap) renders clean.
-// - Engine 0.19.2 fixed E53 (smoothed ops no longer blob on out-of-gamut
-//   colours): the Color Mixer smoothed renders clean too, so the stopgap in
-//   compile.ts is no longer needed for the engine's sake.
+// - Engine 0.19.2 fixed most of E53 (smoothed ops no longer blob on
+//   out-of-gamut colours), and 0.21 the rest (the near-black specks a
+//   smoothed Color Mixer left in dark hair): today's compile, the Color
+//   Mixer smoothed again, renders clean.
+// - The Color Mixer at full Smoothing renders clean too, whatever the
+//   recipe's own Smoothing (an edit made before it has 0).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
@@ -142,12 +144,9 @@ for (const name of ['IMG_2347', 'IMG_3198']) {
     })
     const n = await blotches(engine, proxy, c.grade, c.framing)
     assert.ok(n < 500, `${n} blotched pixels`)
-    // E53 is fixed in 0.19.2: IMG_3198, which blotched with the Color Mixer
-    // smoothed even past the look stage's floor (70 000 pixels and more),
-    // renders as clean smoothed as not.
-    if (name === 'IMG_3198') {
-      const smoothed = await blotches(engine, proxy, smoothHsl(c.grade!), c.framing)
-      assert.ok(smoothed < 500, `${smoothed} blotched pixels with HSL smoothed`)
-    }
+    // IMG_3198 blotched with the Color Mixer smoothed even past the look
+    // stage's floor (70 000 pixels and more on 0.18); IMG_2347 specked.
+    const smoothed = await blotches(engine, proxy, smoothHsl(c.grade!), c.framing)
+    assert.ok(smoothed < 500, `${smoothed} blotched pixels with HSL smoothed`)
   })
 }

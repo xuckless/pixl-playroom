@@ -113,17 +113,6 @@ export const RAW_SCENE_STOPS = 2
 /** The smoothing's reach, a fraction of the shorter side: the engine's calibration point. */
 export const SMOOTHING_RADIUS = 0.02
 
-/**
- * Whether Tone (Highlights, Shadows, Whites, Blacks) takes the Smoothing
- * slider. Held off, the owner's stopgap of 2026-10-12 (E63, engine 0.19.2):
- * a smoothed Tone with Shadows or Blacks moved paints patches of pure white
- * over dark and mid tones (any amount, any Smoothing above 0, a floor before
- * or after it changes nothing), blue ones in Full HDR when they are raised,
- * and the colour ops after it turn its output into magenta and green blocks.
- * Unsmoothed it is clean. `tests/e63.test.ts` says when the engine's is.
- */
-export const TONE_SMOOTHING = false
-
 /** The Smoothing slider (0–100) as the engine's field, or none for a draft or at 0. */
 export function smoothingOf(value: number, ctx: CompileContext): AdjustmentSmoothing | null {
   if (ctx.smoothing === false || !(value > 0)) return null
@@ -1087,21 +1076,6 @@ function stage(space: GradeSpace, ops: GradeOp[]): { space: GradeSpace; ops: Gra
   return ops.length > 0 ? [{ space, ops }] : []
 }
 
-/**
- * Negatives floored at 0, nothing else touched (a 1D identity over 0…64).
- * Before engine 0.19.2 it led the look stage and preceded every smoothed op
- * (E53: smoothed ops blobbed on out-of-gamut colours). 0.19.2 fixed that in
- * the engine, and the floor also took colour that Full HDR's gamut step
- * should compress (Phase A §2), so Playroom no longer writes it. Kept to
- * recognise one in a grade made before.
- */
-const P3_FLOOR = 'LUT_1D_SIZE 2\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 64 64 64\n0 0 0\n64 64 64\n'
-
-/** Whether an op is the old look stage's floor (`P3_FLOOR`). */
-export function isP3Floor(op: GradeOp): boolean {
-  return 'Lut' in op && 'Cube' in op.Lut.lut && op.Lut.lut.Cube === P3_FLOOR
-}
-
 /** The look stage (display-referred, `LOOK_SPACE`). */
 function lookStage(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
   return stage(LOOK_SPACE, ops)
@@ -1293,8 +1267,8 @@ function settingsStages(
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
   const hdr = ctx.hdr === true
-  // One value for every op that takes it (Vibrance, Dehaze, Point colour,
-  // Color grading; HSL waits for E53, Tone for E63); null in a draft.
+  // One value for every op that takes it (Tone, the Color Mixer, Vibrance,
+  // Dehaze, Point colour, Color grading); null in a draft.
   const smoothing = smoothingOf(r.presence.smoothing, ctx)
   const d = r.detail
   const denoise =
@@ -1395,7 +1369,7 @@ function settingsStages(
         shadows: clamp(b.shadows / 100, -1, 1),
         whites: clamp(b.whites / 100, -1, 1),
         blacks: clamp(b.blacks / 100, -1, 1),
-        smoothing: TONE_SMOOTHING ? smoothing : null,
+        smoothing,
         // Only when one is set, so a request is 0.19's where none is.
         ...((tb) => (tb ? { base: tb } : {}))(toneBaseFor(ctx))
       }
@@ -1438,10 +1412,7 @@ function settingsStages(
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
   const tail = bw && finish ? finish : look
-  // Unsmoothed until E53 (engine 0.18): a smoothed HslBands specks deep
-  // shadows cyan and, under a mask's smoothed Tone past white, blotches red
-  // and blue. The owner's stopgap, 2026-10-08: the other ops keep Smoothing.
-  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, null)
+  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, smoothing)
   if (hsl) tail.push(hsl)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
