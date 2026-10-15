@@ -69,6 +69,11 @@ export const paths = {
       : join(app.getAppPath(), 'resources', 'lens-profiles'),
   /** Downloaded AI models, `<id>/<version>/<files>` (see `ai/models.ts`). */
   models: (): string => dir('models'),
+  /**
+   * CoreML's compiled models (engine 0.21.0, OBS-4), one folder each, kept
+   * across runs; cleared when the models or the engine change (`ai/models.ts`).
+   */
+  coremlCache: (): string => dir('coreml-cache'),
   cacheRoot: (): string => dir('cache'),
   /** THIRD_PARTY_NOTICES.txt: beside the app's resources when packaged, in build/ in a checkout. */
   notices: (): string =>
