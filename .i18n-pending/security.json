@@ -1,0 +1,82 @@
+{
+  "Look in them": {
+    "en": "Look in them",
+    "fr": "Y chercher",
+    "de": "Darin suchen",
+    "ja": "探す",
+    "vi": "Tìm trong đó",
+    "zh-Hans": "在其中查找"
+  },
+  "This project names folders Playroom has not opened": {
+    "en": "This project names folders Playroom has not opened",
+    "fr": "Ce projet désigne des dossiers que Playroom n’a jamais ouverts",
+    "de": "Dieses Projekt nennt Ordner, die Playroom noch nicht geöffnet hat",
+    "ja": "このプロジェクトは、Playroom でまだ開いていないフォルダを指しています",
+    "vi": "Dự án này nhắc đến các thư mục mà Playroom chưa từng mở",
+    "zh-Hans": "此项目指向 Playroom 尚未打开过的文件夹"
+  },
+  "This collections file names folders Playroom has not opened": {
+    "en": "This collections file names folders Playroom has not opened",
+    "fr": "Ce fichier de collections désigne des dossiers que Playroom n’a jamais ouverts",
+    "de": "Diese Sammlungsdatei nennt Ordner, die Playroom noch nicht geöffnet hat",
+    "ja": "このコレクションファイルは、Playroom でまだ開いていないフォルダを指しています",
+    "vi": "Tệp bộ sưu tập này nhắc đến các thư mục mà Playroom chưa từng mở",
+    "zh-Hans": "此收藏集文件指向 Playroom 尚未打开过的文件夹"
+  },
+  "Playroom looks in them for the photos only if you say so. A file someone else made can name any folder.": {
+    "en": "Playroom looks in them for the photos only if you say so. A file someone else made can name any folder.",
+    "fr": "Playroom n’y cherche les photos que si vous l’y autorisez. Un fichier créé par quelqu’un d’autre peut désigner n’importe quel dossier.",
+    "de": "Playroom sucht dort nur nach den Fotos, wenn Sie es erlauben. Eine Datei, die jemand anderes erstellt hat, kann jeden beliebigen Ordner nennen.",
+    "ja": "許可した場合にのみ、Playroom はそこで写真を探します。他の人が作成したファイルは、どのフォルダでも指すことができます。",
+    "vi": "Playroom chỉ tìm ảnh trong đó khi bạn cho phép. Một tệp do người khác tạo có thể nhắc đến bất kỳ thư mục nào.",
+    "zh-Hans": "只有在您同意时，Playroom 才会在其中查找照片。他人制作的文件可以指向任何文件夹。"
+  },
+  "The LUT this photo uses is not in Playroom’s LUT folder: import it again to see it": {
+    "en": "The LUT this photo uses is not in Playroom’s LUT folder: import it again to see it",
+    "fr": "Le LUT de cette photo n’est pas dans le dossier des LUT de Playroom : importez-le à nouveau pour le voir",
+    "de": "Die LUT dieses Fotos ist nicht im LUT-Ordner von Playroom: Importieren Sie sie erneut, um sie zu sehen",
+    "ja": "この写真が使う LUT は Playroom の LUT フォルダにありません。表示するにはもう一度読み込んでください",
+    "vi": "LUT mà ảnh này dùng không có trong thư mục LUT của Playroom: hãy nhập lại để xem",
+    "zh-Hans": "此照片使用的 LUT 不在 Playroom 的 LUT 文件夹中：请重新导入以查看效果"
+  },
+  "An Advanced layer that reads a file outside Playroom’s LUT folder is left out": {
+    "en": "An Advanced layer that reads a file outside Playroom’s LUT folder is left out",
+    "fr": "Un calque Avancé qui lit un fichier hors du dossier des LUT de Playroom est ignoré",
+    "de": "Eine erweiterte Ebene, die eine Datei außerhalb des LUT-Ordners von Playroom liest, wird ausgelassen",
+    "ja": "Playroom の LUT フォルダ外のファイルを読む詳細設定レイヤーは適用されません",
+    "vi": "Một lớp Nâng cao đọc tệp nằm ngoài thư mục LUT của Playroom sẽ bị bỏ qua",
+    "zh-Hans": "读取 Playroom LUT 文件夹以外文件的高级图层已被略过"
+  },
+  "Update {{version}} was refused: its feed is not signed by Pixl, so it is not installed.": {
+    "en": "Update {{version}} was refused: its feed is not signed by Pixl, so it is not installed.",
+    "fr": "La mise à jour {{version}} a été refusée : son flux n’est pas signé par Pixl, elle n’est donc pas installée.",
+    "de": "Das Update {{version}} wurde abgelehnt: Sein Feed ist nicht von Pixl signiert, daher wird es nicht installiert.",
+    "ja": "アップデート {{version}} は拒否されました。フィードが Pixl によって署名されていないため、インストールされません。",
+    "vi": "Bản cập nhật {{version}} đã bị từ chối: nguồn cập nhật của nó không được Pixl ký nên sẽ không được cài đặt.",
+    "zh-Hans": "更新 {{version}} 已被拒绝：其更新源未经 Pixl 签名，因此不会安装。"
+  },
+  "Gemma’s server is not the one downloaded: remove Gemma and download it again": {
+    "en": "Gemma’s server is not the one downloaded: remove Gemma and download it again",
+    "fr": "Le serveur de Gemma n’est pas celui qui a été téléchargé : supprimez Gemma et téléchargez-le à nouveau",
+    "de": "Der Server von Gemma ist nicht der heruntergeladene: Entfernen Sie Gemma und laden Sie es erneut herunter",
+    "ja": "Gemma のサーバーがダウンロードしたものと一致しません。Gemma を削除して、もう一度ダウンロードしてください",
+    "vi": "Máy chủ của Gemma không phải bản đã tải về: hãy gỡ Gemma và tải lại",
+    "zh-Hans": "Gemma 的服务器与下载的不一致：请移除 Gemma 后重新下载"
+  },
+  "LUT · {{name}} (missing)": {
+    "en": "LUT · {{name}} (missing)",
+    "fr": "LUT · {{name}} (introuvable)",
+    "de": "LUT · {{name}} (fehlt)",
+    "ja": "LUT · {{name}}（見つかりません）",
+    "vi": "LUT · {{name}} (bị thiếu)",
+    "zh-Hans": "LUT · {{name}}（缺失）"
+  },
+  "LUT missing: {{file}} is not in Playroom’s LUT folder, so it is left out. Import it to see it.": {
+    "en": "LUT missing: {{file}} is not in Playroom’s LUT folder, so it is left out. Import it to see it.",
+    "fr": "LUT introuvable : {{file}} n’est pas dans le dossier des LUT de Playroom, il est donc ignoré. Importez-le pour le voir.",
+    "de": "LUT fehlt: {{file}} ist nicht im LUT-Ordner von Playroom und wird daher ausgelassen. Importieren Sie sie, um sie zu sehen.",
+    "ja": "LUT が見つかりません：{{file}} は Playroom の LUT フォルダにないため適用されません。表示するには読み込んでください。",
+    "vi": "Thiếu LUT: {{file}} không có trong thư mục LUT của Playroom nên bị bỏ qua. Hãy nhập để xem.",
+    "zh-Hans": "LUT 缺失：{{file}} 不在 Playroom 的 LUT 文件夹中，因此已略过。导入后即可查看。"
+  }
+}

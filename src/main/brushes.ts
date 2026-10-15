@@ -14,7 +14,6 @@
  * without SAM. Without SAM the stroke is written as it is, and only the
  * engine's refine snaps it.
  */
-import { join } from 'path'
 import type { Orientation } from '../shared/engine-types'
 import { gradientKey, rasterGradient } from '../shared/gradients'
 import { edgeKey } from '../shared/maskedge'
@@ -24,6 +23,8 @@ import { planeEdge, snapsToObject } from '../shared/refine'
 import type { Recipe } from '../shared/recipe'
 import log from 'electron-log/main'
 import { grey8 } from './pngio'
+import { isPlaneHash } from '../shared/ids'
+import { cacheFile } from './contain'
 import { planeRef } from './planeref'
 import { exists } from './exists'
 import { paths } from './paths'
@@ -106,6 +107,14 @@ function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Pr
   return p
 }
 
+/**
+ * A plane's name in the cache: its reference when that is a SHA-256 (what
+ * Playroom names planes by), else the hash of its PNG. A recipe from a file
+ * someone else wrote never names a cache file.
+ */
+const planeName = (c: { ref?: string; png: string }): string =>
+  isPlaneHash(c.ref) ? c.ref : planeRef(c.png)
+
 /** Each brush (or edged gradient) component's plane file, by component id. */
 export async function brushPlanes(
   photoId: number,
@@ -125,7 +134,7 @@ export async function brushPlanes(
     for (const c of layer.components) {
       if (c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional') {
         if (!rasterGradient(c)) continue
-        const file = join(dir, `grad-${gradientKey(c)}${edgeKey(c.edge)}-${user}.png`)
+        const file = cacheFile(dir, `grad-${gradientKey(c)}${edgeKey(c.edge)}-${user}.png`)
         work.push(ensure(file, { op: 'gradient', file, dir, c, user }))
         out[c.id] = file
         continue
@@ -133,7 +142,7 @@ export async function brushPlanes(
       if (c.kind === 'depth') {
         // A depth map: turned as a painted plane is; the band is keyed by the engine.
         if (!c.png) continue
-        const file = join(dir, `depth-${c.ref ?? planeRef(c.png)}-${user}.png`)
+        const file = cacheFile(dir, `depth-${planeName(c)}-${user}.png`)
         work.push(ensure(file, { op: 'brush', file, png: c.png, user }))
         out[c.id] = file
         continue
@@ -143,15 +152,21 @@ export async function brushPlanes(
       // one: hashing megabytes of PNG on every compile is what it saves. A
       // snapped plane's shift is the engine's (refine), not the plane's.
       const edge = planeEdge(c)
-      const name = `brush-${c.ref ?? planeRef(c.png)}${edgeKey(edge)}`
-      const file = join(dir, `${name}-${user}.png`)
+      const name = `brush-${planeName(c)}${edgeKey(edge)}`
+      const file = cacheFile(dir, `${name}-${user}.png`)
       const job = { op: 'brush' as const, file, png: c.png, user, ...(edge ? { edge } : {}) }
       if (snapsToObject(c) && snapper) {
         const id = c.id
         work.push(
           snapKeyOf().then(async (k) => {
             out[id] = k
-              ? await snapped(join(dir, `${name}-on${k}-${user}.png`), file, photoKey, lens, job)
+              ? await snapped(
+                  cacheFile(dir, `${name}-on${k}-${user}.png`),
+                  file,
+                  photoKey,
+                  lens,
+                  job
+                )
               : file
             if (!k) await ensure(file, job)
           })

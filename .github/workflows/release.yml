@@ -17,6 +17,12 @@ name: Release
 # variable R2_ENDPOINT, https://<account>.r2.cloudflarestorage.com): without
 # it the release fails before anything reaches the feed.
 #
+# Each feed is signed (scripts/feed-sign.mjs, secret PIXL_FEED_KEY) after it
+# is rewritten and before it is uploaded: apps holding a feed key
+# (src/main/feedsig.ts) download only an update whose feed is signed. Without
+# the secret the feeds go up unsigned, with a notice, while no app holds a
+# key; once one does, the release fails instead.
+#
 # All jobs run on GitHub-hosted runners (free for a public repository).
 
 on:
@@ -123,7 +129,20 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build renderer, preload and main
-        run: pnpm exec electron-vite build
+        shell: bash
+        run: |
+          pnpm exec electron-vite build
+          # Never fail open: a production release that came out a development build stops here.
+          if [ "$TARGET" = production ] && ! grep -q 'DEV_BUILD = false' out/main/index.js; then
+            echo "::error::out/main/index.js is a development build (PLAYROOM_RELEASE_BUILD unset)"
+            exit 1
+          fi
+        env:
+          # A release build (src/main/build.ts): no development entitlement
+          # root, no beta-gate skip, no DevTools, no remote debugging, and no
+          # automation or feed switches. A staging build stays a development
+          # build, so PLAYROOM_UPDATE_URL works for the update test.
+          PLAYROOM_RELEASE_BUILD: ${{ env.TARGET == 'production' && '1' || '' }}
 
       # macOS: Playroom's display reader (src/native/display), the screen's
       # EDR headroom Full HDR needs, built for this job's arch against the
@@ -326,10 +345,13 @@ jobs:
             mkdir -p feeds
             for ch in $CHANNELS; do
               node build/prefix-feed.mjs "dist/$ch.yml" "${ROLLOUT:-100}" > "feeds/$ch.yml"
+              node scripts/feed-sign.mjs sign "feeds/$ch.yml"
               s3 cp "feeds/$ch.yml" "$base/$ch.yml" --cache-control 'no-cache' --content-type 'text/yaml'
             done
           fi
         env:
+          # The feed key's PEM text (scripts/feed-sign.mjs); unset, the feeds go unsigned while no app checks.
+          PIXL_FEED_KEY: ${{ secrets.PIXL_FEED_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
@@ -389,8 +411,11 @@ jobs:
               "mac-channel/mac-channel-x64/$ch-mac.yml" \
               "mac-channel/mac-channel-arm64/$ch-mac.yml" > "merged-$ch-mac.yml"
             node build/prefix-feed.mjs "merged-$ch-mac.yml" "${ROLLOUT:-100}" > "r2/$ch-mac.yml"
+            node scripts/feed-sign.mjs sign "r2/$ch-mac.yml"
             cat "r2/$ch-mac.yml"
           done
+        env:
+          PIXL_FEED_KEY: ${{ secrets.PIXL_FEED_KEY }}
 
       - name: Put the feeds on updates.pixlfoundation.com
         run: |

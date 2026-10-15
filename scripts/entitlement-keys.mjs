@@ -12,7 +12,7 @@
 //   node scripts/entitlement-keys.mjs sign-keyset <root-kid> <kid>=<public> [...]
 //       Prints the key set (a JWS) for the Worker, signed by that root.
 //       `dev-root` signs with the development root (dev-entitlement-root.mjs),
-//       which only unpackaged builds trust: for the mock and wrangler dev.
+//       which only development builds trust: for the mock and wrangler dev.
 //   node scripts/entitlement-keys.mjs verify <keyset-jws>
 //       Checks a key set against ROOT_KEYS and prints its keys.
 //

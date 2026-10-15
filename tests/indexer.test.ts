@@ -12,7 +12,7 @@ import {
   writeFileSync
 } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { IndexService } from '../src/main/indexer/service'
 import { PixlFile } from '../src/main/project/pixlfile'
 import type { IndexEvent } from '../src/main/indexer/protocol'
@@ -711,9 +711,12 @@ test('collections export by path and import into another index (and again, with 
       { path: b.path, copyId: copy.copyId }
     ])
 
-    // Another index has never seen the folder: importing indexes it.
+    // Another index has never seen the folder: it is asked about, and once
+    // allowed, importing indexes it.
     const other = f.reopen()
-    const added = await other.importCollections(file)
+    const asked = other.collectionFoldersToAsk(file)
+    assert.deepEqual(asked, [dirname(a.path)])
+    const added = await other.importCollections(file, asked)
     assert.deepEqual(added.map((c) => c.id).sort(), [set.id, man.id, smart.id].sort())
     const listed = await other.listSource({ kind: 'collection', id: smart.id })
     assert.deepEqual(

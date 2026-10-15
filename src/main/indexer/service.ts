@@ -104,6 +104,8 @@ import {
   type Origin
 } from '../project/pixlfile'
 import { IMAGE_EXTENSIONS, isRawExt, versionStamp } from '../source'
+import { isBlobHash, isPlainExt } from '../../shared/ids'
+import { cacheFile, isSafeLocalPath } from '../contain'
 import type { IndexEvent } from './protocol'
 import {
   applyMetaPatch,
@@ -620,9 +622,15 @@ export class IndexService {
       return hit.origin
     }
     // One the index has open is read through it (it may hold uncommitted writes).
-    const origin = this.projects.isOpen(path)
-      ? this.projects.use(path, (p) => p.origin())
-      : PixlFile.peekOrigin(path)
+    // A file whose origin no Playroom wrote is not a project (`validOrigin`).
+    let origin: Origin | null = null
+    try {
+      origin = this.projects.isOpen(path)
+        ? this.projects.use(path, (p) => p.origin())
+        : PixlFile.peekOrigin(path)
+    } catch {
+      origin = null
+    }
     this.origins.set(path, { stamp, origin })
     return origin
   }
@@ -692,9 +700,14 @@ export class IndexService {
     // Photos that moved away from their projects (in a projects folder).
     for (const row of photos) {
       if (claimed.has(row.id) || this.projectOf(row)) continue
-      const found = this.store
-        .projectsNamed(row.name, row.size)
-        .find((c) => !taken.has(c.path) && existsSync(c.path) && !existsSync(c.origin_path))
+      const found = this.store.projectsNamed(row.name, row.size).find(
+        (c) =>
+          !taken.has(c.path) &&
+          existsSync(c.path) &&
+          // A path no Playroom would look at (a device, a share outside the
+          // library) is not looked at: the original is as good as gone.
+          !(this.lookable(c.origin_path) && existsSync(c.origin_path))
+      )
       if (!found) continue
       this.projects.write(found.path, (p) => {
         const o = p.origin()
@@ -875,13 +888,14 @@ export class IndexService {
   private writeOriginal(row: PhotoRow, project: string): { path: string; codec: string } | null {
     return this.projects.use(project, (p) => {
       const o = p.original()
-      if (o?.state !== 'ready' || !o.blob) return null
+      if (o?.state !== 'ready' || !isBlobHash(o.blob)) return null
       const info = p.blob(o.blob)
       if (!info) return null
       const ext = o.kind === 'verbatim' ? row.ext : o.kind === 'dng' ? 'dng' : 'jxl'
+      if (!isPlainExt(ext)) return null
       const dir = join(this.cacheRoot, 'photos', String(row.id))
       mkdirSync(dir, { recursive: true })
-      const path = join(dir, `original-${o.blob.slice(0, 16)}.${ext}`)
+      const path = cacheFile(dir, `original-${o.blob.slice(0, 16)}.${ext}`)
       if (!existsSync(path) && !p.writeBlobTo(o.blob, path)) return null
       return { path, codec: info.codec }
     })
@@ -998,9 +1012,9 @@ export class IndexService {
   blobFile(key: string, hash: string, ext: string): string | null {
     const row = this.row(key)
     const project = this.projectOf(row)
-    if (!project) return null
+    if (!project || !isBlobHash(hash) || !isPlainExt(ext)) return null
     const dir = join(this.cacheRoot, 'photos', String(row.id), 'blobs')
-    const path = join(dir, `${hash}.${ext}`)
+    const path = cacheFile(dir, `${hash}.${ext}`)
     if (existsSync(path)) return path
     mkdirSync(dir, { recursive: true })
     return this.projects.use(project, (p) => (p.writeBlobTo(hash, path) ? path : null))
@@ -1159,11 +1173,15 @@ export class IndexService {
    * their items' keys, indexing any folder the index has not seen. A folder
    * given as the first path is that folder, with no keys.
    */
-  async resolvePaths(paths: string[]): Promise<{ folder: string | null; keys: string[] }> {
+  async resolvePaths(
+    paths: string[],
+    allowed: string[] = []
+  ): Promise<{ folder: string | null; keys: string[] }> {
     if (paths.length === 0) return { folder: null, keys: [] }
     // A project stands for its photo: the folder is the photo's (or, when
     // that is gone, the project's own), and the key the photo's.
-    if (paths.some((p) => p.toLowerCase().endsWith(PIXL_EXT))) return this.resolveProjects(paths)
+    if (paths.some((p) => p.toLowerCase().endsWith(PIXL_EXT)))
+      return this.resolveProjects(paths, allowed)
     const first = resolve(paths[0])
     let isDir = false
     try {
@@ -1195,12 +1213,12 @@ export class IndexService {
    * file the index has not seen is scanned (to learn the file and tie it to
    * its project), but it is not opened, watched or added to the recent ones.
    */
-  async photoPaths(paths: string[]): Promise<string[]> {
+  async photoPaths(paths: string[], allowed: string[] = []): Promise<string[]> {
     const out: string[] = []
     for (const p of paths.map((x) => resolve(x))) {
       let row: PhotoRow | null
       if (p.toLowerCase().endsWith(PIXL_EXT)) {
-        const { keys } = await this.resolveProjects([p])
+        const { keys } = await this.resolveProjects([p], allowed)
         row = keys[0] ? (this.store.photosByIds([parseKey(keys[0]).photoId])[0] ?? null) : null
       } else row = await this.photoAt(p)
       if (row && !out.includes(row.path)) out.push(row.path)
@@ -1216,14 +1234,66 @@ export class IndexService {
     return this.store.photoByPath(path) ?? null
   }
 
+  /**
+   * The folders the library knows: those opened (the sidebar's), and those
+   * it has photos in. A network path a file names is looked at only inside
+   * the first (`isSafeLocalPath`).
+   */
+  private libraryFolders(): string[] {
+    return this.store.recentFolders(-1)
+  }
+
+  /** Whether a path a file names may be looked at (`isSafeLocalPath`). */
+  private lookable(path: string): boolean {
+    return isSafeLocalPath(path, this.libraryFolders())
+  }
+
+  /** Whether a folder is one the library has opened or holds photos in. */
+  private knownFolder(folder: string): boolean {
+    return this.store.hasPhotosIn(folder) || this.libraryFolders().includes(folder)
+  }
+
+  /**
+   * A project's home: the folder its origin names when that may be looked
+   * at without asking (known to the library, beside the project, or one the
+   * user allowed), else the project's own folder.
+   */
+  private projectHome(project: string, origin: Origin | null, allowed: string[]): string {
+    const own = dirname(project)
+    if (!origin) return own
+    const home = dirname(origin.path)
+    if (home === own || !this.lookable(home) || !existsSync(home)) return own
+    return this.knownFolder(home) || allowed.includes(home) ? home : own
+  }
+
+  /**
+   * The folders these files name that would be looked at only because a file
+   * says so: a project's photo folder, or a collections file's items' folders,
+   * that exists here, may be looked at, and that the library has never
+   * opened or scanned. Main asks before any of them is scanned (a project or
+   * collections file someone else made names folders of their choosing).
+   */
+  foldersToAsk(paths: string[]): string[] {
+    const out = new Set<string>()
+    for (const p of paths.map((x) => resolve(x))) {
+      if (!p.toLowerCase().endsWith(PIXL_EXT)) continue
+      const o = this.originOf(p)
+      if (!o) continue
+      const home = dirname(o.path)
+      if (home === dirname(p) || !this.lookable(home) || !existsSync(home)) continue
+      if (!this.knownFolder(home)) out.add(home)
+    }
+    return [...out]
+  }
+
   private async resolveProjects(
-    paths: string[]
+    paths: string[],
+    allowed: string[] = []
   ): Promise<{ folder: string | null; keys: string[] }> {
     const projects = paths.map((p) => resolve(p)).filter((p) => p.toLowerCase().endsWith(PIXL_EXT))
     const origin = this.originOf(projects[0])
     if (!origin) return { folder: null, keys: [] }
-    const home = dirname(origin.path)
-    const folder = existsSync(home) ? home : dirname(projects[0])
+    const folder = this.projectHome(projects[0], origin, allowed)
     await this.rescan(folder, false)
     // A project beside a photo in another folder: that folder is looked at too.
     const keys: string[] = []
@@ -1231,7 +1301,7 @@ export class IndexService {
       let rows = this.store.photosWithProject(p)
       if (rows.length === 0) {
         const o = this.originOf(p)
-        if (o) await this.rescan(existsSync(dirname(o.path)) ? dirname(o.path) : dirname(p), false)
+        if (o) await this.rescan(this.projectHome(p, o, allowed), false)
         rows = this.store.photosWithProject(p)
       }
       const row = rows.find((r) => existsSync(r.path)) ?? rows[0]
@@ -1670,7 +1740,31 @@ export class IndexService {
    * refers to it follows), items are found by path (their folders indexed
    * if new), and what cannot be found is left out. Returns what was added.
    */
-  async importCollections(file: unknown): Promise<Collection[]> {
+  /** The folders a collections file's items name that the library does not know (see `foldersToAsk`). */
+  collectionFoldersToAsk(file: unknown): string[] {
+    const out = new Set<string>()
+    for (const folder of this.collectionFolders(file))
+      if (!this.knownFolder(folder) && existsSync(folder)) out.add(folder)
+    return [...out]
+  }
+
+  /** The folders of a collections file's items the index has no row for, those it may look at. */
+  private collectionFolders(file: unknown): string[] {
+    const f = file as Partial<CollectionsFile> | null
+    if (!f || !Array.isArray(f.collections)) return []
+    const folders = new Set<string>()
+    const roots = this.libraryFolders()
+    for (const c of f.collections) {
+      for (const it of (c && Array.isArray(c.items) ? c.items : []) as { path?: unknown }[]) {
+        const path = it?.path
+        if (!isSafeLocalPath(path, roots)) continue
+        if (!this.store.photoByPath(path)) folders.add(dirname(path))
+      }
+    }
+    return [...folders]
+  }
+
+  async importCollections(file: unknown, allowed: string[] = []): Promise<Collection[]> {
     const f = file as Partial<CollectionsFile> | null
     if (
       !f ||
@@ -1688,15 +1782,11 @@ export class IndexService {
     for (const c of defs) {
       ids.set(c.id, this.store.collection(c.id) || ids.has(c.id) ? newId() : c.id)
     }
-    // Index the folders of paths the index does not know yet.
-    const folders = new Set<string>()
-    for (const c of defs) {
-      for (const it of c.items ?? []) {
-        if (typeof it?.path === 'string' && !this.store.photoByPath(it.path))
-          folders.add(dirname(it.path))
-      }
-    }
-    for (const folder of folders) if (existsSync(folder)) await this.rescan(folder, false)
+    // Index the folders of paths the index does not know yet: those the
+    // library knows, and those the user allowed (main asks first).
+    for (const folder of this.collectionFolders(f))
+      if ((this.knownFolder(folder) || allowed.includes(folder)) && existsSync(folder))
+        await this.rescan(folder, false)
 
     // Parents first, so every parent exists when its child is saved.
     const byOld = new Map(defs.map((c) => [c.id, c]))

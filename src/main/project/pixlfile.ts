@@ -29,13 +29,16 @@ import {
   writeSync
 } from 'fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
-import { dirname } from 'path'
+import { basename, dirname, isAbsolute, win32 } from 'path'
 import type { ColorLabel, Flag, Snapshot } from '../../shared/ipc'
 import { parseRawColour } from '../../shared/rawcolour'
 import { readNames } from '../../shared/naming'
 import { hydrateRecipe, normaliseRecipe, slimRecipe, type Recipe } from '../../shared/recipe'
 import { HISTORY_SCHEMA, HistoryTable, type HistoryRow } from '../historytable'
+import { isBlobHash, isPlainExt, isSafeId } from '../../shared/ids'
+import { isDevicePath } from '../contain'
 import { planeRef, pngSize, renameRefs } from '../planeref'
+import { IMAGE_EXTENSIONS } from '../source'
 import type { Sidecar, SidecarItem, SidecarStack } from '../sidecar'
 
 export const PIXL_EXT = '.pixl'
@@ -116,6 +119,36 @@ export interface Origin {
   path: string
   isRaw: boolean
   sha1: string | null
+}
+
+/**
+ * Whether an origin read from a project is one Playroom could have written:
+ * a project travels (a zip, a shared drive) and is opened by double-clicking
+ * it, so what it says is checked before any of it names a file. The name is
+ * a file name with no folder in it (as this platform reads one: a macOS
+ * name may hold a backslash), the extension one the library lists (lower case, as the
+ * scan keeps it), the path absolute and never a device. A network path is
+ * allowed here (a NAS library); where one is looked at is checked there
+ * (`isSafeLocalPath`).
+ */
+export function validOrigin(o: Origin): boolean {
+  return (
+    typeof o.name === 'string' &&
+    o.name !== '' &&
+    o.name !== '.' &&
+    o.name !== '..' &&
+    !o.name.includes('\0') &&
+    basename(o.name) === o.name &&
+    isPlainExt(o.ext) &&
+    IMAGE_EXTENSIONS.includes(o.ext) &&
+    typeof o.path === 'string' &&
+    !o.path.includes('\0') &&
+    !isDevicePath(o.path) &&
+    (isAbsolute(o.path) || win32.isAbsolute(o.path)) &&
+    Number.isFinite(o.size) &&
+    Number.isFinite(o.mtime) &&
+    (o.sha1 === null || typeof o.sha1 === 'string')
+  )
 }
 
 /** Make a directory's entries (a rename into it) durable. Not every platform can (Windows). */
@@ -264,7 +297,8 @@ export function refsIn(json: string): string[] {
   return [...json.matchAll(/"ref":"([^"]+)"/g)].map((m) => m[1])
 }
 
-class NotAProject extends Error {
+/** A file that is not a project, or one whose origin no Playroom wrote (`validOrigin`). */
+export class NotAProject extends Error {
   constructor(path: string) {
     super(t('{{path}} is not a Pixl project', { path }))
     this.name = 'NotAProject'
@@ -356,6 +390,8 @@ export class PixlFile {
       // Tables a later minor version adds are made on open.
       db.exec(SCHEMA)
       const file = new PixlFile(path, db)
+      // An origin no Playroom wrote (a crafted file): not a project at all.
+      file.origin()
       if (v < PIXL_FORMAT_VERSION) file.upgrade(v)
       return file
     } catch (err) {
@@ -564,7 +600,7 @@ export class PixlFile {
         }
       | undefined
     if (!r) return null
-    return {
+    const o: Origin = {
       name: r.name,
       ext: r.ext,
       size: r.size,
@@ -573,9 +609,13 @@ export class PixlFile {
       isRaw: r.is_raw === 1,
       sha1: r.sha1
     }
+    if (!validOrigin(o)) throw new NotAProject(this.path)
+    return o
   }
 
   setOrigin(o: Origin): void {
+    if (!validOrigin(o))
+      throw new Error(`not an origin Playroom can keep: ${JSON.stringify(o.name)}`)
     this.prepare(
       `INSERT INTO origin(id, name, ext, size, mtime, path, is_raw, sha1) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, ext = excluded.ext, size = excluded.size,
@@ -631,8 +671,10 @@ export class PixlFile {
       photo: photo
         ? itemOf(photo)
         : { rating: 0, flag: null, label: null, recipe: null, snapshots: [] },
+      // A copy's id names its thumbnail and goes into its key: one no
+      // Playroom made (a crafted project) is left out (shared/ids.ts).
       copies: rows
-        .filter((r) => r.item_id !== PHOTO)
+        .filter((r) => r.item_id !== PHOTO && isSafeId(r.item_id))
         .map((r) => ({ ...itemOf(r), id: r.item_id, name: r.name })),
       stack: stack ? (JSON.parse(stack) as SidecarStack) : null,
       rawColour: parseRawColour(this.meta('rawColour')),
@@ -867,18 +909,30 @@ export class PixlFile {
     return hash
   }
 
-  /** Write a blob out to `file` (whole, or not at all). False when there is no such blob. */
+  /**
+   * Write a blob out to `file` (whole, or not at all). False when there is no
+   * such blob, when its name is not a SHA-256, or when its bytes are not the
+   * ones its name says (a project edited by hand, or made to mislead): the
+   * caller builds `file` inside its cache (`cacheFile`).
+   */
   writeBlobTo(hash: string, file: string): boolean {
-    if (!this.blob(hash)) return false
+    if (!isBlobHash(hash) || !this.blob(hash)) return false
     const tmp = `${file}.part-${process.pid}`
     const fd = openSync(tmp, 'w')
+    const sum = createHash('sha256')
     try {
       for (const { data } of this.prepare(
         'SELECT data FROM blob_chunks WHERE hash = ? ORDER BY idx'
-      ).iterate(hash) as Iterable<{ data: Uint8Array }>)
+      ).iterate(hash) as Iterable<{ data: Uint8Array }>) {
+        sum.update(data)
         writeSync(fd, data)
+      }
     } finally {
       closeSync(fd)
+    }
+    if (sum.digest('hex') !== hash) {
+      unlinkSync(tmp)
+      return false
     }
     renameSync(tmp, file)
     return true

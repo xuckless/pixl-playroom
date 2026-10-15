@@ -23,10 +23,11 @@ import {
 } from '../shared/crash'
 import type { CrashConsent, ErrorReport } from '../shared/ipc'
 import { readSettings, writeSettings } from './settings'
+import { HIDDEN } from './build'
 import { t } from '../shared/i18n'
 
 /** Automation runs never report. */
-const hidden = process.env['PLAYROOM_HIDDEN'] === '1'
+const hidden = HIDDEN
 let consent: CrashConsent = 'unset'
 let sent = 0
 

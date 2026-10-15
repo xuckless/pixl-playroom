@@ -6,6 +6,7 @@
 import { app } from 'electron'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
+import { devEnv, HIDDEN } from './build'
 
 const made = new Set<string>()
 
@@ -17,9 +18,7 @@ const made = new Set<string>()
  * Null in the app as people run it.
  */
 export function scriptedHome(): string | null {
-  return process.env['PLAYROOM_HIDDEN'] === '1' || process.env['PLAYROOM_USER_DATA']
-    ? app.getPath('userData')
-    : null
+  return HIDDEN || devEnv('PLAYROOM_USER_DATA') ? app.getPath('userData') : null
 }
 
 /**

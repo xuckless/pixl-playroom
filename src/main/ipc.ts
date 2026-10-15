@@ -47,6 +47,7 @@ import { equivalentFocal } from '../shared/upright'
 import { orientedFrame } from '../shared/compile'
 import { cropAtAspect } from '../shared/crop'
 import { ensureProxies } from './proxy'
+import { DEV_BUILD } from './build'
 import { BACKGROUND_THREADS, IMAGE_EXTENSIONS } from './source'
 import type { IndexClient } from './indexer/client'
 import { IndexError } from './indexer/client'
@@ -139,7 +140,7 @@ function toAppError(err: unknown): AppError {
 /** The window's own page (src/main/app.ts loads it); no other frame may call in. */
 const isAppPage = appPage(
   pathToFileURL(join(MAIN_DIR, '../renderer/index.html')).href,
-  is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
+  DEV_BUILD && is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
 )
 
 /**
@@ -282,6 +283,32 @@ async function lensShotOf(s: Services, key: string): Promise<LensShot> {
     width: info.width,
     height: info.height
   }
+}
+
+/**
+ * Ask before looking in folders only a file names (`IndexService.foldersToAsk`):
+ * the folders the user allows, none when they decline. Nothing to ask, nothing asked.
+ */
+async function askToLook(folders: string[], what: 'project' | 'collections'): Promise<string[]> {
+  if (folders.length === 0) return []
+  const opts: Electron.MessageBoxOptions = {
+    type: 'question',
+    buttons: [t('Look in them'), t('Not now')],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    message:
+      what === 'project'
+        ? t('This project names folders Playroom has not opened')
+        : t('This collections file names folders Playroom has not opened'),
+    detail: `${folders.join('\n')}\n\n${t(
+      'Playroom looks in them for the photos only if you say so. A file someone else made can name any folder.'
+    )}`
+  }
+  const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const { response } = w ? await dialog.showMessageBox(w, opts) : await dialog.showMessageBox(opts)
+  log.info(`folders a ${what} file names: ${response === 0 ? 'looked in' : 'declined'}`, folders)
+  return response === 0 ? folders : []
 }
 
 export function registerIpc(s: Services): void {
@@ -509,8 +536,15 @@ export function registerIpc(s: Services): void {
 
   // ── library sources, metadata, collections, stacks, duplicates ── workstream D1
   handle(IPC.library.openSource, (src: LibrarySource) => s.library.openSource(src))
-  handle(IPC.library.resolvePaths, (paths: string[]) => s.index.resolvePaths(paths))
-  handle(IPC.library.photoPaths, (paths: string[]) => s.index.photoPaths(paths))
+  // A project names the folder its photo was in: one the library has never
+  // opened is looked at only once the user says so (a file someone else made
+  // names folders of their choosing).
+  handle(IPC.library.resolvePaths, async (paths: string[]) =>
+    s.index.resolvePaths(paths, await askToLook(await s.index.foldersToAsk(paths), 'project'))
+  )
+  handle(IPC.library.photoPaths, async (paths: string[]) =>
+    s.index.photoPaths(paths, await askToLook(await s.index.foldersToAsk(paths), 'project'))
+  )
   handle(IPC.library.projectInfo, (key: string) => s.index.originalState(key))
   handle(IPC.library.setMetadata, (keys: string[], patch: MetaTextPatch) =>
     s.index.setMetadata(keys, patch)
@@ -551,7 +585,8 @@ export function registerIpc(s: Services): void {
     } catch {
       throw new Error(t('{{name}} is not a collections file', { name: basename(r.filePaths[0]) }))
     }
-    return s.index.importCollections(parsed)
+    const allowed = await askToLook(await s.index.collectionFoldersToAsk(parsed), 'collections')
+    return s.index.importCollections(parsed, allowed)
   })
   handle(IPC.library.stack, (keys: string[], cover: string) => s.index.stack(keys, cover))
   handle(IPC.library.unstack, (keys: string[]) => s.index.unstack(keys))

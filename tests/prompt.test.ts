@@ -167,7 +167,7 @@ test('an object mask keeps the prompt it was made from, and how it was asked', (
     width: 4,
     height: 4,
     png: '',
-    ref: 'r',
+    ref: 'e'.repeat(64),
     source: {
       kind: 'prompt',
       label: 'Dog',

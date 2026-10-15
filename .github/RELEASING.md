@@ -12,6 +12,25 @@ pnpm typecheck && pnpm lint && pnpm test   # tests: node --test over src/shared
 pnpm build:unpack                          # unpacked app in dist/
 ```
 
+**Development and release builds.** Whether a build is a release is settled when it is built,
+never by how it runs (`src/main/build.ts`): `app.isPackaged` is false whenever a shipped
+`app.asar` runs under a stock Electron. `release.yml` builds production releases with
+`PLAYROOM_RELEASE_BUILD=1` and stops if the bundle came out otherwise; every other
+`electron-vite build`, and `pnpm dev`, is a development build. Only a development build:
+
+- trusts the development entitlement root (a release does not carry it);
+- skips the beta gate (when unpacked, or hidden for automation);
+- reads `PLAYROOM_HIDDEN`, `PLAYROOM_USER_DATA`, `PLAYROOM_UPDATE_URL`, `PLAYROOM_POLICY_URL`,
+  `PLAYROOM_AUTH_URL`, `PLAYROOM_ACCOUNT_URL`, `PLAYROOM_MODELS_URL`,
+  `PLAYROOM_LENS_PROFILES_URL` and `PLAYROOM_DEV_KIT` (a release ignores them);
+- has _View → Developer_ (DevTools, reloads);
+- starts with `--remote-debugging-port` or `--remote-debugging-pipe` (a release quits).
+
+So `scripts/drive.mjs`, `ui-sweep.mjs`, `perf.mjs` and the site scripts run on a plain
+`electron-vite build`, as before. Client-side checks are a speed bump against the machine's
+own owner, not a wall: anything with real value (model downloads, paid content) needs the
+server to check the entitlement too.
+
 The published binding ships macOS and Windows binaries only. On Linux, build one with the
 helper outside this repo (`node ../tools/engine-linux.mjs --app .`) and the app runs the real
 engine. If `pnpm dev` fails with `Error: Electron uninstall`, fetch the binary with
@@ -41,6 +60,7 @@ both), `build/after-pack.mjs` fails the build if the app and its binding disagre
 feed.
 
 **The update bucket.** `pixl-updates` (R2) behind `https://updates.pixlfoundation.com`:
+
 - `playroom/<version>/` holds that version's files, cached for a year (immutable);
 - `playroom/<channel>.yml` and `playroom/<channel>-mac.yml` are the feeds (`no-cache`).
 
@@ -60,6 +80,7 @@ by releasing again.
 goes to the tag's GitHub release (the `github` entry in `publish`, its feeds in
 `dist/github/`), and its own `app-update.yml` points at the bucket. After that release, the
 `github` entry and the bridge steps in `release.yml` go.
+
 - Windows installs of 0.1.1-beta refuse that release whatever we do (their `publisherName`
   was `xuckless`). Their users reinstall once, and the release notes and the beta page say
   so.
@@ -68,6 +89,7 @@ goes to the tag's GitHub release (the `github` entry in `publish`, its feeds in
 the channel offered the release (100 by default; release-please's runs use 100). Below 100,
 the feeds carry `stagingPercentage`. electron-updater gives each install a stable random id,
 and an install outside the percentage hears "no update".
+
 - `node scripts/rollout.mjs <latest|beta>` shows each feed's version and percentage.
 - `node scripts/rollout.mjs <latest|beta> <percent>` changes it. 100 offers the release to
   everyone; 0 stops it reaching anyone else.
@@ -77,6 +99,7 @@ and an install outside the percentage hears "no update".
 **The release policy.** `playroom/policy.json`, `{ minVersion, betaOpen, message }`, is read
 by every install at launch and every four hours, and kept for offline launches
 (`src/main/policy.ts`).
+
 - Below `minVersion`, the window shows only _Update required_: the update downloading,
   _Restart to update_, and a download link. Use it for a release that must not stay out (a
   data-losing bug, a security fix), and only once the fixed version is in the feeds.
@@ -138,6 +161,7 @@ the icons, that the default apps stay as they were, and that uninstalling remove
 | `CSC_LINK` / `CSC_KEY_PASSWORD`                               | base64 Developer ID Application `.p12` and its password                     |
 | `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER`     | notarization: the App Store Connect API key's `.p8` text, key ID, issuer ID |
 | `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` | the service principal allowed to sign with Azure Trusted Signing            |
+| `PIXL_FEED_KEY`                                               | the update feed key's PEM text (see _The feed's signature_ below)           |
 
 Repository **variables** (not secrets; _Settings → Secrets and variables → Actions →
 Variables_) for Windows signing: `AZURE_SIGNING_ENDPOINT` (the account's region endpoint,
@@ -215,8 +239,41 @@ The channel (Stable / Beta) is in _Settings_ and in `userData/settings.json`.
   (the same feed). Without it the updater is off in development.
 - **Another feed:** `PLAYROOM_UPDATE_URL=<base>` (for example a staging folder,
   `https://updates.pixlfoundation.com/staging/playroom`) reads `<base>/latest-mac.yml` and
-  the rest from there. It works in a signed build too, and the update is still checked
-  against the app's signature.
+  the rest from there. Only a development build reads it: a staging build is one (release.yml
+  builds `target: staging` without `PLAYROOM_RELEASE_BUILD`), a production release ignores
+  it. The update is still checked against the app's signature.
+
+### The feed's signature
+
+Until the builds are code-signed on both platforms, the only check on an update is the
+feed's sha512, and the feed comes from the same bucket as the installer: whoever could write
+to `pixl-updates` (a leaked R2 token, a CI compromise) could ship an installer every Windows
+install would run on quit. So each feed carries `pixlSignature`, an Ed25519 JWS over its
+version and every file's url and sha512, made with an offline key whose public half is built
+into the app (`FEED_KEYS` in `src/main/feedsig.ts`), as the entitlement roots are. The app
+checks it before it downloads anything (`src/main/updater.ts`). An unsigned feed, one signed
+by a key the app does not hold, or one naming other files or another version than it signed
+is refused: nothing is downloaded or installed, Settings says so, and the log has the line
+(`updates: refused <version>: its feed is not one Pixl signed (<why>)`). The release notes and
+`stagingPercentage` are not signed, so `scripts/rollout.mjs` needs no key.
+
+- **Make the key (once, offline).** `node scripts/feed-sign.mjs key feed-1` writes the private
+  key to `~/.pixl-secrets/feed-feed-1.pem` (never overwritten; back it up offline) and prints
+  the line for `FEED_KEYS`. Put the PEM's text in the `PIXL_FEED_KEY` secret first, then the
+  line in `FEED_KEYS`, and release. No private key ever goes into the repo.
+- **Release.** `release.yml` signs each feed after `build/prefix-feed.mjs` (and the macOS
+  merge) and before uploading it: `node scripts/feed-sign.mjs sign <feed.yml>`, with the key
+  from `PIXL_FEED_KEY` (or a file named by `PIXL_FEED_KEY_FILE`). The signing key must be one
+  `FEED_KEYS` holds. Without the secret the feeds go up unsigned, with a notice, while
+  `FEED_KEYS` is empty; once it holds a key, a release without the secret fails rather than
+  publish a feed every app would refuse.
+- **Until the first key is built in**, apps cannot check: they read the feed as before and
+  the log says `no feed key is built in`. The first release whose `FEED_KEYS` holds a key is
+  the one from which updates are checked.
+- **Check a feed.** `node scripts/feed-sign.mjs verify <feed.yml>` checks it as the app does.
+- **Change the key.** Add the new key to `FEED_KEYS` beside the old one and release (signed
+  with the old one); once that release is out, sign with the new key and later drop the old
+  one. A leaked key: release with it removed, signed by the new key, as soon as possible.
 
 ### Before a release goes out: test one real update
 
@@ -235,6 +292,7 @@ unless told to.
      then `"%LOCALAPPDATA%\Programs\pixl-playroom\Pixl Playroom.exe"`
 
    Set _Settings → Updates_ to the channel N+1 is in.
+
 4. Check, on each machine:
    - _Settings_ shows N+1 downloading, then ready, and the log
      (`~/Library/Logs/pixl-playroom/main.log`, `%APPDATA%\pixl-playroom\logs\main.log`) shows a
@@ -249,7 +307,9 @@ unless told to.
    - Tampered or unsigned updates are refused. Replace N+1's zip (macOS) or installer (Windows)
      in the staging folder with an unsigned build of the same version, and fix the feed's
      sha512 to match. N must refuse it: on Windows "not signed by the application owner", and
-     on macOS Squirrel's code-signature check.
+     on macOS Squirrel's code-signature check. Once `FEED_KEYS` holds a key, a feed edited after
+     signing (its sha512, a url) or left unsigned must be refused before any download:
+     Settings says _Update N+1 was refused_ and the log has `updates: refused`.
 5. Empty `staging/playroom/` afterwards.
 
 ## Models and lens profiles (R2)
@@ -315,8 +375,9 @@ renderer's launch waits for the gate to open.
 
 The beta ends for every beta build when `node scripts/policy.mjs set --beta-open false` runs,
 or when the Worker answers `beta_ended`. Those builds then show the update to the release:
-a stable release writes the beta feeds too, so it's offered. Development and automation skip
-the gate, and `PLAYROOM_BETA_GATE=1` brings it back to try it out.
+a stable release writes the beta feeds too, so it's offered. A development build skips the
+gate when it runs unpacked or hidden (automation), and `PLAYROOM_BETA_GATE=1` brings it back
+to try it out; a release build never skips it.
 
 From 1.0.0 (a version with no prerelease), licences are enforced (`licenceEnforced`) and the
 beta gate is off.
@@ -338,6 +399,7 @@ The Worker's signing keys can change without a release. The app ships only root 
 keys (`ROOT_KEYS` in `src/shared/account.ts`; `root-2` is a spare). Each answer brings a
 key set, the signing keys valid now, signed by a root. The app keeps only the newest key
 set it has seen.
+
 - **Rotate a signing key.** Sign a key set holding the old and new keys, switch the Worker
   to the new key, then later sign one without the old key.
 - **Revoke a leaked key.** Sign a key set without it. Apps stop accepting it at their next
@@ -350,7 +412,7 @@ set it has seen.
 To work on it locally, run `scripts/mock-account.mjs`, then start the app with
 `PLAYROOM_ACCOUNT_URL=http://127.0.0.1:54321/api` as well as `PLAYROOM_AUTH_URL`. The mock
 signs its key sets with the development root (`scripts/dev-entitlement-root.mjs`), which
-only unpackaged builds trust. Its `/mock/grant` and `/mock/policy` routes set what an
+only development builds trust (a release build does not carry it). Its `/mock/grant` and `/mock/policy` routes set what an
 account holds.
 
 ## Crash reports

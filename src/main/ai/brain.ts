@@ -2,7 +2,9 @@
  * Gemma, the local assistant (engine 0.19's pixl-auto): its files and the
  * llama.cpp server that runs it, fetched from the pins in pixl-auto's
  * `brains.json` (Hugging Face at a commit, a GitHub release) and checked by
- * their SHA-256, never re-hosted; started on demand with a key of its own,
+ * their SHA-256, never re-hosted (the server's archive unpacked and its
+ * binary checked against it before each start: ai/unpack.ts); started on
+ * demand with a key of its own,
  * random per launch, bound to 127.0.0.1; stopped when idle, when Playroom
  * rests and when AI is switched off.
  *
@@ -49,6 +51,7 @@ import { encodePng8 } from '../pngio'
 import { paths } from '../paths'
 import { BRAINS_DIR } from './carryover'
 import type { ModelStore } from './models'
+import { serverMatches, sha256Of, unpack } from './unpack'
 import type { AiSwitchStore } from './switches'
 
 const run = promisify(execFile)
@@ -208,6 +211,11 @@ export class BrainStore {
     return join(paths.models(), BRAINS_DIR, RUNTIME_ID, this.runtime.source.tag)
   }
 
+  /** Where the server's archive is unpacked (whole, or not at all: ai/unpack.ts). */
+  private unpackedDir(): string {
+    return join(this.runtimeDir(), 'server')
+  }
+
   private files(): { pin: Pin; url: string; dest: string }[] {
     if (!this.key) return []
     const archive = this.runtime.platforms[this.key]
@@ -244,7 +252,7 @@ export class BrainStore {
       }
       return null
     }
-    return walk(this.runtimeDir(), 0)
+    return walk(this.unpackedDir(), 0)
   }
 
   async installed(): Promise<boolean> {
@@ -292,8 +300,10 @@ export class BrainStore {
     try {
       for (const f of files) {
         await mkdir(join(f.dest, '..'), { recursive: true })
+        // One already here is kept only when it is the pinned file, as a
+        // model's is (ModelStore.download): its size alone says nothing.
         const have = await stat(f.dest).catch(() => null)
-        if (have?.size === f.pin.bytes) {
+        if (have?.size === f.pin.bytes && (await sha256Of(f.dest)) === f.pin.sha256) {
           state.done += f.pin.bytes
           continue
         }
@@ -305,9 +315,9 @@ export class BrainStore {
           }
         })
       }
-      // The server's archive unpacked beside it (tar reads a zip on Windows 10 and later too).
-      const archive = files[2].dest
-      await run('tar', ['-xf', archive, '-C', this.runtimeDir()])
+      // The server's archive unpacked beside it, by the system's tar (it reads
+      // a zip on Windows 10 and later too), every entry kept inside its folder.
+      await unpack(files[2].dest, this.unpackedDir())
       if (!(await this.binary())) throw new Error('the llama.cpp archive held no server')
       log.info('brain installed', BRAIN_ID, this.runtime.source.tag)
     } catch (err) {
@@ -351,6 +361,14 @@ export class BrainStore {
   private async launch(): Promise<LocalServerBrain> {
     const binary = await this.binary()
     if (!binary || !(await this.installed())) throw new Error(t('Gemma is not downloaded yet'))
+    // The server runs with Playroom's permissions: only the pinned one.
+    const archive = this.files()[2]
+    if (!(await serverMatches(archive.dest, archive.pin.sha256, this.unpackedDir(), binary))) {
+      log.error('brain: the server is not the one in its pinned archive; not started', binary)
+      throw new Error(
+        t('Gemma’s server is not the one downloaded: remove Gemma and download it again')
+      )
+    }
     const api_key = randomBytes(32).toString('hex')
     const port = await freePort()
     const t0 = Date.now()
