@@ -451,14 +451,14 @@ test('a look file keeps the effects’ words, and drops ones it does not know', 
 
 test('the false-colour looks turn hues past ±30°, on Hue vs Hue', () => {
   for (const s of SWAP_LOOKS) {
-    const op = curvesVsOp(byId(s).recipe.curvesVs).op
+    const op = curvesVsOp(byId(s).recipe.curvesVs)
     assert.ok(op && 'Curves' in op && op.Curves.hue_vs_hue, s)
     const most = Math.max(...op.Curves.hue_vs_hue.points.map((p) => Math.abs(p.y)))
     assert.ok(most > 30, `${s}: ${most}°`)
   }
   const r = defaultRecipe(false)
   hueCurve('hueHue', [[120, 150]])(r, {} as never)
-  const op = curvesVsOp(r.curvesVs).op
+  const op = curvesVsOp(r.curvesVs)
   assert.ok(op && 'Curves' in op)
   assert.ok(op.Curves.hue_vs_hue!.points.some((p) => Math.abs(p.y - 150) < 0.05))
 })
