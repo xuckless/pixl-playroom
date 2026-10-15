@@ -5,6 +5,7 @@ import type { ModelSpeed } from './modelSpeed'
 import type { RawColour } from './rawcolour'
 /** IPC channel names and the app-level types both sides of the bridge share. */
 import type {
+  BuildInfo,
   ConvertReport,
   ImageStats,
   LateralCa,
@@ -399,6 +400,8 @@ export interface EngineStatus {
   prompt?: boolean
   /** 0.19.2: the addon has the GPU grade path (`hasGpu`, Phase A §4.3). */
   gpu?: boolean
+  /** 0.21.0 (E69): which build the engine is (its commit, release or development). */
+  build?: BuildInfo
   reason?: string
   /** Why the engine is unavailable, when the load named it (e.g. `VersionMismatch`). */
   code?: string

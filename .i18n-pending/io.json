@@ -1,0 +1,26 @@
+{
+  "Powered by PIXL Engine {{version}} (development build, {{commit}})": {
+    "en": "Powered by PIXL Engine {{version}} (development build, {{commit}})",
+    "fr": "Propulsé par le moteur PIXL {{version}} (version de développement, {{commit}})",
+    "de": "Powered by PIXL Engine {{version}} (Entwicklungsversion, {{commit}})",
+    "ja": "PIXL Engine {{version}} 搭載（開発ビルド、{{commit}}）",
+    "vi": "Vận hành bởi PIXL Engine {{version}} (bản phát triển, {{commit}})",
+    "zh-Hans": "由 PIXL 引擎 {{version}} 驱动（开发版本，{{commit}}）"
+  },
+  "PIXL engine {{version}} (development build, {{commit}})": {
+    "en": "PIXL engine {{version}} (development build, {{commit}})",
+    "fr": "Moteur PIXL {{version}} (version de développement, {{commit}})",
+    "de": "PIXL Engine {{version}} (Entwicklungsversion, {{commit}})",
+    "ja": "PIXL エンジン {{version}}（開発ビルド、{{commit}}）",
+    "vi": "PIXL engine {{version}} (bản phát triển, {{commit}})",
+    "zh-Hans": "PIXL 引擎 {{version}}（开发版本，{{commit}}）"
+  },
+  "features: {{list}}": {
+    "en": "features: {{list}}",
+    "fr": "fonctions : {{list}}",
+    "de": "Funktionen: {{list}}",
+    "ja": "機能：{{list}}",
+    "vi": "tính năng: {{list}}",
+    "zh-Hans": "功能：{{list}}"
+  }
+}

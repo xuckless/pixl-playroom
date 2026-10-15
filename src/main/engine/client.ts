@@ -488,6 +488,7 @@ export class EngineClient {
               runtime: msg.runtime,
               prompt: msg.prompt,
               gpu: msg.gpu === true,
+              build: msg.build,
               restarts: this.status.restarts
             }
           : {

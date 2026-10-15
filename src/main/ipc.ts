@@ -340,7 +340,7 @@ export function registerIpc(s: Services): void {
 
   handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))
   handle(IPC.app.reportProblem, (r: ProblemInput) =>
-    sendProblemReport(r, s.engine.getStatus().version)
+    sendProblemReport(r, s.engine.getStatus())
   )
   handle(IPC.app.openNotices, async () => {
     const err = await shell.openPath(paths.notices())

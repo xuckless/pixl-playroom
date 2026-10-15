@@ -13,7 +13,8 @@ import { MAIN_DIR } from './dirs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import dockIcon from '../../resources/icon-dock.png?asset'
-import { startCrashReporting } from './crash'
+import { noteEngineBuild, startCrashReporting } from './crash'
+import { developmentCommit } from '../shared/crash'
 import { onRenderScale, settleScale, watchDisplay } from './display'
 import { sweepEngineTemps, watchRest } from './rest'
 import { Namer } from './ai/namer'
@@ -69,7 +70,7 @@ import { forgetOtherCopies } from './othercopies'
 import { setupUpdater } from './updater'
 import { startPolicy } from './policy'
 import { noteInstall } from './whatsnew'
-import { IPC } from '../shared/ipc'
+import { IPC, type EngineStatus } from '../shared/ipc'
 
 log.initialize()
 log.transports.file.level = 'info'
@@ -235,14 +236,23 @@ function createWindow(): void {
     .then((stored) => watchDisplayHdr(win, stored))
 }
 
-/** About Pixl Playroom: the app's version and the engine it runs on. */
-function setAbout(engineVersion?: string): void {
+/**
+ * About Pixl Playroom: the app's version and the engine it runs on, with the
+ * commit when the engine is a development build (engine 0.21, E69).
+ */
+function setAbout(engine?: Pick<EngineStatus, 'version' | 'build'>): void {
+  const commit = developmentCommit(engine?.build)
   app.setAboutPanelOptions({
     applicationName: 'Pixl Playroom',
     applicationVersion: app.getVersion(),
-    credits: engineVersion
-      ? t('Powered by PIXL Engine {{version}}', { version: engineVersion })
-      : t('Powered by PIXL Engine'),
+    credits: !engine?.version
+      ? t('Powered by PIXL Engine')
+      : commit
+        ? t('Powered by PIXL Engine {{version}} (development build, {{commit}})', {
+            version: engine.version,
+            commit
+          })
+        : t('Powered by PIXL Engine {{version}}', { version: engine.version }),
     copyright: 'Copyright © 2026 Syed Ali (PIXL Foundation)',
     iconPath: icon
   })
@@ -284,8 +294,11 @@ app.whenReady().then(() => {
       .then((n) => n > 0 && log.info(`pruned ${n} unused thumbnails`))
       .catch((err) => log.warn('pruning thumbnails failed', err))
   }, 20_000)
-  void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
-  onLanguage(() => setAbout(engine.getStatus().version))
+  void engine.whenStarted().then(() => {
+    setAbout(engine.getStatus())
+    noteEngineBuild(engine.getStatus())
+  })
+  onLanguage(() => setAbout(engine.getStatus()))
   const planes = new PlaneStore(index)
   const library = new Library(index, bgEngine, planes)
   sessions = new DevelopSessions(library, engine, bgEngine)

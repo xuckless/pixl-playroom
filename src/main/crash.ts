@@ -13,6 +13,7 @@ import { open } from 'fs/promises'
 import { homedir, release } from 'os'
 import {
   CRASH_ENDPOINT,
+  engineBuildFields,
   errorPayload,
   MAX_PROBLEM_LOG,
   MAX_REPORTS_PER_RUN,
@@ -21,7 +22,7 @@ import {
   type ErrorPayload,
   type ProblemInput
 } from '../shared/crash'
-import type { CrashConsent, ErrorReport } from '../shared/ipc'
+import type { CrashConsent, EngineStatus, ErrorReport } from '../shared/ipc'
 import { readSettings, writeSettings } from './settings'
 import { t } from '../shared/i18n'
 
@@ -91,14 +92,15 @@ async function logTail(): Promise<string | null> {
 /** Send a problem report the user wrote; resolves to the reference the server gives it. */
 export async function sendProblemReport(
   input: ProblemInput,
-  engineVersion?: string
+  engine?: Pick<EngineStatus, 'version' | 'build'>
 ): Promise<string> {
   if (!input.message?.trim()) throw new Error(t('Describe the problem first.'))
   const body = problemPayload(
     input,
     {
       version: app.getVersion(),
-      ...(engineVersion ? { engine: engineVersion } : {}),
+      ...(engine?.version ? { engine: engine.version } : {}),
+      ...engineBuildFields(engine?.build),
       platform: process.platform,
       arch: process.arch,
       os: release()
@@ -127,6 +129,21 @@ export async function sendProblemReport(
   }
   log.info(`problem report sent: ${answer.reference}`)
   return answer.reference
+}
+
+/**
+ * The engine's build, once its host has said hello (engine 0.21, E69): every
+ * minidump after names it, so a native crash can be matched to the commit.
+ */
+export function noteEngineBuild(engine: Pick<EngineStatus, 'version' | 'build'>): void {
+  try {
+    if (engine.version) crashReporter.addExtraParameter('engine', engine.version)
+    const build = engineBuildFields(engine.build)
+    if (build.engineCommit) crashReporter.addExtraParameter('engineCommit', build.engineCommit)
+    if (build.engineKind) crashReporter.addExtraParameter('engineKind', build.engineKind)
+  } catch (err) {
+    log.warn('crash reports: the engine build not noted', err)
+  }
 }
 
 /** An uncaught error in the renderer (it sends them over IPC). */

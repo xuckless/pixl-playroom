@@ -3204,6 +3204,8 @@ export interface EngineHelloMessage {
   prompt?: boolean
   /** 0.19.2: the addon was built with the GPU grade path (`hasGpu`; macOS and Windows). */
   gpu?: boolean
+  /** 0.21.0 (E69): which build the addon is; absent from an older one. */
+  build?: BuildInfo
   reason?: string
   /** The load error's code when the engine is unavailable, e.g. `VersionMismatch`. */
   code?: string

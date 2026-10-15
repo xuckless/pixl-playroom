@@ -7,6 +7,7 @@
  */
 import { useMemo, useState } from 'react'
 import { compile } from '../../../shared/compile'
+import { developmentCommit } from '../../../shared/crash'
 import { rasterGradient } from '../../../shared/gradients'
 import type { GradeLayer } from '../../../shared/engine-types'
 import { migrateLook } from '../../../shared/migratelook'
@@ -186,7 +187,15 @@ export function EngineReportDialog(): React.JSX.Element | null {
       onClose={() => setDialog(null)}
     >
       <p className="muted small engine-line">
-        {t('PIXL engine {{version}}', { version: engine?.version ?? '—' })}
+        {developmentCommit(engine?.build)
+          ? t('PIXL engine {{version}} (development build, {{commit}})', {
+              version: engine?.version ?? '—',
+              commit: developmentCommit(engine?.build)
+            })
+          : t('PIXL engine {{version}}', { version: engine?.version ?? '—' })}
+        {engine?.build?.features.length
+          ? ` · ${t('features: {{list}}', { list: engine.build.features.join(', ') })}`
+          : ''}
         {engine?.runtime
           ? ` · ONNX Runtime ${engine.runtime.version} (${engine.runtime.providers.join(', ')})`
           : ''}
