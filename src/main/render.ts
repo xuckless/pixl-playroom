@@ -47,7 +47,7 @@ import { effective } from '../shared/edits'
 import { pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
-import { askOf, scenePlan, type ScenePlan } from './ai/rawdevelop'
+import { askOf, scenePlan, withScene, type ScenePlan } from './ai/rawdevelop'
 import { takeDevelopedNote } from './devkit'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking, frameOf, layStepsOn, workingKey, type WorkingSet } from './pixels/working'
@@ -149,6 +149,7 @@ import {
   colourOf,
   isLinearRaw,
   rawDevelop,
+  rawMaster,
   RAW_DEVELOP,
   sourceOrientation,
   seedOf,
@@ -2395,8 +2396,10 @@ class Session {
    * made; until then a quick classic one (PPG, about 1.2 s) at once, the
    * plan's made in the background, and the window told to ask again when it
    * is (the engine's viewing guide, 2026-10-09). The PIXL demosaic has no
-   * quick one before it: the view waits for its master (the bar in the
-   * badge says how far), or says in the window why there is none.
+   * quick one before it: its regions are developed from the RAW until the
+   * master is made (`regionFromRaw`, E66), and a 1:1 view that needs the
+   * master itself waits for it (the bar in the badge says how far), or
+   * says in the window why there is none.
    */
   private async rawMasterForView(): Promise<ProxyFile> {
     const ask = askOf(this.recipe)
@@ -2437,8 +2440,43 @@ class Session {
     this.owner.send(IPC.develop.renderError, { key: this.key, message, code: 'Master' })
   }
 
+  /**
+   * The RAW develop's own frame size, once a region developed from the RAW
+   * said it (`report.frame_width`): the proxies' is the cells' times their
+   * width, within a pixel or two of it.
+   */
+  private rawFrame: { width: number; height: number } | null = null
+
+  /**
+   * Whether a 1:1 region is developed from the RAW itself until its master
+   * is made (engine 0.21.0, E66): the PIXL demosaic runs only the windows
+   * the region reads, about 1.7 s for a view against 8 s for the whole
+   * frame on an M2 Pro, and its pixels are the master's cut, to the bit
+   * (the owner, 2026-10-14: develop-on-open stays; this only fills the
+   * first 1:1 wait). The plan's, with nothing denoising the mosaic first.
+   */
+  private async regionFromRaw(): Promise<ScenePlan | null> {
+    if (!this.isRaw || this.hdrMaster || isLinearRaw(this.file)) return null
+    const ask = askOf(this.recipe)
+    const plan = await scenePlan(this.file.raw_cfa, ask)
+    if (plan.demosaic !== 'pixl' || plan.pmrid) return null
+    if (await masterCached(this.row, this.file, ask)) return null
+    // The master goes on being made meanwhile (on open, or from here): the
+    // region's are the same pixels, so nothing moves when tiles come from it.
+    void ensureMaster(
+      this.owner.bgEngine,
+      this.row,
+      this.file,
+      ask,
+      this.developAbort.signal
+    ).catch((err: unknown) => {
+      if (!isCancelled(err)) this.masterRefused(err)
+    })
+    return plan
+  }
+
   /** A 1:1 (or smaller) render of part of the full-resolution frame. */
-  async region(req: RegionRequest): Promise<RegionResult> {
+  async region(req: RegionRequest, again = false): Promise<RegionResult> {
     const t0 = performance.now()
     // The loupe asks again as it pans and zooms: only the newest view matters.
     this.regionAbort?.abort()
@@ -2452,18 +2490,27 @@ class Session {
     // PIXL Enhance's preview (the steps' frame with a square enhanced) while it is shown.
     const stepsMaster = this.previewFrame() ?? (await this.workingMaster())
     const raw = this.isRaw
+    // Before the PIXL demosaic's master is made: the region developed from the RAW (E66).
+    const developing = stepsMaster ? null : await this.regionFromRaw()
     const src: ProxyFile = stepsMaster
       ? stepsMaster
       : this.hdrMaster
         ? this.hdrMaster
-        : raw
-          ? await this.rawMasterForView()
-          : {
+        : developing
+          ? {
               path: this.row.path,
-              input: this.info.input,
-              width: this.px.frameWidth,
-              height: this.px.frameHeight
+              input: 'Raw',
+              width: this.rawFrame?.width ?? this.px.frameWidth,
+              height: this.rawFrame?.height ?? this.px.frameHeight
             }
+          : raw
+            ? await this.rawMasterForView()
+            : {
+                path: this.row.path,
+                input: this.info.input,
+                width: this.px.frameWidth,
+                height: this.px.frameHeight
+              }
     const masterMs = Math.round(performance.now() - tMaster)
     // The source's own size: the frame its full-size render is of.
     const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
@@ -2548,13 +2595,33 @@ class Session {
       ...(hdr && zoom < 1 ? { linear_resample: true } : {})
     }
     const tConvert = performance.now()
-    const report = await this.owner.engine
-      .convert(request, {
+    const convert = (r: ConvertRequest): Promise<ConvertReport> =>
+      this.owner.engine.convert(r, {
         signal,
         frame,
         ...(floatSdr ? { native: { sdrCompanion: TILE_COMPANION_EDGE } } : {})
       })
-      .catch(named(compiled))
+    const report = await (
+      developing
+        ? withScene(
+            developing,
+            (scene) => convert({ ...request, raw: rawMaster(colourOf(this.row), scene) }),
+            signal,
+            { camera: this.row.camera, iso: this.row.iso }
+          ).then((r) => r.value)
+        : convert(request)
+    ).catch(named(compiled))
+    // The develop's frame was taken from the proxies' (cells × their width):
+    // once the engine says its own, the region is made again on it.
+    if (
+      developing &&
+      (report.frame_width !== src.width || report.frame_height !== src.height) &&
+      !again &&
+      this.regionAbort === abort
+    ) {
+      this.rawFrame = { width: report.frame_width, height: report.frame_height }
+      return this.region(req, true)
+    }
     // The margin fell short of what the grade read: its edges may not meet a neighbour's.
     if (report.region?.short_by)
       log.warn('region margin short', { margin, short_by: report.region.short_by })
@@ -2577,9 +2644,11 @@ class Session {
         ? 'working master (pixel steps)'
         : this.hdrMaster
           ? 'HDR master'
-          : raw
-            ? 'RAW master'
-            : 'the original',
+          : developing
+            ? 'the RAW, developed for the region (E66)'
+            : raw
+              ? 'RAW master'
+              : 'the original',
       masterMs,
       src,
       zoom: req.zoom,
@@ -2600,7 +2669,14 @@ class Session {
         encode_ms: report.encode_ms,
         region: report.region,
         frame_width: report.frame_width,
-        frame_height: report.frame_height
+        frame_height: report.frame_height,
+        // A region developed alone: its model windows against the whole frame's (E66).
+        ...(developing
+          ? {
+              tiles: report.raw?.demosaic_model?.tiles,
+              frame_tiles: report.raw?.demosaic_model?.frame_tiles
+            }
+          : {})
       }
     })
     if (this.regionAbort === abort) this.regionAbort = null
