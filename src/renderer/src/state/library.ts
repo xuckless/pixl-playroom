@@ -19,6 +19,7 @@ import { collapseStacks } from '../../../shared/stacks'
 import { api, errorText } from '../lib/api'
 import { t, tp } from '../lib/i18n'
 import { folderName, isUnder } from '../lib/sources'
+import { cosmeticChanges, withChanged } from '../lib/visiblepatch'
 import { useBusy } from './busy'
 import { useUi } from './ui'
 import { suggestedReasons, useCull } from './cull'
@@ -325,12 +326,17 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const byKey = new Map(items.filter((i): i is LibraryItem => !!i).map((i) => [i.key, i]))
     if (byKey.size === 0) return
     set((s) => {
-      const known = new Set(s.items.map((i) => i.key))
-      const merged = s.items.map((i) => byKey.get(i.key) ?? i)
+      const found = new Set<string>()
+      const merged = s.items.map((i) => {
+        const v = byKey.get(i.key)
+        if (!v) return i
+        found.add(i.key)
+        return v
+      })
       // Something new in the folder shown (a copy) joins it; a collection lists only its own.
       const src = s.source
       for (const [k, v] of byKey)
-        if (!known.has(k) && src?.kind === 'folder' && v.folder === src.path) merged.push(v)
+        if (!found.has(k) && src?.kind === 'folder' && v.folder === src.path) merged.push(v)
       return { items: merged }
     })
   },
@@ -586,16 +592,21 @@ function visibleFor(
   const m = visibleMemo
   // The suggestions only change what is shown while Suggested rejects is on.
   const cullKey = filter.suggested ? cull : null
-  if (
+  const same =
     m &&
-    m.items === items &&
     m.filter === filter &&
     m.sort === sort &&
     m.groups === groups &&
     m.expanded === expanded &&
     (filter.suggested ? m.cull === cull : true)
-  )
-    return m.out
+  if (same && m.items === items) return m.out
+  // Thumbnails or badges in, nothing else: the same order, their items swapped in.
+  const changed = same ? cosmeticChanges(m.items, items) : null
+  if (m && changed) {
+    const out = withChanged(m.out, changed)
+    visibleMemo = { ...m, items, out }
+    return out
+  }
   const shown = filter.suggested
     ? items.filter((i) => suggestedReasons(i, cullKey ?? {}) !== null)
     : items

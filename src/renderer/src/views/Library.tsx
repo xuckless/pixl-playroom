@@ -24,6 +24,7 @@ import { keyHint, rejectSuggested, withKey } from '../lib/commands'
 import { useEntering } from '../lib/hooks'
 import { photoContextMenu } from '../lib/menus'
 import { t, tk, tp } from '../lib/i18n'
+import { editedCount } from '../lib/visiblepatch'
 
 /** A colour label's name, to show (the label itself is the key). */
 const LABEL_NAME: Record<string, string> = {
@@ -255,7 +256,8 @@ export function LibraryIdentity(): React.JSX.Element {
   const source = useLibrary((s) => s.source)
   const collections = useLibrary((s) => s.collections)
   const total = useLibrary((s) => s.items.length)
-  const edited = useLibrary((s) => s.items.filter((i) => i.edited).length)
+  // Counted once per list, not on every change to the library's state.
+  const edited = useLibrary((s) => editedCount(s.items))
   const trail = source ? sourceTrail(source, collections) : []
   return (
     <IdentityBar
