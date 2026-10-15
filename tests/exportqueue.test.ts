@@ -194,6 +194,49 @@ test('a full disk stops the export once, and Retry takes up from there', async (
   assert.equal(await q.retry(id), null)
 })
 
+test('an export is listed as soon as it is asked for, its photos read meanwhile', async () => {
+  const h = host()
+  let release!: () => void
+  const slow = new Promise<void>((r) => (release = r))
+  const snapshot = h.host.snapshot
+  h.host.snapshot = async (key) => {
+    // Read when Export was pressed, handed over later (a large selection).
+    const snap = await snapshot(key)
+    await slow
+    return snap
+  }
+  h.recipes.set('a', 'as pressed')
+  const q = new ExportQueue(h.host)
+  const id = await q.enqueue(['a'], s, 'Web 2048')
+  assert.equal(q.busy, true)
+  assert.deepEqual(
+    q.list().map((p) => p.jobId),
+    [id]
+  )
+  assert.ok(h.sent.some((p) => p.jobId === id))
+  h.recipes.set('a', 'edited after')
+  await tick()
+  assert.equal(h.pending.length, 0)
+  release()
+  await drain(h)
+  assert.deepEqual(h.rendered, [{ key: 'a', recipe: 'as pressed', dest: '/exports/a' }])
+})
+
+test('photos that cannot be read end the export with one error, nothing written', async () => {
+  const h = host()
+  h.host.destination = async () => {
+    throw new Error('the settings could not be read')
+  }
+  const q = new ExportQueue(h.host)
+  await q.enqueue(['a', 'b'], s, 'Web 2048')
+  await drain(h)
+  const [p] = q.list()
+  assert.equal(p.finished, true)
+  assert.deepEqual(p.errors, [{ name: 'Web 2048', message: 'the settings could not be read' }])
+  assert.deepEqual(h.rendered, [])
+  assert.equal(q.busy, false)
+})
+
 test('a failure is listed and the rest go on', async () => {
   const h = host({ fail: { a: new Error('the engine refused it') } })
   const q = new ExportQueue(h.host)

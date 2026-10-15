@@ -15,6 +15,12 @@ export const RECEIPTS_KEPT = 10
 /** Photos snapshotted at once when an export is queued. */
 const SNAPSHOT_AT_ONCE = 8
 
+/** The photos and the folder of an export, as they were when Export was pressed. */
+interface Taken<R, D> {
+  photos: Map<string, PhotoSnapshot<R>>
+  dest: D
+}
+
 /** What a photo is exported from, taken when Export is pressed. */
 export interface PhotoSnapshot<R> {
   recipe: R
@@ -27,9 +33,16 @@ export interface QueuedExport<R, D> {
   progress: ExportProgress
   settings: ExportSettings
   keys: string[]
+  /** Filled once `ready` settles. */
   photos: Map<string, PhotoSnapshot<R>>
-  /** Where exports go, as it was when Export was pressed. */
+  /** Where exports go, as it was when Export was pressed; set once `ready` settles. */
   dest: D
+  /**
+   * The photos and the folder being read, from the moment Export was
+   * pressed: the export is listed at once (a large selection takes a while
+   * to read) and begins only once they are.
+   */
+  ready: Promise<void>
   abort: AbortController
   /** What Retry exports again: the photos that failed, and those a full disk never reached. */
   failed: string[]
@@ -132,9 +145,16 @@ export class ExportQueue<R, D> {
    */
   async enqueue(keys: string[], settings: ExportSettings, label: string | null): Promise<string> {
     const unique = [...new Set(keys)]
-    const dest = await this.host.destination()
-    const snaps = await mapLimit(unique, SNAPSHOT_AT_ONCE, (k) => this.host.snapshot(k))
-    return this.push(unique, settings, label, new Map(unique.map((k, i) => [k, snaps[i]])), dest)
+    return this.push(unique, settings, label, this.take(unique, this.host.destination()))
+  }
+
+  /** Each photo as it is now, and where exports go: begun at once, in the order asked. */
+  private take(keys: string[], dest: Promise<D>): Promise<Taken<R, D>> {
+    const snaps = mapLimit(keys, SNAPSHOT_AT_ONCE, (k) => this.host.snapshot(k))
+    return Promise.all([dest, snaps]).then(([d, s]) => ({
+      dest: d,
+      photos: new Map(keys.map((k, i) => [k, s[i]]))
+    }))
   }
 
   /**
@@ -146,18 +166,12 @@ export class ExportQueue<R, D> {
     const job = this.done.find((j) => j.progress.jobId === id)
     if (!job || job.failed.length === 0) return null
     const keys = job.failed
-    const snaps = await mapLimit(keys, SNAPSHOT_AT_ONCE, (k) => this.host.snapshot(k))
+    const taken = this.take(keys, Promise.resolve(job.dest))
     // Its receipt says nothing is left to retry.
     job.failed = []
     job.progress.retryable = 0
     this.host.send({ ...job.progress })
-    return this.push(
-      keys,
-      job.settings,
-      job.progress.label,
-      new Map(keys.map((k, i) => [k, snaps[i]])),
-      job.dest
-    )
+    return this.push(keys, job.settings, job.progress.label, taken)
   }
 
   /** Stop an export: the one running at the engine's next stage, one waiting before it begins. */
@@ -194,8 +208,7 @@ export class ExportQueue<R, D> {
     keys: string[],
     settings: ExportSettings,
     label: string | null,
-    photos: Map<string, PhotoSnapshot<R>>,
-    dest: D
+    taken: Promise<Taken<R, D>>
   ): string {
     const jobId = `export-${++this.seq}-${Math.random().toString(36).slice(2, 8)}`
     const job: QueuedExport<R, D> = {
@@ -219,11 +232,18 @@ export class ExportQueue<R, D> {
       },
       settings,
       keys,
-      photos,
-      dest,
+      photos: new Map(),
+      dest: undefined as D,
+      ready: Promise.resolve(),
       abort: new AbortController(),
       failed: []
     }
+    job.ready = taken.then((t) => {
+      job.photos = t.photos
+      job.dest = t.dest
+    })
+    // Awaited when its turn comes; a failure is said then, never left unheard.
+    job.ready.catch(() => undefined)
     this.waiting.push(job)
     this.host.send({ ...job.progress })
     if (!this.running) void this.next()
@@ -254,7 +274,18 @@ export class ExportQueue<R, D> {
     p.queued = false
     p.startedAt = Date.now()
     const { signal } = job.abort
-    for (const [i, key] of job.keys.entries()) {
+    send()
+    // The photos or the folder that could not be read: nothing is written.
+    const unread = await job.ready.then(
+      () => null,
+      (err: unknown) => ({ err })
+    )
+    if (unread)
+      p.errors.push({
+        name: p.label ?? t('Export'),
+        message: String((unread.err as Error)?.message)
+      })
+    for (const [i, key] of (unread ? [] : job.keys).entries()) {
       if (signal.aborted) break
       const photo = job.photos.get(key)!
       p.current = photo.name
