@@ -796,6 +796,16 @@ export function latestNotes(
   return notes.find((n) => compareVersions(n.version, current) <= 0) ?? null
 }
 
+/**
+ * What's new's pages, newest first: every release's notes no newer than
+ * `newest` (the one it opens on), so the older ones are a page back.
+ */
+export function notesPages(newest: string, notes: ReleaseNotes[] = RELEASE_NOTES): ReleaseNotes[] {
+  return notes
+    .filter((n) => compareVersions(n.version, newest) <= 0)
+    .sort((a, b) => compareVersions(b.version, a.version))
+}
+
 /** A version as people read it: 0.2.0-beta → 0.2.0 beta, 0.2.0-beta.3 → 0.2.0 beta 3. */
 export function versionLabel(v: string): string {
   return v.replace(/-beta(?:\.(\d+))?$/, (_, n?: string) => (n ? ` beta ${n}` : ' beta'))
