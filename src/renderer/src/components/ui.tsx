@@ -135,12 +135,22 @@ export function Card({
       data-card={id}
     >
       <header onClick={toggle}>
-        {!fixed && (
-          <svg className="caret" viewBox="0 0 10 10" aria-hidden>
-            <path d="M2 3.5 5 6.5 8 3.5" />
-          </svg>
-        )}
-        <span className="title">{title}</span>
+        {/* The fold as a button of its own, so a card folds from the keyboard
+            (Tab to it, Space or Enter); a click anywhere on the header still does. */}
+        <button
+          type="button"
+          className="card-fold"
+          tabIndex={fixed ? -1 : 0}
+          aria-expanded={fixed ? undefined : open}
+          disabled={fixed}
+        >
+          {!fixed && (
+            <svg className="caret" viewBox="0 0 10 10" aria-hidden>
+              <path d="M2 3.5 5 6.5 8 3.5" />
+            </svg>
+          )}
+          <span className="title">{title}</span>
+        </button>
         {changed && <span className="card-dot" aria-label={t('Changed')} />}
         <span className="card-acts" onClick={(e) => e.stopPropagation()}>
           {right}
