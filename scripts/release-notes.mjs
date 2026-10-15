@@ -5,6 +5,8 @@
  * an installed Playroom shows in its "Update available" dialog before the
  * update is installed, and the GitHub release's body. From
  * src/shared/releasenotes.ts, the notes this build shows after updating.
+ * A release with no entry of its own (a silent patch) gets one plain line,
+ * not the previous release's notes.
  *
  *   node scripts/release-notes.mjs        (run by `pnpm build`)
  */
@@ -26,7 +28,7 @@ const r = spawnSync(
     '-e',
     `const m = await import('./src/shared/releasenotes.ts')
      const n = m.latestNotes(${JSON.stringify(version)})
-     process.stdout.write(n ? m.releaseNotesMarkdown(n) : '')`
+     process.stdout.write(n?.version === ${JSON.stringify(version)} ? m.releaseNotesMarkdown(n) : '')`
   ],
   { cwd: ROOT, encoding: 'utf8' }
 )
