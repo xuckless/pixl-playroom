@@ -277,6 +277,17 @@ test('the index keeps a chosen profile with the photo, and a new index reads it 
     await b.listFolder(folder)
     await new Promise((r) => setTimeout(r, 50))
     assert.equal(readProfile(b.cameraProfile('99aa88bb'))?.name, 'Carried')
+    // Another profile chosen: the sidecar carries that one, not the first.
+    a.setCameraProfile('cc11dd22', JSON.stringify(profile({ name: 'Second' })))
+    a.setRawColour(item.photoId, 'dcp:cc11dd22', true)
+    const now = readSidecar(join(folder, 'b.CR2'), true).sidecar
+    assert.equal(now.rawColour, 'dcp:cc11dd22')
+    assert.equal(now.cameraProfile?.name, 'Second')
+    // A profile the index holds stands against one a sidecar carries for its id.
+    b.setCameraProfile('cc11dd22', JSON.stringify(profile({ name: 'Held' })))
+    await b.listFolder(folder)
+    await new Promise((r) => setTimeout(r, 50))
+    assert.equal(readProfile(b.cameraProfile('cc11dd22'))?.name, 'Held')
     // Nonsense is not kept.
     b.setCameraProfile('nothex!!', json)
     b.setCameraProfile('12345678', '{"name":"x"}')
@@ -327,5 +338,57 @@ test(
     assert.deepEqual(readProfile(JSON.stringify(p)), p)
     assert.equal(p.name, 'Adobe Standard')
     assert.ok(p.unique_camera_model)
+  }
+)
+
+test('the white under a profile is read off a small binned develop the engine takes', async () => {
+  const { profileWhiteRequest } = await import('../src/main/source')
+  const info = { input: 'Raw' as const, width: 6288, height: 4056, gain_map: null }
+  const r = profileWhiteRequest('/photos/x.CR2', info, 'dcp:0a1b2c3d', 2)
+  assert.equal(r.sink, 'Bytes')
+  // Pixels state their colour in the report: the engine refuses them without ICC.
+  assert.deepEqual(r.encode, { Pixels: { sample: 'F32' } })
+  assert.equal(r.metadata.icc, true)
+  const scene = (r.raw as { Scene: { resolution: unknown; colour: unknown } }).Scene
+  assert.ok(
+    typeof scene.resolution === 'object' && scene.resolution && 'Binned' in scene.resolution
+  )
+  assert.ok(typeof scene.colour === 'object' && scene.colour && 'Dcp' in scene.colour)
+})
+
+/** A RAW of a body Adobe's installer left a profile for: `PIXL_DCP_RAW` (not in CI). */
+const dcpRaw = process.env['PIXL_DCP_RAW'] ?? null
+
+test(
+  'the engine develops a RAW under an Adobe profile and says what ran',
+  {
+    skip:
+      engine === null
+        ? 'the engine is not built for this platform'
+        : dcpRaw === null || !existsSync(dcpRaw)
+          ? 'set PIXL_DCP_RAW to a RAW whose body has an Adobe profile here'
+          : false
+  },
+  async () => {
+    const { readFileSync } = await import('node:fs')
+    const { profileWhiteRequest } = await import('../src/main/source')
+    const e = engine as unknown as {
+      probe(path: string): Promise<SourceInfo>
+      convert(r: unknown): Promise<{
+        raw: { white_temperature_kelvin: number; white_tint: number; profile_tables: string | null }
+      }>
+      readCameraProfile(bytes: Uint8Array): DcpProfile
+    }
+    const info = await e.probe(dcpRaw!)
+    const cc = info.camera_colour!
+    const file = adobeFolders()
+      .map((f) => join(f, 'Adobe Standard', `${cc.make} ${cc.model} Adobe Standard.dcp`))
+      .find((f) => existsSync(f))
+    if (!file) return
+    registerDcp('feedf00d', e.readCameraProfile(readFileSync(file)))
+    const report = await e.convert(profileWhiteRequest(dcpRaw!, info, 'dcp:feedf00d', 2))
+    assert.ok(Number.isFinite(report.raw.white_temperature_kelvin))
+    assert.ok(Number.isFinite(report.raw.white_tint))
+    assert.match(report.raw.profile_tables ?? '', /Adobe Standard/)
   }
 )

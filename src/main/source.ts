@@ -184,6 +184,29 @@ export function binFactor(probeLong: number, cell: number, edge: number): number
   return Math.min(Math.floor(64 / cell) * cell, Math.max(cell, f))
 }
 
+/**
+ * A small binned develop of a RAW under `colour`, read for its report only:
+ * the white (`white_temperature_kelvin`, `white_tint`) a camera profile's
+ * matrices find for the file's as-shot neutral (main/library.ts). Pixels in
+ * float, whose colour the report states (the engine wants leave to: ICC).
+ */
+export function profileWhiteRequest(
+  path: string,
+  info: Pick<SourceInfo, 'input' | 'width' | 'height' | 'gain_map'>,
+  colour: RawColour,
+  cell: number
+): ConvertRequest {
+  return {
+    ...blankRequest(path, '', info.input, info),
+    sink: 'Bytes',
+    raw: rawBinnedMaster(colour, binFactor(Math.max(info.width, info.height), cell, 256)),
+    pixel: { depth: 'F32', channels: 3 },
+    encode: { Pixels: { sample: 'F32' } },
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    threads: BACKGROUND_THREADS
+  }
+}
+
 /** The file's own colour: what a RAW was developed with before engine 0.17 named one. */
 export const RAW_DEVELOP: RawMode = rawDevelop('container')
 export const RAW_PROXY_DEVELOP: RawMode = rawProxyDevelop('container')

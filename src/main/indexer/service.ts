@@ -1081,8 +1081,9 @@ export class IndexService {
     if (sidecar.rawColour)
       this.store.setRawColour(row.id, sidecar.rawColour, sidecar.rawColourChosen === true)
     // The camera profile it names, carried in (from another machine, say).
+    // One the index holds already stands: an id is a file's, kept as read.
     const profileId = dcpIdOf(sidecar.rawColour)
-    if (profileId && sidecar.cameraProfile) {
+    if (profileId && sidecar.cameraProfile && !this.store.cameraProfile(profileId)) {
       this.store.setCameraProfile(profileId, JSON.stringify(sidecar.cameraProfile))
       registerDcp(profileId, sidecar.cameraProfile)
     }
@@ -2064,10 +2065,13 @@ export class IndexService {
     const apply = (s: Sidecar): void => {
       change(s)
       if (colour && !s.rawColour) s.rawColour = colour
-      // A camera profile goes with the colour that names it, and only then.
+      // A camera profile goes with the colour that names it, and only then:
+      // the index's for that id (one carried for a colour since changed is
+      // another profile), else what the file carried in.
       const profileId = dcpIdOf(s.rawColour)
-      if (!profileId) s.cameraProfile = null
-      else if (!s.cameraProfile) s.cameraProfile = readProfile(this.store.cameraProfile(profileId))
+      s.cameraProfile = profileId
+        ? (readProfile(this.store.cameraProfile(profileId)) ?? s.cameraProfile ?? null)
+        : null
       if (names && !s.names) s.names = names
       if (row.cull_keep === 1 && !s.cullKeep) s.cullKeep = true
     }

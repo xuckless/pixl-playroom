@@ -74,13 +74,12 @@ import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import {
   BACKGROUND_THREADS,
-  binFactor,
   blankRequest,
   cellFactor,
   colourOf,
   displayPolicy,
   isLinearRaw,
-  rawBinnedMaster,
+  profileWhiteRequest,
   seedOf,
   sourceOrientation,
   versionStamp
@@ -246,9 +245,10 @@ export class Library {
     const k = `${versionOf(row)}:${c}`
     let p = this.dcpWhites.get(k)
     if (!p) {
+      // Not measured: the file's white for this run (not a failed develop
+      // again at every probe).
       p = this.measureWhite(row, info, c, k).catch((err) => {
         log.info('camera profile white not measured', row.id, (err as Error).message)
-        this.dcpWhites.delete(k)
         return info.as_shot_white
       })
       this.dcpWhites.set(k, p)
@@ -268,15 +268,9 @@ export class Library {
     } catch {
       // not measured yet
     }
-    const factor = binFactor(Math.max(info.width, info.height), cellFactor(row), 256)
-    const report = await this.engine.convert({
-      ...blankRequest(row.path, '', info.input, info),
-      sink: 'Bytes',
-      raw: rawBinnedMaster(c, factor),
-      pixel: { depth: 'F32', channels: 3 },
-      encode: { Pixels: { sample: 'F32' } },
-      threads: BACKGROUND_THREADS
-    })
+    const report = await this.engine.convert(
+      profileWhiteRequest(row.path, info, c, cellFactor(row))
+    )
     const kelvin = report.raw?.white_temperature_kelvin
     const tint = report.raw?.white_tint
     if (typeof kelvin !== 'number' || typeof tint !== 'number') return info.as_shot_white
