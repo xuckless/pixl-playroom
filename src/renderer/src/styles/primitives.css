@@ -820,11 +820,13 @@ input[type='checkbox']:disabled {
   user-select: none;
 }
 /* The fold: the caret and the title, a button so the keyboard reaches it. */
-.card > header button.card-fold {
+.card > header .card-fold {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+.card > header button.card-fold {
   height: auto;
   padding: 0;
   border: none;
@@ -839,9 +841,6 @@ input[type='checkbox']:disabled {
 .card > header button.card-fold:active:not(:disabled) {
   transform: none;
   background: none;
-}
-.card > header button.card-fold:disabled {
-  opacity: 1;
 }
 .card > header .caret {
   width: 10px;
