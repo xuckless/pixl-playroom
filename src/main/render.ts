@@ -81,7 +81,8 @@ import type {
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import { CEILING_MAX, CEILING_MIN } from '../shared/export'
-import { DETECTED_PEAK, REFERENCE_WHITE } from '../shared/hdrdisplay'
+import { DETECTED_PEAK, floatSettled, REFERENCE_WHITE } from '../shared/hdrdisplay'
+import { displayDepth } from './hdrdisplay'
 import {
   IPC,
   type BasicSetting,
@@ -1330,13 +1331,15 @@ class Session {
   /** A level that could not be made (or has no full-size frame yet): not asked again. */
   private screenFailed: string | null = null
 
-  /**
-   * Whether a settled SDR picture (or a 1:1 tile) goes as an F16 frame: the
-   * window draws float frames (`ViewState.float`), and the photo has no light
-   * above white to tone map (that keeps its 8-bit path).
-   */
+  /** Whether a settled SDR picture (or a 1:1 tile) goes as an F16 frame (`floatSettled`). */
   private floatSdr(kind: Kind, display: unknown): boolean {
-    return kind === 'full' && !display && this.view.float === true && !this.info.is_hdr
+    return floatSettled({
+      settled: kind === 'full',
+      display,
+      float: this.view.float === true,
+      isHdr: this.info.is_hdr,
+      depth: displayDepth()
+    })
   }
 
   /** The edge the loupe wants past the proxy's, or null when the proxy serves. */
