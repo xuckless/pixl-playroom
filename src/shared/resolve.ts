@@ -620,8 +620,7 @@ export function logRangeBefore021(saved: unknown): { low: number; high: number }
   if (typeof o.low !== 'number' || typeof o.high !== 'number') return null
   if (Math.abs(o.low - 0.333) < 1e-6 && Math.abs(o.high - 0.55) < 1e-6)
     return { low: LOG_LOW, high: LOG_HIGH }
-  const decode = (v: number): number =>
-    v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  const decode = (v: number): number => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
   return logRange(r3(toPixlLog(decode(o.low))), r3(toPixlLog(decode(o.high))))
 }
 

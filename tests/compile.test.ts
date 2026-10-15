@@ -241,9 +241,11 @@ test('the region sliders are the engine’s monotone parametric curve, a quarter
   }
   assert.deepEqual([strong.ParametricCurve.lights, strong.ParametricCurve.highlights], [-1, 1])
   // Splits held strictly in order inside 0…1.
-  const s = (regionCurveOp({ ...tc, shadows: 10, splits: [2, 3, 3] }) as {
-    ParametricCurve: { splits: { low: number; mid: number; high: number } }
-  }).ParametricCurve.splits
+  const s = (
+    regionCurveOp({ ...tc, shadows: 10, splits: [2, 3, 3] }) as {
+      ParametricCurve: { splits: { low: number; mid: number; high: number } }
+    }
+  ).ParametricCurve.splits
   assert.ok(0 < s.low && s.low < s.mid && s.mid < s.high && s.high < 1, JSON.stringify(s))
   // In the look stage, the same on an HDR pipeline (the identity above white).
   const r = defaultRecipe(false)

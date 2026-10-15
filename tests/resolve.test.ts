@@ -129,9 +129,11 @@ test('Temp and Tint stay inside Display P3 at a mask’s Amount of 200, pulled t
       }
     }
   // The corner Display P3 cannot hold keeps its warmth and gives up tint.
-  const corner = (primariesBalance({ ...defaultPrimaries(), temp: -200, tint: 200 }) as {
-    GainBalance: GainBalance
-  }).GainBalance
+  const corner = (
+    primariesBalance({ ...defaultPrimaries(), temp: -200, tint: 200 }) as {
+      GainBalance: GainBalance
+    }
+  ).GainBalance
   assert.ok(Math.abs(corner.temperature_kelvin - opFromRelative(-200, 0).kelvin) < 1)
   assert.ok(corner.tint > 0.01 && corner.tint < 100 / 3000)
 })
@@ -173,13 +175,20 @@ test('Lum Mix at 0 is the one Primary it always was; above 0 the Y rings are a L
   assert.equal(after.saturation, 1.1)
   assert.deepEqual(after.lift, { r: 0, g: 0, b: 0 })
   // No Y ring moved: Lum Mix has nothing to mix, the one Primary as at 0.
-  const noY = { ...p, lift: { ...p.lift, y: 0 }, gamma: { ...p.gamma, y: 0 }, gain: { ...p.gain, y: 1 } }
+  const noY = {
+    ...p,
+    lift: { ...p.lift, y: 0 },
+    gamma: { ...p.gamma, y: 0 },
+    gain: { ...p.gain, y: 1 }
+  }
   assert.deepEqual(primariesOp(noY), primariesOp({ ...noY, lumMix: 0 }))
   // A mask's Amount leaves it as set; it compiles in the look stage.
   assert.equal(scaleSettings({ ...neutralSettings(), primaries: p }, 50).primaries.lumMix, 100)
   const r = defaultRecipe(false)
   r.primaries = p
-  assert.ok(ops.length > 0 && ops.every((o) => JSON.stringify(compile(r, ctx)).includes(JSON.stringify(o))))
+  assert.ok(
+    ops.length > 0 && ops.every((o) => JSON.stringify(compile(r, ctx)).includes(JSON.stringify(o)))
+  )
 })
 
 test('a mask carries primaries, scaled by its Amount; switched off they compile as defaults', () => {
@@ -274,7 +283,9 @@ test('a black-and-white photo keeps its vs curves but does not apply them; a mas
   r.treatment = 'bw'
   r.curvesVs.hueSat = [{ x: 0.6, y: 0.8 }]
   r.curvesVs.hueLum = [{ x: 0.6, y: 0.2 }]
-  assert.ok(!ops(r).some((o) => 'Curves' in o && (o.Curves.hue_vs_saturation || o.Curves.hue_vs_luma)))
+  assert.ok(
+    !ops(r).some((o) => 'Curves' in o && (o.Curves.hue_vs_saturation || o.Curves.hue_vs_luma))
+  )
   assert.equal(normaliseRecipe(r, false).curvesVs.hueLum.length, 1)
   const l = newLocalLayer('Sky')
   l.components = [
@@ -354,9 +365,7 @@ test('log wheels are one LogWheels op in a PixlLog stage of their own, untouched
   assert.equal(prim.Primary.contrast_pivot, 0.435)
   // Contrast alone makes no log stage.
   r.logWheels = normaliseLogWheels({})
-  assert.ok(
-    compile(r, ctx).grade!.layers[0].stages.every((s) => s.space !== LOG_GRADE_SPACE)
-  )
+  assert.ok(compile(r, ctx).grade!.layers[0].stages.every((s) => s.space !== LOG_GRADE_SPACE))
 })
 
 test('a mask’s log wheels get their own log stage too; a black-and-white photo’s run after the mono conversion', async () => {
@@ -412,7 +421,7 @@ test('an older recipe’s log ranges are carried to the same tones; Resolve’s 
     false
   )
   assert.ok(Math.abs(moved.logWheels.low - toPixlLog(0.0331)) < 2e-3, `${moved.logWheels.low}`)
-  assert.ok(Math.abs(moved.logWheels.high - toPixlLog(0.4480)) < 2e-3, `${moved.logWheels.high}`)
+  assert.ok(Math.abs(moved.logWheels.high - toPixlLog(0.448)) < 2e-3, `${moved.logWheels.high}`)
   assert.equal(moved.logWheels.shadow.y, 0.01)
   assert.deepEqual(
     [moved.layers[0].settings.logWheels.low, moved.layers[0].settings.logWheels.high],
