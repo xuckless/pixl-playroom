@@ -311,7 +311,7 @@ export class Exporter {
       frameHeight: frameH,
       scale: 1,
       seed: seedOf(row),
-      brushPaths: await brushPlanes(row.id, recipe, user),
+      brushPaths: await brushPlanes(row.id, recipe, user, { isRaw: row.is_raw === 1 }),
       applyCrop: true,
       // HDR only where the pipeline keeps room above white: PQ/HLG out, or
       // the gain map's HDR master. Tone mapped to SDR, the grade runs after

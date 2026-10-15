@@ -43,7 +43,7 @@ import {
   type SpotRefine
 } from '../shared/retouch'
 import { activeSteps, stackSignature, type PixelStep } from '../shared/pixels'
-import { effective } from '../shared/edits'
+import { effective, renderedLens } from '../shared/edits'
 import { pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
@@ -572,7 +572,7 @@ class Session {
       frameHeight: px.frameHeight,
       scale: source.width / px.frameWidth,
       seed: seedOf(this.row),
-      brushPaths: await brushPlanes(this.row.id, recipe, user),
+      brushPaths: await brushPlanes(this.row.id, recipe, user, { isRaw: this.isRaw }),
       applyCrop,
       // HDR only where the request's pipeline has room above white (Preserve
       // with the HDR working space: masks, the headroom plane, HDR stats). A
@@ -2490,7 +2490,7 @@ class Session {
       frameHeight: src.height,
       scale: zoom,
       seed: seedOf(this.row),
-      brushPaths: await brushPlanes(this.row.id, this.recipe, user),
+      brushPaths: await brushPlanes(this.row.id, this.recipe, user, { isRaw: raw }),
       applyCrop: !this.view.cropMode,
       showTransform: !this.view.guides,
       // Tone mapped to SDR for the screen, as the picture is (see compileFor);
@@ -2749,9 +2749,10 @@ class Session {
   async sample(nx: number, ny: number): Promise<SampleResult> {
     const src = this.px.proxy
     const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
-    // The point is of the frame on screen: the lens-corrected one when there
-    // is a correction, which the sample is taken through too.
-    const lens = lensCorrection(this.recipe.lens)
+    // The point is of the frame on screen: the lens-corrected one when a
+    // correction is rendered (none with Optics switched off), which the
+    // sample is taken through too.
+    const lens = renderedLens(this.recipe, this.isRaw)
     const at = await this.correctedRegion(
       lens,
       width,

@@ -779,7 +779,7 @@ export class Library {
       frameHeight: px.frameHeight,
       scale: src.width / px.frameWidth,
       seed: seedOf(row),
-      brushPaths: await brushPlanes(row.id, recipe, user),
+      brushPaths: await brushPlanes(row.id, recipe, user, { isRaw: row.is_raw === 1 }),
       applyCrop: true,
       hdr: info.is_hdr
     })

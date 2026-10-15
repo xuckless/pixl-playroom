@@ -64,7 +64,7 @@ export async function freezeMask(
     frameHeight: master.height,
     scale: 1,
     seed: ctx.seed,
-    brushPaths: await brushPlanes(ctx.photoId, r, user),
+    brushPaths: await brushPlanes(ctx.photoId, r, user, { isRaw: ctx.isRaw }),
     applyCrop: false
   })
   const index = compiled.layerIndex[layerId]

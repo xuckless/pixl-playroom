@@ -19,7 +19,7 @@ import type { Orientation } from '../shared/engine-types'
 import { gradientKey, rasterGradient } from '../shared/gradients'
 import { edgeKey } from '../shared/maskedge'
 import type { LensCorrection } from '../shared/engine-types'
-import { lensCorrection } from '../shared/lens'
+import { renderedLens } from '../shared/edits'
 import { planeEdge, snapsToObject } from '../shared/refine'
 import type { Recipe } from '../shared/recipe'
 import log from 'electron-log/main'
@@ -106,17 +106,25 @@ function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Pr
   return p
 }
 
+/** What the planes are written for, besides the recipe and the turn. */
+export interface PlaneOptions {
+  /** The photo is a RAW: what its recipe's switched-off sections render as (`edits.ts` `effective`). */
+  isRaw?: boolean
+}
+
 /** Each brush (or edged gradient) component's plane file, by component id. */
 export async function brushPlanes(
   photoId: number,
   recipe: Recipe,
-  user: Orientation
+  user: Orientation,
+  opts: PlaneOptions = {}
 ): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   const dir = paths.photoCache(photoId)
   const work: Promise<void>[] = []
   const photoKey = String(photoId)
-  const lens = lensCorrection(recipe.lens)
+  // The object a stroke snaps to is found on the picture as rendered.
+  const lens = renderedLens(recipe, opts.isRaw === true)
   // Asked once, and only when a stroke is to be snapped.
   let snapKey: Promise<string | null> | null = null
   const snapKeyOf = (): Promise<string | null> =>

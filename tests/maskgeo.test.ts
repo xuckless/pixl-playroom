@@ -3,6 +3,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { compile, type CompileContext } from '../src/shared/compile'
+import { renderedLens } from '../src/shared/edits'
+import { lensCorrection } from '../src/shared/lens'
 import { defaultRecipe, type Recipe } from '../src/shared/recipe'
 import {
   applyProjective,
@@ -262,6 +264,35 @@ test('a dab keeps its area through the map; along x alone it would not under Upr
   assert.ok(Math.abs(got - want) / want < 1e-4, `${got} vs ${want}`)
   const alongX = Math.hypot(bx.x - a.x, bx.y - a.y) / e
   assert.ok(Math.abs(alongX - want) / want > 0.02, 'the warp stretches one way more')
+})
+
+// ── Phase 3: models see the photo through the lens it is rendered with ──────
+
+test('with Optics switched off a model sees the uncorrected frame, as the render does', () => {
+  const r = defaultRecipe(false)
+  r.lens.distortion = 40
+  const on = renderedLens(r, false)
+  assert.deepEqual(on, lensCorrection(r.lens))
+  assert.ok(on?.distortion)
+  r.off = { optics: true }
+  assert.equal(renderedLens(r, false), null)
+  assert.equal(compile(r, ctx()).lens, null, 'the render has no correction either')
+  // The other sections leave the lens as it is.
+  r.off = { crop: true, geometry: true }
+  assert.deepEqual(renderedLens(r, true), on)
+})
+
+test('every model request and snap places its frame with the rendered lens', async () => {
+  const { readFileSync } = await import('node:fs')
+  for (const file of [
+    'src/main/ai/segment.ts',
+    'src/main/select/service.ts',
+    'src/main/brushes.ts'
+  ]) {
+    const src = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+    assert.ok(!/lensCorrection\(\s*recipe\.lens\s*\)/.test(src), `${file} reads the recipe's lens`)
+    assert.ok(src.includes('renderedLens('), file)
+  }
 })
 
 test('the brush worker’s Auto Mask lookup lands where the exact map puts a dab', () => {

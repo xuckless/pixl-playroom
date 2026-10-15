@@ -32,7 +32,7 @@ import type {
   SamResult
 } from '../../shared/engine-types'
 import type { ConceptSize } from '../../shared/concepts'
-import { lensCorrection } from '../../shared/lens'
+import { renderedLens } from '../../shared/edits'
 import { guidedKeeps, SAM_GRID } from './size'
 import {
   addPart,
@@ -196,11 +196,15 @@ export class SelectService {
     return this.loading
   }
 
-  /** The lens correction a photo's masks are placed after: the one given, else its recipe's. */
+  /**
+   * The lens correction a photo's masks are placed after: the one given,
+   * else the one its recipe renders with (none while Optics is switched off).
+   */
   private async lensFor(key: string, lens?: Lens): Promise<Lens> {
     if (lens !== undefined) return lens
     const recipe = this.sessions()?.liveRecipe(key) ?? (await this.library.recipe(key))
-    return lensCorrection(recipe.lens)
+    const row = await this.library.photoRow(key)
+    return renderedLens(recipe, row.is_raw === 1)
   }
 
   private async embKeyOf(key: string, lens?: Lens): Promise<string> {
