@@ -1,0 +1,506 @@
+{
+  "Applying {{look}}": {
+    "en": "Applying {{look}}",
+    "fr": "Application de {{look}}",
+    "de": "{{look}} wird angewendet",
+    "ja": "{{look}} を適用中",
+    "vi": "Đang áp dụng {{look}}",
+    "zh-Hans": "正在应用 {{look}}"
+  },
+  "Auto Tone ({{count}} Photos)_one": {
+    "en": "Auto Tone ({{count}} Photo)",
+    "fr": "Tons auto ({{count}} photo)",
+    "de": "Auto-Tonwert ({{count}} Foto)",
+    "ja": "自動補正（写真{{count}}枚）",
+    "vi": "Tông màu tự động ({{count}} ảnh)",
+    "zh-Hans": "自动色调（{{count}} 张照片）"
+  },
+  "Auto Tone ({{count}} Photos)_other": {
+    "en": "Auto Tone ({{count}} Photos)",
+    "fr": "Tons auto ({{count}} photos)",
+    "de": "Auto-Tonwert ({{count}} Fotos)",
+    "ja": "自動補正（写真{{count}}枚）",
+    "vi": "Tông màu tự động ({{count}} ảnh)",
+    "zh-Hans": "自动色调（{{count}} 张照片）"
+  },
+  "Auto tone on each photo": {
+    "en": "Auto tone on each photo",
+    "fr": "Tons auto sur chaque photo",
+    "de": "Auto-Tonwert auf jedes Foto",
+    "ja": "各写真に自動補正",
+    "vi": "Tông màu tự động cho từng ảnh",
+    "zh-Hans": "对每张照片执行自动色调"
+  },
+  "Auto tone on the selection": {
+    "en": "Auto tone on the selection",
+    "fr": "Tons auto sur la sélection",
+    "de": "Auto-Tonwert auf die Auswahl",
+    "ja": "選択範囲に自動補正",
+    "vi": "Tông màu tự động cho vùng chọn",
+    "zh-Hans": "对所选照片执行自动色调"
+  },
+  "Auto tone on {{count}} photos_one": {
+    "en": "Auto tone on {{count}} photo",
+    "fr": "Tons auto sur {{count}} photo",
+    "de": "Auto-Tonwert auf {{count}} Foto",
+    "ja": "写真{{count}}枚に自動補正",
+    "vi": "Tông màu tự động cho {{count}} ảnh",
+    "zh-Hans": "对 {{count}} 张照片执行自动色调"
+  },
+  "Auto tone on {{count}} photos_other": {
+    "en": "Auto tone on {{count}} photos",
+    "fr": "Tons auto sur {{count}} photos",
+    "de": "Auto-Tonwert auf {{count}} Fotos",
+    "ja": "写真{{count}}枚に自動補正",
+    "vi": "Tông màu tự động cho {{count}} ảnh",
+    "zh-Hans": "对 {{count}} 张照片执行自动色调"
+  },
+  "Auto tone works on a selection too, each photo measured on its own, as Auto white balance already did.": {
+    "en": "Auto tone works on a selection too, each photo measured on its own, as Auto white balance already did.",
+    "fr": "Les tons auto fonctionnent aussi sur une sélection, chaque photo mesurée séparément, comme la balance des blancs auto le faisait déjà.",
+    "de": "Auto-Tonwert wirkt jetzt auch auf eine Auswahl, jedes Foto für sich gemessen, wie es der automatische Weißabgleich schon tat.",
+    "ja": "自動補正も選択した写真に使えるようになりました。自動ホワイトバランスと同じく、写真ごとに測定します。",
+    "vi": "Tông màu tự động giờ cũng dùng được cho vùng chọn, đo riêng từng ảnh, như Cân bằng trắng tự động vẫn làm.",
+    "zh-Hans": "自动色调现在也可用于所选照片，每张照片单独测量，与自动白平衡一样。"
+  },
+  "Auto white balance on each photo": {
+    "en": "Auto white balance on each photo",
+    "fr": "Balance des blancs auto sur chaque photo",
+    "de": "Automatischer Weißabgleich auf jedes Foto",
+    "ja": "各写真に自動ホワイトバランス",
+    "vi": "Cân bằng trắng tự động cho từng ảnh",
+    "zh-Hans": "对每张照片执行自动白平衡"
+  },
+  "changed since": {
+    "en": "changed since",
+    "fr": "modifiée depuis",
+    "de": "seitdem geändert",
+    "ja": "その後変更あり",
+    "vi": "đã thay đổi từ đó",
+    "zh-Hans": "之后已更改"
+  },
+  "Clipboard": {
+    "en": "Clipboard",
+    "fr": "Presse-papiers",
+    "de": "Zwischenablage",
+    "ja": "クリップボード",
+    "vi": "Bảng nhớ tạm",
+    "zh-Hans": "剪贴板"
+  },
+  "Cooler": {
+    "en": "Cooler",
+    "fr": "Plus froid",
+    "de": "Kühler",
+    "ja": "寒色寄りに",
+    "vi": "Lạnh hơn",
+    "zh-Hans": "更冷"
+  },
+  "Copy a photo's settings ({{key}}) to paste them here.": {
+    "en": "Copy a photo's settings ({{key}}) to paste them here.",
+    "fr": "Copiez les paramètres d'une photo ({{key}}) pour les coller ici.",
+    "de": "Kopiere die Einstellungen eines Fotos ({{key}}), um sie hier einzufügen.",
+    "ja": "写真の設定をコピー（{{key}}）すると、ここでペーストできます。",
+    "vi": "Sao chép thiết lập của một ảnh ({{key}}) để dán tại đây.",
+    "zh-Hans": "拷贝一张照片的设置（{{key}}），即可在此粘贴。"
+  },
+  "Copy the settings of {{name}} again": {
+    "en": "Copy the settings of {{name}} again",
+    "fr": "Copier à nouveau les paramètres de {{name}}",
+    "de": "Die Einstellungen von {{name}} erneut kopieren",
+    "ja": "{{name}} の設定をもう一度コピー",
+    "vi": "Sao chép lại thiết lập của {{name}}",
+    "zh-Hans": "重新拷贝 {{name}} 的设置"
+  },
+  "Exposure +1": {
+    "en": "Exposure +1",
+    "fr": "Exposition +1",
+    "de": "Belichtung +1",
+    "ja": "露光量 +1",
+    "vi": "Phơi sáng +1",
+    "zh-Hans": "曝光度 +1"
+  },
+  "Exposure +1/3": {
+    "en": "Exposure +1/3",
+    "fr": "Exposition +1/3",
+    "de": "Belichtung +1/3",
+    "ja": "露光量 +1/3",
+    "vi": "Phơi sáng +1/3",
+    "zh-Hans": "曝光度 +1/3"
+  },
+  "Exposure down a stop": {
+    "en": "Exposure down a stop",
+    "fr": "Exposition d'un IL en moins",
+    "de": "Belichtung eine Blende weniger",
+    "ja": "露光量を1段下げる",
+    "vi": "Giảm phơi sáng một stop",
+    "zh-Hans": "曝光度降低一档"
+  },
+  "Exposure down a third of a stop": {
+    "en": "Exposure down a third of a stop",
+    "fr": "Exposition d'un tiers d'IL en moins",
+    "de": "Belichtung eine Drittelblende weniger",
+    "ja": "露光量を1/3段下げる",
+    "vi": "Giảm phơi sáng một phần ba stop",
+    "zh-Hans": "曝光度降低三分之一档"
+  },
+  "Exposure up a stop": {
+    "en": "Exposure up a stop",
+    "fr": "Exposition d'un IL en plus",
+    "de": "Belichtung eine Blende mehr",
+    "ja": "露光量を1段上げる",
+    "vi": "Tăng phơi sáng một stop",
+    "zh-Hans": "曝光度提高一档"
+  },
+  "Exposure up a third of a stop": {
+    "en": "Exposure up a third of a stop",
+    "fr": "Exposition d'un tiers d'IL en plus",
+    "de": "Belichtung eine Drittelblende mehr",
+    "ja": "露光量を1/3段上げる",
+    "vi": "Tăng phơi sáng một phần ba stop",
+    "zh-Hans": "曝光度提高三分之一档"
+  },
+  "Exposure −1": {
+    "en": "Exposure −1",
+    "fr": "Exposition −1",
+    "de": "Belichtung −1",
+    "ja": "露光量 −1",
+    "vi": "Phơi sáng −1",
+    "zh-Hans": "曝光度 −1"
+  },
+  "Exposure −1/3": {
+    "en": "Exposure −1/3",
+    "fr": "Exposition −1/3",
+    "de": "Belichtung −1/3",
+    "ja": "露光量 −1/3",
+    "vi": "Phơi sáng −1/3",
+    "zh-Hans": "曝光度 −1/3"
+  },
+  "its AI parts left out: apply it in Develop for those": {
+    "en": "its AI parts left out: apply it in Develop for those",
+    "fr": "ses parties IA laissées de côté : appliquez-le dans Développement pour celles-ci",
+    "de": "seine KI-Teile ausgelassen: dafür in Entwickeln anwenden",
+    "ja": "AI の部分は省略：それには現像で適用してください",
+    "vi": "bỏ qua phần AI: hãy áp dụng trong Chỉnh sửa để có phần đó",
+    "zh-Hans": "已略过其 AI 部分：如需这些部分，请在修改照片中应用"
+  },
+  "its white balance cannot be read": {
+    "en": "its white balance cannot be read",
+    "fr": "sa balance des blancs ne peut pas être lue",
+    "de": "sein Weißabgleich kann nicht gelesen werden",
+    "ja": "ホワイトバランスを読み取れません",
+    "vi": "không đọc được cân bằng trắng của ảnh",
+    "zh-Hans": "无法读取其白平衡"
+  },
+  "Less": {
+    "en": "Less",
+    "fr": "Moins",
+    "de": "Weniger",
+    "ja": "表示を減らす",
+    "vi": "Thu gọn",
+    "zh-Hans": "收起"
+  },
+  "More: Clarity, Saturation": {
+    "en": "More: Clarity, Saturation",
+    "fr": "Plus : Clarté, Saturation",
+    "de": "Mehr: Klarheit, Sättigung",
+    "ja": "その他：明瞭度、彩度",
+    "vi": "Thêm: Độ rõ nét, Độ bão hòa",
+    "zh-Hans": "更多：清晰度、饱和度"
+  },
+  "No look picked": {
+    "en": "No look picked",
+    "fr": "Aucun look choisi",
+    "de": "Kein Look gewählt",
+    "ja": "ルックが選ばれていません",
+    "vi": "Chưa chọn phong cách",
+    "zh-Hans": "未选择风格"
+  },
+  "quick develop": {
+    "en": "quick develop",
+    "fr": "développement rapide",
+    "de": "Ad-hoc-Entwicklung",
+    "ja": "クイック現像",
+    "vi": "chỉnh sửa nhanh",
+    "zh-Hans": "快速修改照片"
+  },
+  "Quick develop": {
+    "en": "Quick develop",
+    "fr": "Développement rapide",
+    "de": "Ad-hoc-Entwicklung",
+    "ja": "クイック現像",
+    "vi": "Chỉnh sửa nhanh",
+    "zh-Hans": "快速修改照片"
+  },
+  "Quick Develop": {
+    "en": "Quick Develop",
+    "fr": "Développement rapide",
+    "de": "Ad-hoc-Entwicklung",
+    "ja": "クイック現像",
+    "vi": "Chỉnh sửa nhanh",
+    "zh-Hans": "快速修改照片"
+  },
+  "Quick develop sits beside Info in the Library (⇧I): put a look on the whole selection, with a preview of the photo in focus and an Amount, and nudge Exposure, Contrast, Temp, Tint and Vibrance a step at a time. Each row shows what you have changed so far.": {
+    "en": "Quick develop sits beside Info in the Library (⇧I): put a look on the whole selection, with a preview of the photo in focus and an Amount, and nudge Exposure, Contrast, Temp, Tint and Vibrance a step at a time. Each row shows what you have changed so far.",
+    "fr": "Le développement rapide se trouve à côté des infos dans la bibliothèque (⇧I) : appliquez un look à toute la sélection, avec un aperçu de la photo active et une intensité, et ajustez Exposition, Contraste, Temp., Teinte et Vibrance pas à pas. Chaque ligne montre ce que vous avez changé jusqu'ici.",
+    "de": "Die Ad-hoc-Entwicklung steht in der Bibliothek neben Info (⇧I): Lege einen Look auf die ganze Auswahl, mit einer Vorschau des fokussierten Fotos und einer Stärke, und verschiebe Belichtung, Kontrast, Temp., Tönung und Dynamik Schritt für Schritt. Jede Zeile zeigt, was du bisher geändert hast.",
+    "ja": "ライブラリの情報の隣にクイック現像があります（⇧I）：選択した写真全体にルックを適用し（フォーカス中の写真のプレビューと適用量付き）、露光量・コントラスト・色温度・色かぶり補正・自然な彩度を1段ずつ調整できます。各行にはこれまでの変更量が表示されます。",
+    "vi": "Chỉnh sửa nhanh nằm cạnh Thông tin trong Thư viện (⇧I): áp dụng một phong cách cho cả vùng chọn, có xem trước ảnh đang chọn và Cường độ, và chỉnh Phơi sáng, Tương phản, Nhiệt độ, Sắc độ, Độ rực từng bước. Mỗi dòng cho biết bạn đã thay đổi bao nhiêu.",
+    "zh-Hans": "快速修改照片位于图库的信息旁（⇧I）：为整个所选内容应用风格，附带焦点照片的预览和强度，并逐步调整曝光度、对比度、色温、色调和自然饱和度。每一行都会显示目前已更改的量。"
+  },
+  "Search looks": {
+    "en": "Search looks",
+    "fr": "Rechercher des looks",
+    "de": "Looks suchen",
+    "ja": "ルックを検索",
+    "vi": "Tìm phong cách",
+    "zh-Hans": "搜索风格"
+  },
+  "Select photos first": {
+    "en": "Select photos first",
+    "fr": "Sélectionnez d'abord des photos",
+    "de": "Wähle zuerst Fotos aus",
+    "ja": "先に写真を選択してください",
+    "vi": "Hãy chọn ảnh trước",
+    "zh-Hans": "请先选择照片"
+  },
+  "Select photos to develop them here.": {
+    "en": "Select photos to develop them here.",
+    "fr": "Sélectionnez des photos pour les développer ici.",
+    "de": "Wähle Fotos aus, um sie hier zu entwickeln.",
+    "ja": "写真を選択すると、ここで現像できます。",
+    "vi": "Chọn ảnh để chỉnh sửa tại đây.",
+    "zh-Hans": "选择照片即可在此修改。"
+  },
+  "Show or hide Quick develop": {
+    "en": "Show or hide Quick develop",
+    "fr": "Afficher ou masquer le développement rapide",
+    "de": "Ad-hoc-Entwicklung ein- oder ausblenden",
+    "ja": "クイック現像の表示／非表示",
+    "vi": "Hiện hoặc ẩn Chỉnh sửa nhanh",
+    "zh-Hans": "显示或隐藏快速修改照片"
+  },
+  "Show Quick Develop": {
+    "en": "Show Quick Develop",
+    "fr": "Afficher le développement rapide",
+    "de": "Ad-hoc-Entwicklung einblenden",
+    "ja": "クイック現像を表示",
+    "vi": "Hiện Chỉnh sửa nhanh",
+    "zh-Hans": "显示快速修改照片"
+  },
+  "that look is not here any more": {
+    "en": "that look is not here any more",
+    "fr": "ce look n'est plus là",
+    "de": "dieser Look ist nicht mehr da",
+    "ja": "そのルックはもうありません",
+    "vi": "phong cách đó không còn nữa",
+    "zh-Hans": "该风格已不存在"
+  },
+  "the engine measured nothing": {
+    "en": "the engine measured nothing",
+    "fr": "le moteur n'a rien mesuré",
+    "de": "die Engine hat nichts gemessen",
+    "ja": "エンジンは何も測定しませんでした",
+    "vi": "bộ máy không đo được gì",
+    "zh-Hans": "引擎未测得任何结果"
+  },
+  "Tone": {
+    "en": "Tone",
+    "fr": "Tons",
+    "de": "Tonwert",
+    "ja": "階調",
+    "vi": "Tông màu",
+    "zh-Hans": "色调"
+  },
+  "undo": {
+    "en": "undo",
+    "fr": "annuler",
+    "de": "widerrufen",
+    "ja": "取り消し",
+    "vi": "hoàn tác",
+    "zh-Hans": "撤销"
+  },
+  "Warmer": {
+    "en": "Warmer",
+    "fr": "Plus chaud",
+    "de": "Wärmer",
+    "ja": "暖色寄りに",
+    "vi": "Ấm hơn",
+    "zh-Hans": "更暖"
+  },
+  "{{count}} collapsed stacks: their covers only_one": {
+    "en": "{{count}} collapsed stack: its cover only",
+    "fr": "{{count}} pile repliée : sa couverture seulement",
+    "de": "{{count}} zugeklappter Stapel: nur sein Titelbild",
+    "ja": "折りたたんだスタック{{count}}個：カバーのみ",
+    "vi": "{{count}} nhóm đang thu gọn: chỉ ảnh bìa",
+    "zh-Hans": "{{count}} 个折叠的堆叠：仅封面"
+  },
+  "{{count}} collapsed stacks: their covers only_other": {
+    "en": "{{count}} collapsed stacks: their covers only",
+    "fr": "{{count}} piles repliées : leurs couvertures seulement",
+    "de": "{{count}} zugeklappte Stapel: nur ihre Titelbilder",
+    "ja": "折りたたんだスタック{{count}}個：カバーのみ",
+    "vi": "{{count}} nhóm đang thu gọn: chỉ ảnh bìa",
+    "zh-Hans": "{{count}} 个折叠的堆叠：仅封面"
+  },
+  "{{count}} HDR": {
+    "en": "{{count}} HDR",
+    "fr": "{{count}} HDR",
+    "de": "{{count}} HDR",
+    "ja": "HDR {{count}}",
+    "vi": "{{count}} HDR",
+    "zh-Hans": "{{count}} 张 HDR"
+  },
+  "{{count}} held at the slider's end_one": {
+    "en": "{{count}} held at the slider's end",
+    "fr": "{{count}} bloquée au bout du curseur",
+    "de": "{{count}} am Ende des Reglers gehalten",
+    "ja": "{{count}}枚はスライダーの端で止まりました",
+    "vi": "{{count}} ảnh dừng ở đầu thanh trượt",
+    "zh-Hans": "{{count}} 张停在滑块尽头"
+  },
+  "{{count}} held at the slider's end_other": {
+    "en": "{{count}} held at the slider's end",
+    "fr": "{{count}} bloquées au bout du curseur",
+    "de": "{{count}} am Ende des Reglers gehalten",
+    "ja": "{{count}}枚はスライダーの端で止まりました",
+    "vi": "{{count}} ảnh dừng ở đầu thanh trượt",
+    "zh-Hans": "{{count}} 张停在滑块尽头"
+  },
+  "{{count}} offline or unreadable: settings only, Auto cannot measure them_one": {
+    "en": "{{count}} offline or unreadable: settings only, Auto cannot measure it",
+    "fr": "{{count}} hors ligne ou illisible : réglages seulement, Auto ne peut pas la mesurer",
+    "de": "{{count}} offline oder unlesbar: nur Einstellungen, Auto kann es nicht messen",
+    "ja": "{{count}}枚がオフラインまたは読み込めません：設定のみ。自動では測定できません",
+    "vi": "{{count}} ảnh ngoại tuyến hoặc không đọc được: chỉ thiết lập, Tự động không đo được",
+    "zh-Hans": "{{count}} 张离线或无法读取：仅设置，自动无法测量"
+  },
+  "{{count}} offline or unreadable: settings only, Auto cannot measure them_other": {
+    "en": "{{count}} offline or unreadable: settings only, Auto cannot measure them",
+    "fr": "{{count}} hors ligne ou illisibles : réglages seulement, Auto ne peut pas les mesurer",
+    "de": "{{count}} offline oder unlesbar: nur Einstellungen, Auto kann sie nicht messen",
+    "ja": "{{count}}枚がオフラインまたは読み込めません：設定のみ。自動では測定できません",
+    "vi": "{{count}} ảnh ngoại tuyến hoặc không đọc được: chỉ thiết lập, Tự động không đo được",
+    "zh-Hans": "{{count}} 张离线或无法读取：仅设置，自动无法测量"
+  },
+  "{{count}} RAW": {
+    "en": "{{count}} RAW",
+    "fr": "{{count}} RAW",
+    "de": "{{count}} RAW",
+    "ja": "RAW {{count}}",
+    "vi": "{{count}} RAW",
+    "zh-Hans": "{{count}} 张 RAW"
+  },
+  "{{count}} stacks: covers only_one": {
+    "en": "{{count}} stack: cover only",
+    "fr": "{{count}} pile : couverture seulement",
+    "de": "{{count}} Stapel: nur Titelbild",
+    "ja": "スタック{{count}}個：カバーのみ",
+    "vi": "{{count}} nhóm: chỉ ảnh bìa",
+    "zh-Hans": "{{count}} 个堆叠：仅封面"
+  },
+  "{{count}} stacks: covers only_other": {
+    "en": "{{count}} stacks: covers only",
+    "fr": "{{count}} piles : couvertures seulement",
+    "de": "{{count}} Stapel: nur Titelbilder",
+    "ja": "スタック{{count}}個：カバーのみ",
+    "vi": "{{count}} nhóm: chỉ ảnh bìa",
+    "zh-Hans": "{{count}} 个堆叠：仅封面"
+  },
+  "{{look}} applied, Amount locked": {
+    "en": "{{look}} applied, Amount locked",
+    "fr": "{{look}} appliqué, Intensité verrouillée",
+    "de": "{{look}} angewendet, Stärke gesperrt",
+    "ja": "{{look}} を適用済み、適用量はロック",
+    "vi": "Đã áp dụng {{look}}, Cường độ đã khóa",
+    "zh-Hans": "已应用 {{look}}，强度已锁定"
+  },
+  "{{look}} on {{count}} photos_one": {
+    "en": "{{look}} on {{count}} photo",
+    "fr": "{{look}} sur {{count}} photo",
+    "de": "{{look}} auf {{count}} Foto",
+    "ja": "写真{{count}}枚に {{look}}",
+    "vi": "{{look}} cho {{count}} ảnh",
+    "zh-Hans": "对 {{count}} 张照片应用 {{look}}"
+  },
+  "{{look}} on {{count}} photos_other": {
+    "en": "{{look}} on {{count}} photos",
+    "fr": "{{look}} sur {{count}} photos",
+    "de": "{{look}} auf {{count}} Fotos",
+    "ja": "写真{{count}}枚に {{look}}",
+    "vi": "{{look}} cho {{count}} ảnh",
+    "zh-Hans": "对 {{count}} 张照片应用 {{look}}"
+  },
+  "{{name}} (focused)": {
+    "en": "{{name}} (focused)",
+    "fr": "{{name}} (sélectionnée)",
+    "de": "{{name}} (fokussiert)",
+    "ja": "{{name}}（フォーカス中）",
+    "vi": "{{name}} (đang chọn)",
+    "zh-Hans": "{{name}}（焦点）"
+  },
+  "{{name}}: a big step down": {
+    "en": "{{name}}: a big step down",
+    "fr": "{{name}} : un grand pas vers le bas",
+    "de": "{{name}}: ein großer Schritt nach unten",
+    "ja": "{{name}}：大きく下げる",
+    "vi": "{{name}}: giảm một bước lớn",
+    "zh-Hans": "{{name}}：大幅降低"
+  },
+  "{{name}}: a big step up": {
+    "en": "{{name}}: a big step up",
+    "fr": "{{name}} : un grand pas vers le haut",
+    "de": "{{name}}: ein großer Schritt nach oben",
+    "ja": "{{name}}：大きく上げる",
+    "vi": "{{name}}: tăng một bước lớn",
+    "zh-Hans": "{{name}}：大幅提高"
+  },
+  "{{name}}: a step down": {
+    "en": "{{name}}: a step down",
+    "fr": "{{name}} : un pas vers le bas",
+    "de": "{{name}}: ein Schritt nach unten",
+    "ja": "{{name}}：少し下げる",
+    "vi": "{{name}}: giảm một bước",
+    "zh-Hans": "{{name}}：降低一步"
+  },
+  "{{name}}: a step up": {
+    "en": "{{name}}: a step up",
+    "fr": "{{name}} : un pas vers le haut",
+    "de": "{{name}}: ein Schritt nach oben",
+    "ja": "{{name}}：少し上げる",
+    "vi": "{{name}}: tăng một bước",
+    "zh-Hans": "{{name}}：提高一步"
+  },
+  "{{name}}: {{change}}": {
+    "en": "{{name}}: {{change}}",
+    "fr": "{{name}} : {{change}}",
+    "de": "{{name}}: {{change}}",
+    "ja": "{{name}}：{{change}}",
+    "vi": "{{name}}: {{change}}",
+    "zh-Hans": "{{name}}：{{change}}"
+  },
+  "{{what}} on {{count}} photos_one": {
+    "en": "{{what}} on {{count}} photo",
+    "fr": "{{what}} sur {{count}} photo",
+    "de": "{{what}} auf {{count}} Foto",
+    "ja": "写真{{count}}枚に {{what}}",
+    "vi": "{{what}} cho {{count}} ảnh",
+    "zh-Hans": "对 {{count}} 张照片：{{what}}"
+  },
+  "{{what}} on {{count}} photos_other": {
+    "en": "{{what}} on {{count}} photos",
+    "fr": "{{what}} sur {{count}} photos",
+    "de": "{{what}} auf {{count}} Fotos",
+    "ja": "写真{{count}}枚に {{what}}",
+    "vi": "{{what}} cho {{count}} ảnh",
+    "zh-Hans": "对 {{count}} 张照片：{{what}}"
+  },
+  "⌥↑ and ⌥↓ move the selection’s exposure a third of a stop (with ⇧, a whole stop), and ⌥← and ⌥→ its white balance, anywhere in the Library. A run of clicks or presses is one step in each photo’s History and one ⌘Z.": {
+    "en": "⌥↑ and ⌥↓ move the selection’s exposure a third of a stop (with ⇧, a whole stop), and ⌥← and ⌥→ its white balance, anywhere in the Library. A run of clicks or presses is one step in each photo’s History and one ⌘Z.",
+    "fr": "⌥↑ et ⌥↓ modifient l'exposition de la sélection d'un tiers d'IL (avec ⇧, d'un IL entier), et ⌥← et ⌥→ sa balance des blancs, partout dans la bibliothèque. Une série de clics ou de touches forme une seule étape dans l'historique de chaque photo et un seul ⌘Z.",
+    "de": "⌥↑ und ⌥↓ ändern die Belichtung der Auswahl um eine Drittelblende (mit ⇧ um eine ganze Blende), ⌥← und ⌥→ ihren Weißabgleich, überall in der Bibliothek. Eine Folge von Klicks oder Tastendrücken ist ein Schritt im Verlauf jedes Fotos und ein ⌘Z.",
+    "ja": "ライブラリのどこでも、⌥↑ と ⌥↓ で選択した写真の露光量を1/3段（⇧ で1段）、⌥← と ⌥→ でホワイトバランスを変えられます。続けてのクリックやキー操作は、各写真のヒストリーで1ステップ、⌘Z 1回分になります。",
+    "vi": "⌥↑ và ⌥↓ thay đổi phơi sáng của vùng chọn một phần ba stop (với ⇧, cả một stop), còn ⌥← và ⌥→ thay đổi cân bằng trắng, ở bất cứ đâu trong Thư viện. Một loạt nhấp hoặc phím bấm là một bước trong Lịch sử của mỗi ảnh và một lần ⌘Z.",
+    "zh-Hans": "在图库中任意位置，⌥↑ 和 ⌥↓ 将所选照片的曝光度调整三分之一档（按住 ⇧ 为一整档），⌥← 和 ⌥→ 调整其白平衡。一连串点击或按键在每张照片的历史记录中只是一步，也只需一次 ⌘Z。"
+  }
+}
