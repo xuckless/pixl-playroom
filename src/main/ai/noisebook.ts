@@ -1,18 +1,22 @@
 /**
  * What PIXL demosaic is told about a frame's noise when the engine cannot
- * read it from the frame itself (E64: a plane with too few flat brightness
- * levels, "state it with MosaicNoise::Stated"). Every PIXL develop that
- * reads the noise reports it, plane by plane (`variance = k·x + σ²`); this
- * keeps it by camera and ISO, so a frame of the same camera can be stated
- * the noise its siblings were measured to have. Kept beside the models
+ * read it from the frame itself (E64: since 0.21.0's roster, a Bayer frame
+ * whose greens have too few flat brightness levels). Every PIXL develop
+ * that reads the noise reports it, plane by plane (`variance = k·x + σ²`),
+ * and the engine's `rawNoise` reads it without developing (E65,
+ * `noisefill.ts`); this keeps it by camera and ISO, the last few at each,
+ * so a frame of the same camera can be stated the noise its siblings were
+ * measured to have (`shared/rawnoise.ts`). Kept beside the models
  * (`raw-noise.json`), across runs.
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import log from 'electron-log/main'
 import {
+  measuredAt,
   noiseOfPlanes,
   statedNoiseFor as statedFrom,
+  withMeasurement,
   type NoiseBook,
   type NoisePlane,
   type Shot,
@@ -69,10 +73,17 @@ export function remember(shot: Shot, planes: readonly NoisePlane[] | null | unde
   const b = load()
   const iso = String(Math.round(shot.iso))
   const had = b[shot.camera]?.[iso]
-  if (had && had.k === n.k && had.sigma2 === n.sigma2) return
-  b[shot.camera] = { ...b[shot.camera], [iso]: n }
+  // The same frame read again (its master made anew) says nothing new.
+  if (measuredAt(had).some((m) => m.k === n.k && m.sigma2 === n.sigma2)) return
+  b[shot.camera] = { ...b[shot.camera], [iso]: withMeasurement(had, n) }
   kept++
   save()
+}
+
+/** Whether this camera's noise has been measured here at this ISO. */
+export function measuredHere(shot: Shot): boolean {
+  if (!shot.camera || !shot.iso) return false
+  return measuredAt(load()[shot.camera]?.[String(Math.round(shot.iso))]).length > 0
 }
 
 /** The noise to state for a frame the engine cannot read, from what was measured here. */

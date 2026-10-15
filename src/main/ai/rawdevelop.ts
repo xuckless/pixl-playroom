@@ -30,6 +30,8 @@
  * code and field, never its words alone (the 0.20.0 audit's B1 and B4).
  */
 import { remember, statedNoiseFor, type NoisePlane, type Shot, type StatedNoise } from './noisebook'
+import type { Unstated } from '../../shared/rawnoise'
+import { t } from '../../shared/i18n'
 import log from 'electron-log/main'
 import { traceRegion } from '../trace'
 import type {
@@ -339,6 +341,16 @@ export interface SceneRun<T> {
   declined?: boolean
 }
 
+/** Why a frame's noise was not stated, for the user (`standInNote`'s words). */
+function unstatedWords(why: Unstated, shot: Shot): string {
+  return why === 'no-shot'
+    ? t('the photo names no camera or ISO to state its noise from')
+    : t(
+        '{{camera}} has no noise measured here at ISO {{iso}}, nor at two other ISOs to fit it from, and another camera’s is not borrowed',
+        { camera: shot.camera ?? '', iso: Math.round(shot.iso ?? 0) }
+      )
+}
+
 /** An engine error's message and code, for a line in the log. */
 function inWords(err: unknown): string {
   const e = err as { message?: unknown; code?: unknown } | null
@@ -408,7 +420,11 @@ export async function withScene<T>(
       // This frame's noise could not be read (E64): stated from what its
       // camera's other frames were measured to have, and developed again.
       const unread = noiseUnread(err)
-      const stated = unread ? statedNoiseFor(shot) : null
+      const told = unread ? statedNoiseFor(shot) : null
+      const stated = told && 'noise' in told ? told : null
+      // Nothing of its own camera to state it from: never another camera's
+      // (the owner, 2026-10-14). The released develop, and the user told why.
+      if (told && 'why' in told) why = `${why}; ${unstatedWords(told.why, shot)}`
       if (stated) {
         try {
           const value = await attempt(stated.noise)
@@ -427,7 +443,7 @@ export async function withScene<T>(
       // A frame whose noise cannot be read is this photo's trouble: the model
       // stays planned for the rest. Anything else is the model's, for the run.
       const scope = unread
-        ? 'for this photo (no noise measured yet to state for it)'
+        ? 'for this photo (no noise of its camera measured here to state for it)'
         : 'now and for the rest of this run (its switch off and on tries again)'
       console.error(
         `PIXL demosaic: ${id} was planned (${plan.tag}) but the engine refused it; developing ${next.tag} instead, ${scope}: ${why}`
