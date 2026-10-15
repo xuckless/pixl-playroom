@@ -19,6 +19,12 @@ const CACHE: [RegExp, number][] = [
   [/^brush-/, 7 * DAY],
   [/^grad-/, 7 * DAY]
 ]
+/**
+ * A step's overlays at a proxy's size were 16-bit PNGs before engine 0.21
+ * (`…-2560x1707.png`, and those guarded); they are uncompressed TIFFs now
+ * (pixels/working.ts), and the PNGs nothing reads again.
+ */
+const BLOBS: [RegExp, number][] = [[/-\d+x\d+(-g[0-9a-z]+-\d+-\d+)?\.png$/, 0]]
 
 async function sweep(dir: string, kinds: [RegExp, number][]): Promise<void> {
   const now = Date.now()
@@ -36,10 +42,12 @@ async function sweep(dir: string, kinds: [RegExp, number][]): Promise<void> {
 
 /**
  * Sweep a photo's caches as it leaves the develop view: its renders folder
- * (`before-…`, `mthumb-…`, per visit) and its cache folder (a heal's
- * leftovers, frozen masks a day old, mask planes unused for a week).
+ * (`before-…`, `mthumb-…`, per visit), its cache folder (a heal's
+ * leftovers, frozen masks a day old, mask planes unused for a week) and its
+ * steps' overlays an older Playroom sized as PNGs.
  */
 export async function sweepPhoto(rendersDir: string, cacheDir: string): Promise<void> {
   await sweep(rendersDir, RENDERS)
   await sweep(cacheDir, CACHE)
+  await sweep(join(cacheDir, 'blobs'), BLOBS)
 }

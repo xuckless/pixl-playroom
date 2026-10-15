@@ -4,6 +4,7 @@
  */
 import { readFileSync, renameSync, writeFileSync } from 'fs'
 import { colourChunks, decodePng, encodeGreyPng, encodePng16, pngSamples16 } from '../pngio'
+import { encodeTiff16, isTiffPath, readTiff16 } from '../tiffio'
 
 /** Write `data` to `file` whole or not at all (a reader never sees half of it). */
 function writeWhole(file: string, data: Buffer): void {
@@ -258,10 +259,12 @@ export function writeHeadroomGuard(rgb: Float32Array, w: number, h: number, out:
 }
 
 /**
- * A step's overlay (16-bit RGB or RGBA PNG) with its alpha multiplied by the
+ * A step's overlay (16-bit RGB or RGBA, a PNG or, at a proxy's size since
+ * engine 0.21, an uncompressed TIFF) with its alpha multiplied by the
  * frame's headroom guard (8-bit grey, the frame's size), the overlay's top
  * left at `at` on the frame: under it the float frame keeps what the step's
- * model clipped (engine 0.18: a RAW's master is Scene in float).
+ * model clipped (engine 0.18: a RAW's master is Scene in float). Written in
+ * the format it was read in, its colour carried.
  */
 export function guardOverlay(
   src: string,
@@ -270,24 +273,30 @@ export function guardOverlay(
   at: { x: number; y: number }
 ): void {
   const bytes = readFileSync(src)
-  const img = decodePng(bytes)
-  if (img.bitDepth !== 16 || (img.colorType !== 2 && img.colorType !== 6))
-    throw new Error('the step overlay is not 16-bit RGB or RGBA')
+  const tiff = isTiffPath(src)
+  const img = tiff ? readTiff16(bytes) : pngSamples16(bytes)
   const g = decodePng(readFileSync(guard))
   if (g.bitDepth !== 8 || g.colorType !== 0) throw new Error('the guard is not an 8-bit grey plane')
-  const ch = img.colorType === 6 ? 4 : 3
+  const ch = img.channels
+  if (ch !== 3 && ch !== 4) throw new Error('the step overlay is not 16-bit RGB or RGBA')
   const n = img.width * img.height
   const rgba = new Uint16Array(n * 4)
+  const from = 'samples' in img ? img.samples : img.data
   for (let y = 0; y < img.height; y++)
     for (let x = 0; x < img.width; x++) {
       const i = y * img.width + x
-      const s = i * ch * 2
+      const s = i * ch
       const d = i * 4
-      for (let c = 0; c < 3; c++) rgba[d + c] = (img.rows[s + c * 2] << 8) | img.rows[s + c * 2 + 1]
-      const a = ch === 4 ? (img.rows[s + 6] << 8) | img.rows[s + 7] : 65535
+      for (let c = 0; c < 3; c++) rgba[d + c] = from[s + c]
+      const a = ch === 4 ? from[s + 3] : 65535
       const gx = Math.min(g.width - 1, x + at.x)
       const gy = Math.min(g.height - 1, y + at.y)
       rgba[d + 3] = Math.round((a * g.rows[gy * g.width + gx]) / 255)
     }
-  writeWhole(out, encodePng16(rgba, img.width, img.height, 4, 1, colourChunks(bytes)))
+  writeWhole(
+    out,
+    'samples' in img
+      ? encodeTiff16(rgba, img.width, img.height, 4, img.icc)
+      : encodePng16(rgba, img.width, img.height, 4, 1, colourChunks(bytes))
+  )
 }
