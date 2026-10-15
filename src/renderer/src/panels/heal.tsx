@@ -15,7 +15,7 @@ import { ModelGet } from '../components/ModelGet'
 import { ensureModel } from '../lib/ensureModel'
 import { useModels } from '../lib/models'
 import { bakeLiveSpots, removeLiveSpots } from '../lib/heal'
-import { useScope } from '../state/scope'
+import { useScopeMask } from '../state/scope'
 import { useDevelop } from '../state/develop'
 import { useUi } from '../state/ui'
 import { t, tk, tp } from '../lib/i18n'
@@ -103,7 +103,7 @@ export function HealPanel(): React.JSX.Element | null {
   )
   const heal = useUi((s) => s.heal)
   const setHeal = useUi((s) => s.setHeal)
-  const { layer } = useScope()
+  const layer = useScopeMask()
   const [baking, setBaking] = useState(false)
   const models = useModels()
   if (!recipe) return null

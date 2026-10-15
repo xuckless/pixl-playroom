@@ -41,7 +41,7 @@ import { askModel } from '../state/modelPrompt'
 import { applyUpright, startGuides } from '../lib/upright'
 import type { UprightMode } from '../../../shared/upright'
 import { withKey } from '../lib/commands'
-import { scoped, scopedView, scopeLayer, useScope } from '../state/scope'
+import { scoped, scopedView, scopeLayer, useInMask, useScoped, useScopeMask } from '../state/scope'
 import { useUi } from '../state/ui'
 import { InfoTip, type Tip } from '../components/InfoTip'
 import { TIPS } from './tips'
@@ -163,21 +163,21 @@ const PROFILE_LABELS: Record<string, string> = {
 const lutFileName = (path: string): string => path.split(/[\\/]/).pop() ?? path
 
 function ProfileRow(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
+  const profileNow = useDevelop((s) => s.recipe?.profile)
   const replace = useDevelop((s) => s.replace)
   const [luts, setLuts] = useState<LutProfile[] | null>(null)
   useEffect(() => {
     void api.presets.luts().then(setLuts)
   }, [])
-  if (!recipe) return null
+  if (!profileNow) return null
   // A recipe from elsewhere names its LUT where it was there: here it is the
   // one of that name in Playroom's LUT folder, or missing (main/lutfile.ts).
-  const chosen = recipe.profile.kind === 'lut' ? recipe.profile : null
+  const chosen = profileNow.kind === 'lut' ? profileNow : null
   const found = chosen
     ? luts?.find((l) => lutFileName(l.path) === lutFileName(chosen.path))
     : undefined
   const missing = chosen !== null && luts !== null && !found
-  const current = chosen ? `lut:${found?.path ?? chosen.path}` : recipe.profile.kind
+  const current = chosen ? `lut:${found?.path ?? chosen.path}` : profileNow.kind
   const choose = async (v: string): Promise<void> => {
     let profile: ProfileRef
     if (v === 'import') {
@@ -195,6 +195,8 @@ function ProfileRow(): React.JSX.Element | null {
       const path = v.slice(4)
       profile = { kind: 'lut', name: luts?.find((l) => l.path === path)?.name ?? 'LUT', path }
     } else profile = { kind: v } as ProfileRef
+    const recipe = useDevelop.getState().recipe
+    if (!recipe) return
     replace(
       { ...recipe, profile },
       `Profile: ${profile.kind === 'lut' ? profile.name : PROFILE_LABELS[profile.kind]}`
@@ -228,7 +230,7 @@ function ProfileRow(): React.JSX.Element | null {
           )}
         </p>
       )}
-      {recipe.profile.kind === 'lut' && (
+      {profileNow.kind === 'lut' && (
         <RS
           label={tk('Amount')}
           read={(r) => r.profileAmount}
@@ -364,7 +366,9 @@ function CameraColourRow({
 function WhiteBalanceRows(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
   // In a mask the white is a relative shift, without presets or the picker.
-  const { recipe, replace, layer } = useScope()
+  const layer = useInMask()
+  const wbNow = useScoped((r) => r.wb)
+  const { replace } = scoped
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const [saved, setSaved] = useState<SavedWb[]>([])
@@ -372,7 +376,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
   useEffect(() => {
     void api.app.getSetting<SavedWb[]>(WB_PRESETS_KEY).then((v) => setSaved(v ?? []))
   }, [])
-  if (!session || !recipe) return null
+  if (!session || !wbNow) return null
   const ctx = { isRaw: session.isRaw, asShot: session.asShot }
   const abs = !layer && absoluteWb(ctx)
   // Saved presets are in the units they were made in: absolute Kelvin for a
@@ -405,17 +409,15 @@ function WhiteBalanceRows(): React.JSX.Element | null {
   }
   const shot = session.asShot
   const shownTemp =
-    recipe.wb.mode === 'as-shot'
-      ? abs && shot
-        ? shot.temperature_kelvin
-        : 0
-      : recipe.wb.temperature
-  const shownTint =
-    recipe.wb.mode === 'as-shot' ? (abs && shot ? shot.tint * 3000 : 0) : recipe.wb.tint
+    wbNow.mode === 'as-shot' ? (abs && shot ? shot.temperature_kelvin : 0) : wbNow.temperature
+  const shownTint = wbNow.mode === 'as-shot' ? (abs && shot ? shot.tint * 3000 : 0) : wbNow.tint
   const custom = (r: Recipe, temp: number, n: number): void => {
     r.wb = { mode: 'custom', temperature: temp, tint: n, preset: null }
   }
   const choose = async (v: string): Promise<void> => {
+    // The recipe as the scope sees it when the choice is made (Auto's comes after its measure).
+    const recipe = scoped.recipe()
+    if (!recipe) return
     if (v === 'as-shot')
       replace(
         { ...recipe, wb: { mode: 'as-shot', temperature: 0, tint: 0, preset: null } },
@@ -432,7 +434,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
             .say(t('Auto white balance found no neutral to work from'), 'error')
         replace(
           {
-            ...recipe,
+            ...(scoped.recipe() ?? recipe),
             wb: { mode: 'custom', temperature: wb.temperature, tint: wb.tint, preset: 'auto' }
           },
           tk('White balance: Auto')
@@ -459,7 +461,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
         )
     }
   }
-  const presetValue = recipe.wb.mode === 'as-shot' ? 'as-shot' : (recipe.wb.preset ?? 'custom')
+  const presetValue = wbNow.mode === 'as-shot' ? 'as-shot' : (wbNow.preset ?? 'custom')
   return (
     <>
       {!layer && session.rawColour && <CameraColourRow session={session} />}
@@ -568,21 +570,27 @@ function WhiteBalanceRows(): React.JSX.Element | null {
 
 /** Above the cards: the profile, and colour or black and white (the whole photo's only). */
 export function AdjustHead(): React.JSX.Element | null {
-  const { recipe, replace, layer } = useScope()
-  if (!recipe || layer) return null
+  const inMask = useInMask()
+  const treatment = useDevelop((s) => s.recipe?.treatment)
+  if (!treatment || inMask) return null
   return (
     <div className="adjust-head">
       <div className="row">
         <span className="adjust-head-label">{t('Treatment')}</span>
         <Tabs
-          value={recipe.treatment}
+          value={treatment}
           tabs={[
             { value: 'color', label: t('Colour') },
             { value: 'bw', label: t('B&W') }
           ]}
-          onChange={(v) =>
-            replace({ ...recipe, treatment: v }, v === 'bw' ? tk('Black & white') : tk('Colour'))
-          }
+          onChange={(v) => {
+            const recipe = useDevelop.getState().recipe
+            if (recipe)
+              scoped.replace(
+                { ...recipe, treatment: v },
+                v === 'bw' ? tk('Black & white') : tk('Colour')
+              )
+          }}
         />
       </div>
       <ProfileRow />
@@ -597,13 +605,14 @@ export function WhiteBalanceBody(): React.JSX.Element {
 /** Light's Auto: the engine sets the six sliders from the picture (the whole photo only). */
 export function AutoTone(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
-  const { recipe, replace, layer } = useScope()
-  if (!session || !recipe || layer) return null
+  const hasRecipe = useDevelop((s) => s.recipe !== null)
+  const inMask = useInMask()
+  if (!session || !hasRecipe || inMask) return null
   const auto = async (): Promise<void> => {
     try {
       const basic = await runJob(t('Auto tone'), () => api.develop.autoTone(session.key))
-      const now = useDevelop.getState().recipe ?? recipe
-      replace({ ...now, basic }, tk('Auto tone'))
+      const now = useDevelop.getState().recipe
+      if (now) scoped.replace({ ...now, basic }, tk('Auto tone'))
     } catch (err) {
       useLibrary.getState().say(errorText(err), 'error')
     }
@@ -675,9 +684,9 @@ const TONE_BASE_LABEL: Record<ToneBaseKind, string> = {
  * view whenever they are. The photo's setting: its masks' Tone follows it.
  */
 function ToneBaseRow(): React.JSX.Element | null {
-  const whole = useDevelop((s) => s.recipe)
-  if (!whole) return null
-  const value = whole.toneBase ?? 'none'
+  // The photo's own, from a mask's scope too.
+  const value = useDevelop((s) => (s.recipe ? (s.recipe.toneBase ?? 'none') : null))
+  if (!value) return null
   return (
     <div className="row tone-base">
       <span className="adjust-head-label">{t('Tone base')}</span>
@@ -698,7 +707,7 @@ function ToneBaseRow(): React.JSX.Element | null {
 
 /** Lightroom's Presence: local contrast, then how strong colour is (Hue in a mask), then Smoothing. */
 export function PresenceBody(): React.JSX.Element {
-  const { layer } = useScope()
+  const layer = useInMask()
   return (
     <>
       <RS
@@ -792,11 +801,12 @@ function TatToggle({ target }: { target: 'hsl' | 'curve' }): React.JSX.Element {
  * saturation), then Lightroom's four regions that bend it by tone.
  */
 export function ToneCurveCustom(): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
+  const { edit, commit } = scoped
+  const curve = useScoped((r) => r.toneCurve)
   const stats = useDevelop((s) => s.stats)
   const channel = useDevelop((s) => s.curveChannel)
   const setChannel = useDevelop((s) => s.setCurveChannel)
-  if (!recipe) return null
+  if (!curve) return null
   const colours: Record<CurveChannel, string> = {
     master: '#c9bdf7',
     red: '#ff5a5a',
@@ -826,7 +836,7 @@ export function ToneCurveCustom(): React.JSX.Element | null {
         />
       </div>
       <CurveEditor
-        points={recipe.toneCurve[channel]}
+        points={curve[channel]}
         colour={colours[channel]}
         histogram={hist}
         onChange={(p: CurvePointSetting[], live) => edit((r) => (r.toneCurve[channel] = p), live)}
@@ -851,11 +861,11 @@ export function ToneCurveCustom(): React.JSX.Element | null {
       </div>
       <Slider
         label={t('Refine saturation')}
-        value={recipe.toneCurve.refineSaturation}
+        value={curve.refineSaturation}
         min={0}
         max={100}
         def={100}
-        disabled={isIdentityCurve(recipe.toneCurve.master)}
+        disabled={isIdentityCurve(curve.master)}
         title={t(
           'How much saturation the RGB curve brings as it steepens: lower keeps colours as they were'
         )}
@@ -920,7 +930,9 @@ const AXIS_TITLE: Record<'hue' | 'saturation' | 'luminance', string> = {
 }
 
 export function MixerBody(): React.JSX.Element | null {
-  const { recipe, layer } = useScope()
+  const layer = useInMask()
+  // Whether the photo is black and white: each slider reads its own value.
+  const bw = useScoped((r) => r.treatment === 'bw' || r.profile.kind === 'monochrome')
   const tab = useDevelop((s) => s.hslTab)
   const setTab = useDevelop((s) => s.setHslTab)
   const focus = useDevelop((s) => s.hslFocus)
@@ -936,8 +948,7 @@ export function MixerBody(): React.JSX.Element | null {
     )
     return () => clearTimeout(timer)
   }, [focus, tab])
-  if (!recipe) return null
-  const bw = recipe.treatment === 'bw' || recipe.profile.kind === 'monochrome'
+  if (bw === null) return null
   if (bw && layer) {
     return (
       <ToolPanel>
@@ -1067,7 +1078,8 @@ function swatchColour(p: PointColorSetting): string {
  * its own. The eyedropper adds a swatch; the selected one shows its shifts.
  */
 function PointColorSection(): React.JSX.Element | null {
-  const { recipe, replace } = useScope()
+  const { replace } = scoped
+  const points = useScoped((r) => r.pointColors)
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const pointId = useDevelop((s) => s.pointId)
@@ -1079,14 +1091,14 @@ function PointColorSection(): React.JSX.Element | null {
     },
     []
   )
-  if (!recipe) return null
-  const points = recipe.pointColors
+  if (!points) return null
   // The selected swatch, else the newest.
   const sel = points.find((p) => p.id === pointId) ?? points[points.length - 1] ?? null
   const index = sel ? points.indexOf(sel) : -1
   const full = points.length >= MAX_POINT_COLORS
   const remove = (): void => {
-    if (!sel) return
+    const recipe = scoped.recipe()
+    if (!sel || !recipe) return
     const next = structuredClone(recipe)
     next.pointColors = next.pointColors.filter((p) => p.id !== sel.id)
     setPointId(next.pointColors[Math.max(0, index - 1)]?.id ?? null)
@@ -1186,14 +1198,15 @@ function PointColorSection(): React.JSX.Element | null {
  * the Primaries' wheels).
  */
 export function AddColourSection(): React.JSX.Element | null {
-  const { recipe, edit, layer } = useScope()
-  if (!recipe) return null
+  const layer = useScopeMask()
+  const add = useScoped((r) => r.colorGrade.add)
+  if (!add) return null
   return (
     <Section id="grade.add" title={t('Add colour')}>
       <AddColourControl
         target={layer ? { layer: layer.id, part: 'grade' } : 'grade'}
-        value={recipe.colorGrade.add}
-        onChange={(v, live) => edit((r) => (r.colorGrade.add = v), live)}
+        value={add}
+        onChange={(v, live) => scoped.edit((r) => (r.colorGrade.add = v), live)}
         hint={layer ? TIPS['grading.add.mask'] : TIPS['grading.add']}
       />
     </Section>
@@ -1206,8 +1219,9 @@ export function AddColourSection(): React.JSX.Element | null {
  * wheels do what they did.
  */
 export function GradingBody(): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
-  if (!recipe) return null
+  const { edit, commit } = scoped
+  const grade = useScoped((r) => r.colorGrade)
+  if (!grade) return null
   const wheel = (
     key: 'shadows' | 'midtones' | 'highlights' | 'global',
     label: string,
@@ -1216,7 +1230,7 @@ export function GradingBody(): React.JSX.Element | null {
     <ColorWheel
       label={t(label)}
       size={size}
-      value={recipe.colorGrade[key]}
+      value={grade[key]}
       onChange={(w, live) => edit((r) => (r.colorGrade[key] = w), live)}
       onCommit={() => commit(`Colour grade: ${label}`)}
     />
@@ -1317,8 +1331,9 @@ function NoiseAnalysis(): React.JSX.Element {
 }
 
 export function DetailBody(): React.JSX.Element | null {
-  const { recipe, layer } = useScope()
-  if (!recipe) return null
+  const layer = useInMask()
+  const hasRecipe = useDevelop((s) => s.recipe !== null)
+  if (!hasRecipe) return null
   // The AI boxes act on the whole photo: in a mask, the sliders alone.
   const ai = !layer
   return (
@@ -1464,12 +1479,14 @@ function LosslessRow(): React.JSX.Element | null {
  * time. Developed at full size only, so it shows at 100% and in the export.
  */
 function RawDenoise(): React.JSX.Element | null {
-  const { recipe, edit, commit, layer } = useScope()
+  const { edit, commit } = scoped
+  const layer = useInMask()
+  const rawDenoise = useScoped((r) => r.detail.rawDenoise)
   const bayer = useDevelop((s) => s.session?.isRaw === true && s.session.info.raw_cfa === 'Bayer')
   const models = useModels()
   const switches = useSwitches()
   const installed = models.find((m) => m.id === 'pmrid')?.installed === true
-  if (!recipe || !bayer || layer) return null
+  if (rawDenoise === null || !bayer || layer) return null
   // The PIXL demosaic (an engine development kit's) denoises as it develops:
   // nothing to choose while it is this photo's develop. The edit keeps its choice.
   if (pixlDemosaicActive('Bayer', models, switches?.pixlDemosaic !== false)) return null
@@ -1482,7 +1499,7 @@ function RawDenoise(): React.JSX.Element | null {
       <label className="check">
         <input
           type="checkbox"
-          checked={recipe.detail.rawDenoise}
+          checked={rawDenoise}
           onChange={(e) => {
             const on = e.target.checked
             if (!on || installed) return set(on)
@@ -1492,9 +1509,7 @@ function RawDenoise(): React.JSX.Element | null {
         {t('Denoise the RAW data')}
       </label>
       <InfoTip tip={TIPS['detail.rawDenoise']} label={t('Denoise the RAW data')} />
-      {recipe.detail.rawDenoise && (
-        <span className="muted micro">{t('Shows at 100% and in the export')}</span>
-      )}
+      {rawDenoise && <span className="muted micro">{t('Shows at 100% and in the export')}</span>}
     </div>
   )
 }
@@ -1502,20 +1517,31 @@ function RawDenoise(): React.JSX.Element | null {
 // ── Effects ──────────────────────────────────────────────────────────────────
 
 export function EffectsBody(): React.JSX.Element | null {
-  const { recipe, edit, commit, layer } = useScope()
+  const { edit, commit } = scoped
+  const layer = useScopeMask()
   const isHdr = useDevelop((s) => s.session?.isHdr === true)
-  if (!recipe) return null
-  const style = recipe.effects.vignetteStyle
+  // What the body itself shows; each slider reads its own value.
+  const read = useScoped(
+    (r) =>
+      [
+        r.effects.vignetteStyle,
+        r.effects.vignetteAmount > 0,
+        r.treatment === 'bw' || r.profile.kind === 'monochrome',
+        r.effects.wash,
+        r.effects.grainResponse
+      ] as const
+  )
+  if (!read) return null
+  const [style, lightens, bw, wash, grainResponse] = read
   const paint = style === 'paint'
   // Colour priority lightening has no headroom to stop at (engine 0.21).
-  const colourFallsBack = isHdr && style === 'colour' && recipe.effects.vignetteAmount > 0
-  const bw = recipe.treatment === 'bw' || recipe.profile.kind === 'monochrome'
+  const colourFallsBack = isHdr && style === 'colour' && lightens
   return (
     <ToolPanel>
       <Section id="effects.vignette" title={t('Post-crop vignette')} tip={TIPS['effects.vignette']}>
         <Select
           label={t('Style')}
-          value={recipe.effects.vignetteStyle}
+          value={style}
           options={[
             { value: 'highlight', label: t('Highlight priority') },
             { value: 'colour', label: t('Colour priority') },
@@ -1580,7 +1606,7 @@ export function EffectsBody(): React.JSX.Element | null {
       <Section id="effects.wash" title={t('Colour wash')}>
         <AddColourControl
           target={layer ? { layer: layer.id, part: 'wash' } : 'wash'}
-          value={recipe.effects.wash}
+          value={wash}
           onChange={(v, live) => edit((r) => (r.effects.wash = v), live)}
           hint={TIPS['effects.wash']}
         />
@@ -1624,7 +1650,7 @@ export function EffectsBody(): React.JSX.Element | null {
         )}
         <ChoiceRow
           label={tk('Response')}
-          value={recipe.effects.grainResponse}
+          value={grainResponse}
           choices={GRAIN_RESPONSES.map((v) => ({ value: v, label: GRAIN_RESPONSE_LABEL[v] }))}
           tip={TIPS['effects.grain.response']}
           onChange={(v) => {
@@ -1729,14 +1755,15 @@ function HalationSection({ bw }: { bw: boolean }): React.JSX.Element {
  * photo's own (a mask has none).
  */
 function BloomSection({ bw }: { bw: boolean }): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
-  if (!recipe) return null
-  const glow = recipe.effects.bloom.style === 'glow'
+  const { edit, commit } = scoped
+  const bloomStyle = useScoped((r) => r.effects.bloom.style)
+  if (!bloomStyle) return null
+  const glow = bloomStyle === 'glow'
   return (
     <Section id="effects.bloom" title={t('Bloom')} tip={TIPS['effects.bloom']}>
       <ChoiceRow
         label={tk('Style')}
-        value={recipe.effects.bloom.style}
+        value={bloomStyle}
         choices={BLOOM_STYLES.map((v) => ({ value: v, label: BLOOM_STYLE_LABEL[v] }))}
         onChange={(v) => {
           edit((r) => (r.effects.bloom.style = v))
