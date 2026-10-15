@@ -84,6 +84,11 @@ One row (`id = 1`): the photo the project was made from, as it was then.
 | `is_raw`        | 1 for a camera RAW                                                 |
 | `sha1`          | its SHA-1, when known                                              |
 
+A project travels and is opened by double-clicking it, so a reader checks the origin before
+any of it names a file: `name` is a file name with no folder in it, `ext` is an image
+extension Playroom lists (lower case, letters and digits), and `path` is absolute and never a
+device path. A file whose origin fails is not a project. Playroom never writes one.
+
 ### `items`
 
 The photo and its virtual copies, one row each.
@@ -171,7 +176,8 @@ Large binaries, stored once by content.
 
 - in order of `idx` from 0;
 - each chunk at most 4 MiB (`data` is a BLOB);
-- a reader concatenates the chunks.
+- a reader concatenates the chunks, and checks that they hash to the blob's name before it
+  uses them (Playroom writes a blob out only then).
 
 A blob nothing names may be removed. Names are `original.blob`, and any
 `"blob"`, `"alpha"` or `"ref"` field holding a 64-hex hash in a recipe,
