@@ -58,6 +58,7 @@ import {
   type ToneBaseKind
 } from './recipe'
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
+import { curvesVsV0, logWheelsV0, regionCurveV0 } from './colourv0'
 import { tk } from './i18n'
 import { effective } from './edits'
 import {
@@ -194,6 +195,12 @@ export interface CompileContext {
    * 82 ms: the drag keeps that base (unless `dragWithoutBase`).
    */
   gpuDrag?: boolean
+  /**
+   * `'v0'`: engine 0.20's colour maths (shared/colourv0.ts), only for
+   * `scripts/look-delta.mjs --maths` to measure what 0.21's moved. Never a
+   * photo's; goes with colourv0.ts once the catalog is retuned.
+   */
+  colourForm?: 'v0'
 }
 
 /**
@@ -1282,6 +1289,7 @@ function settingsStages(
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
   const hdr = ctx.hdr === true
+  const v0 = ctx.colourForm === 'v0'
   // One value for every op that takes it (Tone, the Color Mixer, Vibrance,
   // Dehaze, Point colour, Color grading); null in a draft.
   const smoothing = smoothingOf(r.presence.smoothing, ctx)
@@ -1306,6 +1314,10 @@ function settingsStages(
   const wb = base ? baseWhite(r, ctx) : layerWhite(r.wb)
   if (wb)
     linear.push({ WhiteBalance: { temperature_kelvin: round4(wb.kelvin), tint: round4(wb.tint) } })
+  if (v0 && (r.primaries.temp !== 0 || r.primaries.tint !== 0)) {
+    const w = opFromRelative(r.primaries.temp, r.primaries.tint)
+    linear.push({ WhiteBalance: { temperature_kelvin: round4(w.kelvin), tint: round4(w.tint) } })
+  }
   const mix = calibrationMatrix(r.calibration)
   if (mix) linear.push({ ChannelMixer: { red: mix[0], green: mix[1], blue: mix[2] } })
   if (r.basic.exposure !== 0)
@@ -1378,7 +1390,7 @@ function settingsStages(
         shadows: clamp(b.shadows / 100, -1, 1),
         whites: clamp(b.whites / 100, -1, 1),
         blacks: clamp(b.blacks / 100, -1, 1),
-        smoothing,
+        smoothing: v0 ? null : smoothing,
         // Only when one is set, so a request is 0.19's where none is.
         ...((tb) => (tb ? { base: tb } : {}))(toneBaseFor(ctx))
       }
@@ -1406,8 +1418,10 @@ function settingsStages(
       LocalContrast: { amount: clamp(p.clarity / 100, -1, 1), radius: 0.012, midtones: 0.8 }
     })
   }
-  const region = regionCurveOp(r.toneCurve)
+  const region = v0 ? null : regionCurveOp(r.toneCurve)
   if (region) look.push(region)
+  const regionV0 = v0 ? regionCurveV0(r.toneCurve) : null
+  if (regionV0) look.push(curvesOp({ master: tonal(regionV0, hdr) }))
   const tc = r.toneCurve
   const pc: Partial<Curves> = {}
   if (!isIdentityCurve(tc.master)) pc.master = tonal(tc.master, hdr)
@@ -1421,7 +1435,7 @@ function settingsStages(
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
   const tail = bw && finish ? finish : look
-  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, smoothing)
+  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, v0 ? null : smoothing)
   if (hsl) tail.push(hsl)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
@@ -1443,16 +1457,16 @@ function settingsStages(
   // Resolve's primaries, after Lightroom's grading (shared/resolve.ts); on a
   // B&W photo after its mono conversion, so Lift and Gain tints (and Temp
   // and Tint, the gain balance just before them) tone it.
-  const balance = primariesBalance(r.primaries)
+  const balance = v0 ? null : primariesBalance(r.primaries)
   if (balance) tail.push(balance)
-  tail.push(...primariesOp(r.primaries))
+  tail.push(...primariesOp(v0 ? { ...r.primaries, lumMix: 0 } : r.primaries))
   // Resolve's Log wheels, in log (`lookStages` gives them their stage);
   // Contrast and Pivot stay display-referred, in the Primary before them.
-  tail.push(...logWheelsOps(r.logWheels))
+  tail.push(...(v0 ? logWheelsV0(r.logWheels) : logWheelsOps(r.logWheels)))
   // Resolve's vs curves need colour: a black-and-white photo's are kept, not
   // applied (its Curves card says so and points to the B&W mix). A mask's
   // run before the mono conversion, so they feed the mix.
-  const vs = curvesVsOp(r.curvesVs)
+  const vs = v0 ? curvesVsV0(r.curvesVs) : curvesVsOp(r.curvesVs)
   if (vs && !bw) tail.push(vs)
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)

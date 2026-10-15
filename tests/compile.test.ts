@@ -534,3 +534,31 @@ test('engine 0.19.2: the look stage no longer floors Scene’s wide colours firs
   // Nothing in the look stage, no floor either.
   assert.equal(compile(defaultRecipe(false), ctx).grade, null)
 })
+
+test('colourForm v0 is engine 0.20’s colour maths, for scripts/look-delta.mjs --maths only', () => {
+  const r = defaultRecipe(false)
+  r.basic.shadows = -30
+  r.hsl.blue.luminance = -20
+  r.toneCurve.lights = 40
+  r.primaries.temp = 20
+  r.primaries.lumMix = 100
+  r.primaries.lift.y = 0.05
+  r.logWheels.shadow = { y: 0, r: 0.02, g: 0, b: 0 }
+  r.curvesVs.hueLum = [{ x: 0.6, y: 0.8 }]
+  const stages = compile(r, { ...ctx, colourForm: 'v0' }).grade!.layers[0].stages
+  assert.deepEqual(
+    stages.map((s) => (s.space === 'LinearWorking' ? s.space : 'look')),
+    ['LinearWorking', 'look']
+  )
+  assert.deepEqual(kinds(stages[0].ops), ['WhiteBalance'])
+  const look = stages[1].ops
+  const tone = look.find((o) => 'Tone' in o) as { Tone: { smoothing: unknown } }
+  assert.equal(tone.Tone.smoothing, null)
+  const hsl = look.find((o) => 'HslBands' in o) as { HslBands: { smoothing: unknown } }
+  assert.equal(hsl.HslBands.smoothing, null)
+  assert.ok(look.some((o) => 'Curves' in o && o.Curves.master?.points.length === 17))
+  for (const k of ['ParametricCurve', 'GainBalance', 'LumaPrimary', 'LogWheels'])
+    assert.ok(!kinds(look).includes(k), k)
+  assert.ok(look.some((o) => 'Qualifier' in o && o.Qualifier.key.luma?.centre === 0))
+  assert.ok(!look.some((o) => 'Curves' in o && o.Curves.hue_vs_luma))
+})
