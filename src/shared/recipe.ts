@@ -1114,9 +1114,11 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
   const c = value
   // A plane's reference names its file in the cache: only a SHA-256 is one
   // (shared/ids.ts). Any other is dropped, and the plane named again from its
-  // PNG; with no PNG to name it from, there is no plane.
+  // PNG; one named only by a reference that is not a name has no plane. A
+  // component with neither is kept as it always was.
   const ref = isPlaneHash(c.ref) ? { ref: c.ref } : {}
-  if ((c.kind === 'brush' || c.kind === 'depth') && !isPlaneHash(c.ref) && !c.png) return null
+  const badRef = typeof c.ref === 'string' && c.ref !== '' && !isPlaneHash(c.ref)
+  if ((c.kind === 'brush' || c.kind === 'depth') && badRef && !c.png) return null
   const base = {
     id: safeIdOf(c.id) ?? newId(),
     mode: MASK_MODES.includes(c.mode as MaskMode) ? (c.mode as MaskMode) : ('Add' as MaskMode),

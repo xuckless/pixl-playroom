@@ -258,7 +258,9 @@ test('a recipe’s ids and plane references are kept only when they are safe nam
         comp({ id: 'c2', ref: '../../Documents/secret', png: 'UE5H' }),
         comp({ id: 'c3', ref: '../../Documents/secret' }),
         comp({ id: 'c4', kind: 'depth', ref: 'not-a-hash' }),
-        comp({ id: 'c5', kind: 'depth', ref: HASH })
+        comp({ id: 'c5', kind: 'depth', ref: HASH }),
+        // Neither a reference nor a PNG names no file: kept, as it always was.
+        comp({ id: 'c6' })
       ]
     }
   ]
@@ -276,7 +278,8 @@ test('a recipe’s ids and plane references are kept only when they are safe nam
       // Named again from its PNG when it is stored or drawn.
       ['c2', null],
       // c3 and c4: no plane to name, so no plane.
-      ['c5', HASH]
+      ['c5', HASH],
+      ['c6', null]
     ]
   )
 })
