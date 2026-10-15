@@ -3,8 +3,8 @@ import type { BrushIn, BrushOut } from '../../workers/brush.worker'
 /**
  * The brush worker, one for the app, started the first time the brush is
  * used. A brush layer gives it its canvas (transferred, so the worker draws
- * the stroke there itself) and then its dabs; a stroke's end comes back as
- * the plane's PNG.
+ * the stroke there itself) and then its dabs; an Auto Mask stroke's end
+ * comes back as the plane's PNG.
  */
 class BrushWorker {
   private readonly worker = new Worker(new URL('../../workers/brush.worker.ts', import.meta.url), {
@@ -37,12 +37,16 @@ class BrushWorker {
     this.post({ t: 'init', canvas }, [canvas])
   }
 
-  /** End the stroke: the plane after it, as a grey PNG in base64 (null if nothing was painted). */
-  finish(density: number): Promise<string | null> {
+  /**
+   * End the stroke. With `plane`, the brush's plane after it, as a grey PNG
+   * in base64 (null if nothing was painted); without (a stroke the engine
+   * paints as a vector), it is only let go of.
+   */
+  finish(plane: boolean): Promise<string | null> {
     const id = ++this.nextId
     return new Promise((resolve, reject) => {
       this.waiting.set(id, (r) => (r.error ? reject(new Error(r.error)) : resolve(r.png)))
-      this.post({ t: 'end', id, density })
+      this.post({ t: 'end', id, plane })
     })
   }
 }

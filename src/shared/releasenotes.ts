@@ -163,7 +163,21 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
           tk(
             'AI masks are found on the picture as you see it, so a click lands on what you clicked.'
           ),
-          tk('Change the lens correction and the masks stay on their subject, in the export too.')
+          tk('Change the lens correction and the masks stay on their subject, in the export too.'),
+          tk(
+            'Strokes stay on their subject when you change the lens corrections or Upright, or switch Optics off, like every other mask. Painting into a mask a model found with Optics off lands where you paint, too.'
+          )
+        ]
+      },
+      {
+        title: tk('Brushes, sharper'),
+        items: [
+          tk(
+            'Brush strokes are vectors now, so a stroke is as crisp on a full-size export as it was on screen. Density says how strong a stroke is: scrubbing back and forth in one stroke adds nothing, a second stroke on top does. Flow has left the building. Brushes you painted before render as they always did.'
+          ),
+          tk(
+            'Paint into a mask that already does something and the adjustment appears under the brush as you go, not just the overlay.'
+          )
         ]
       },
       {

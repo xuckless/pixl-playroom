@@ -7,10 +7,13 @@ import type { Distortion } from '../src/shared/engine-types'
 import { compile, type CompileContext } from '../src/shared/compile'
 import { diffRecipe, applyPatch } from '../src/shared/history'
 import {
+  areaScale,
   carryFrame,
   frameMap,
   framesIn,
   gridPoint,
+  isRaster,
+  isVector,
   lensFrameKey,
   makeGrid,
   normaliseLensFrame,
@@ -18,6 +21,8 @@ import {
   placeMasks,
   planeWarp,
   rebaseNeed,
+  remapComponent,
+  remapStrokes,
   retagMasks,
   sameLensFrame,
   spotFramesKey,
@@ -81,6 +86,7 @@ const MAPS: FrameMaps = {
 }
 
 const near = (a: P, b: P, e: number): boolean => Math.hypot(a.x - b.x, a.y - b.y) < e
+const round5 = (v: number): number => Math.round(v * 1e5) / 1e5
 
 test('an ST map read back, and inverted by Newton’s method, inside the frame and past it', () => {
   const f = barrel(0.12)
@@ -489,4 +495,160 @@ test('a model’s mask lands on the lens it was found on, Optics switched while 
   const off = { ...r, off: { optics: true } }
   assert.equal(own(await land(off)).lensFrame, null)
   assert.equal('lensFrame' in own(await land(r)), false)
+})
+
+/** A brush of strokes (0.21.0, E36): over a plane (`plane`) or alone. */
+function strokesBrush(
+  id: string,
+  plane: boolean
+): Extract<MaskComponentSetting, { kind: 'brush' }> {
+  return {
+    id,
+    kind: 'brush',
+    mode: 'Add',
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    width: 30,
+    height: 20,
+    png: '',
+    ...(plane ? { ref: 'b'.repeat(64) } : {}),
+    strokes: [
+      { id: `${id}-1`, dabs: [0.3, 0.6, 0.02, 1, 0.35, 0.62, 0.03, 0.5], softness: 0.2, flow: 0.8 },
+      { id: `${id}-2`, dabs: [0.9, 0.12, 0.01, 1], softness: 0, flow: 1, erase: true }
+    ]
+  }
+}
+
+test('brush strokes are points: each dab carried, its radius by the scale an area keeps there', () => {
+  const alone = strokesBrush('alone', false)
+  const over = strokesBrush('over', true)
+  // Strokes alone are placed by their points; over a plane they go with it.
+  assert.ok(isVector(alone) && !isRaster(alone))
+  assert.ok(!isVector(over) && isRaster(over))
+  assert.ok(!isVector({ ...alone, strokes: [] }))
+  const ab = frameMap(MAPS, FRAME_A, FRAME_B)
+  const moved = remapStrokes(alone.strokes!, ab)
+  for (const [i, s] of alone.strokes!.entries())
+    for (let k = 0; k < s.dabs.length; k += 4) {
+      const centre = { x: s.dabs[k], y: s.dabs[k + 1] }
+      const d = moved[i].dabs
+      // Kept as the recipe keeps a dab: to five places.
+      const q = ab(centre)
+      assert.deepEqual({ x: d[k], y: d[k + 1] }, { x: round5(q.x), y: round5(q.y) })
+      assert.equal(d[k + 2], round5(s.dabs[k + 2] * areaScale(ab, centre)))
+      assert.notEqual(d[k + 2], s.dabs[k + 2])
+      // The pen's pressure stays.
+      assert.equal(d[k + 3], s.dabs[k + 3])
+    }
+  // Softness, strength and the eraser stay too.
+  assert.deepEqual(
+    moved.map((s) => [s.id, s.softness, s.flow, s.erase]),
+    alone.strokes!.map((s) => [s.id, s.softness, s.flow, s.erase])
+  )
+  assert.deepEqual(remapComponent(alone, ab).strokes, moved)
+  // Through the loupe's coarse grid of the same map (lib/planes.ts `brushOn`): close.
+  const grid = makeGrid(frameMap(MAPS, FRAME_B, FRAME_A), ab)
+  const viaGrid = remapStrokes(alone.strokes!, (p) => gridPoint(grid.toRendered, grid.n, p))
+  for (const [i, s] of viaGrid.entries())
+    for (let k = 0; k < s.dabs.length; k++)
+      assert.ok(Math.abs(s.dabs[k] - moved[i].dabs[k]) < 3e-4, `${i}:${k}`)
+})
+
+test('a render keeps strokes it carried: the same dabs again, new ones and new maps carried anew', () => {
+  const r = withMasks(FRAME_A)
+  r.layers[0].components = [strokesBrush('kept', false)]
+  r.retouch = []
+  const strokesOf = (x: Recipe): Extract<MaskComponentSetting, { kind: 'brush' }>['strokes'] =>
+    (x.layers[0].components[0] as Extract<MaskComponentSetting, { kind: 'brush' }>).strokes
+  const ab = frameMap(MAPS, FRAME_A, FRAME_B)
+  const first = placeMasks(r, { to: FRAME_B, maps: MAPS }, 'render')
+  assert.deepEqual(strokesOf(first), remapStrokes(strokesOf(r)!, ab))
+  // The same strokes as another recipe (each update crosses IPC as a copy): kept.
+  const again = placeMasks(structuredClone(r), { to: FRAME_B, maps: MAPS }, 'render')
+  assert.deepEqual(strokesOf(again), strokesOf(first))
+  assert.equal(strokesOf(again)![0].dabs, strokesOf(first)![0].dabs)
+  // A dab moved: that stroke is carried again, the other is kept.
+  const edited = structuredClone(r)
+  strokesOf(edited)![0].dabs[0] = 0.4
+  const third = placeMasks(edited, { to: FRAME_B, maps: MAPS }, 'render')
+  assert.deepEqual(strokesOf(third), remapStrokes(strokesOf(edited)!, ab))
+  assert.notEqual(strokesOf(third)![0].dabs, strokesOf(first)![0].dabs)
+  assert.equal(strokesOf(third)![1].dabs, strokesOf(first)![1].dabs)
+  // Other maps for the same frames (another photo's aspect): carried by them.
+  const other: FrameMaps = { ...MAPS, [lensFrameKey(FRAME_B)]: sampled(barrel(-0.2)) }
+  const fourth = placeMasks(r, { to: FRAME_B, maps: other }, 'render')
+  assert.deepEqual(
+    strokesOf(fourth),
+    remapStrokes(strokesOf(r)!, frameMap(other, FRAME_A, FRAME_B))
+  )
+  assert.notDeepEqual(strokesOf(fourth), strokesOf(first))
+  // A rebase writes the carried dabs as the recipe keeps them: five places.
+  const rebased = placeMasks(r, { to: FRAME_B, maps: MAPS }, 'rebase')
+  for (const s of strokesOf(rebased)!) for (const v of s.dabs) assert.equal(v, round5(v))
+})
+
+test('strokes are mapped to the lens rendered; over a plane they stay on its frame until then', () => {
+  const r = withMasks(FRAME_A)
+  r.layers[0].components = [strokesBrush('alone', false)]
+  const l2 = newLocalLayer('m2')
+  l2.id = 'L2'
+  l2.components = [strokesBrush('over', true)]
+  r.layers.push(l2)
+  r.retouch = []
+  const ab = frameMap(MAPS, FRAME_A, FRAME_B)
+  const brushOf = (x: Recipe, id: string): Extract<MaskComponentSetting, { kind: 'brush' }> =>
+    x.layers.flatMap((l) => l.components).find((c) => c.id === id) as Extract<
+      MaskComponentSetting,
+      { kind: 'brush' }
+    >
+  assert.equal(placeMasks(r, { to: FRAME_A, maps: MAPS }, 'render'), r)
+  // Rendered under another lens: both brushes' dabs are carried (a plane's by main).
+  const toB = placeMasks(r, { to: FRAME_B, maps: MAPS }, 'render')
+  for (const id of ['alone', 'over'])
+    assert.deepEqual(brushOf(toB, id).strokes, remapStrokes(brushOf(r, id).strokes!, ab))
+  assert.equal(brushOf(toB, 'over').ref, 'b'.repeat(64))
+  // Compile hands the engine the carried strokes.
+  const ctx: CompileContext = {
+    isRaw: false,
+    asShot: null,
+    sourceOrientation: 'Normal',
+    frameWidth: 1200,
+    frameHeight: 800,
+    scale: 1,
+    seed: 1,
+    brushPaths: { 'over:base': '/o.png' },
+    applyCrop: true
+  }
+  const moved = compile(r, { ...ctx, maskFrames: { to: FRAME_B, maps: MAPS } })
+  assert.notDeepEqual(moved.grade, compile(r, ctx).grade)
+  assert.deepEqual(moved.grade, compile(toB, ctx).grade)
+  const dab = ab({ x: 0.3, y: 0.6 })
+  assert.ok(
+    JSON.stringify(moved.grade).includes(`"x":${Math.round(dab.x * 1e5) / 1e5}`),
+    'a carried dab reaches the engine'
+  )
+
+  // A lens edit settling: strokes alone move and lose their mark; over a
+  // plane they keep their points, and the brush says which frame it is on.
+  r.masks = { lensFrame: null }
+  r.lens.distortion = 40
+  const own = ownLensFrame(r)!
+  assert.equal(rebaseNeed(r), 'remap')
+  const maps: FrameMaps = { [lensFrameKey(null)]: null, [lensFrameKey(own)]: mapA }
+  const rebased = placeMasks(r, { to: own, maps }, 'rebase')
+  const alone = brushOf(rebased, 'alone')
+  assert.equal(alone.lensFrame, undefined)
+  assert.deepEqual(
+    alone.strokes,
+    remapStrokes(brushOf(r, 'alone').strokes!, frameMap(maps, null, own))
+  )
+  const over = brushOf(rebased, 'over')
+  assert.equal(over.lensFrame, null)
+  assert.deepEqual(over.strokes, brushOf(r, 'over').strokes)
+  assert.equal(rebaseNeed(rebased), 'none')
+  // Strokes alone pasted from another frame than the lens's have points to move.
+  const pasted = structuredClone(rebased)
+  pasted.layers[0].components = [{ ...strokesBrush('p', false), lensFrame: null }]
+  assert.equal(rebaseNeed(pasted), 'remap')
 })

@@ -11,12 +11,12 @@
  * and a raster's own `lensFrame` where it differs), and when that is not the
  * frame rendered every mask is carried from one to the other:
  *
- * - a point (a lasso's, a gradient's ends or centre, a spot's) through the
- *   old correction's ST map back to the photo, then forward through the
- *   inverse of the new one (Newton's method on the new map, which is smooth
- *   and monotone);
+ * - a point (a lasso's, a gradient's ends or centre, a spot's, a brush
+ *   stroke's dab) through the old correction's ST map back to the photo,
+ *   then forward through the inverse of the new one (Newton's method on the
+ *   new map, which is smooth and monotone);
  * - a radius by the scale an area keeps there (√|det J|); an ellipse stays
- *   an ellipse;
+ *   an ellipse, a dab a dab;
  * - a raster plane re-warped once, through the same map, into a file of
  *   its own (main/brushes.ts).
  *
@@ -36,7 +36,7 @@
  */
 import type { Distortion, LensCorrection } from './engine-types'
 import { lensCorrection } from './lens'
-import type { MaskComponentSetting, Recipe } from './recipe'
+import type { BrushComponent, BrushStrokeSetting, MaskComponentSetting, Recipe } from './recipe'
 import type { RetouchSpot } from './retouch'
 
 /** A point, normalised to its frame. */
@@ -184,16 +184,30 @@ export function areaScale(f: (p: P) => P, p: P): number {
 /** A component's own frame, if it has one (a raster made under another lens, a pasted mask). */
 type Framed = { lensFrame?: LensFrame }
 
-/** Whether a component is placed by points (not a plane): carried by mapping them. */
+/** A brush with a plane of pixels under its strokes (an older brush's, a model's, Auto Mask's). */
+const hasPlane = (c: BrushComponent): boolean => !!(c.png || c.ref)
+
+/**
+ * Whether a component is placed by points (not a plane): carried by mapping
+ * them. A brush of strokes alone (0.21.0, E36) is: its dabs are points.
+ */
 export function isVector(c: MaskComponentSetting): boolean {
   return (
-    c.kind === 'polygon' || c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional'
+    c.kind === 'polygon' ||
+    c.kind === 'linear' ||
+    c.kind === 'radial' ||
+    c.kind === 'bidirectional' ||
+    (c.kind === 'brush' && !hasPlane(c) && (c.strokes?.length ?? 0) > 0)
   )
 }
 
-/** Whether a component is a plane of pixels (a brush, a model's mask, a depth map). */
+/**
+ * Whether a component is a plane of pixels (a brush, a model's mask, a
+ * depth map). A brush's strokes over its plane stay on the plane's frame
+ * (`lensFrame`), and are mapped with it only where it is rendered.
+ */
 export function isRaster(c: MaskComponentSetting): boolean {
-  return c.kind === 'brush' || c.kind === 'depth'
+  return (c.kind === 'brush' && !isVector(c)) || c.kind === 'depth'
 }
 
 /** The frame a component (or a spot) is on: its own, else the masks'. */
@@ -210,6 +224,92 @@ export function framesIn(r: Recipe): LensFrame[] {
     for (const c of l.components) if (isVector(c) || isRaster(c)) add(frameOf(c, masks))
   for (const s of r.retouch) add(frameOf(s, masks))
   return [...out.values()]
+}
+
+const round5 = (v: number): number => Math.round(v * 1e5) / 1e5
+
+/** One stroke carried by `f` (`remapStrokes`). */
+function remapStroke(s: BrushStrokeSetting, f: (p: P) => P): BrushStrokeSetting {
+  const dabs = s.dabs.slice()
+  const h = 1e-3
+  for (let k = 0; k + 3 < dabs.length; k += 4) {
+    const x = dabs[k]
+    const y = dabs[k + 1]
+    // `areaScale`, with the centre's own image reused: three maps a dab, not four.
+    const a = f({ x, y })
+    const u = f({ x: x + h, y })
+    const v = f({ x, y: y + h })
+    const det = ((u.x - a.x) * (v.y - a.y) - (u.y - a.y) * (v.x - a.x)) / (h * h)
+    // Rounded as the recipe holds a dab (shared/strokes.ts `keptDab`).
+    dabs[k] = round5(a.x)
+    dabs[k + 1] = round5(a.y)
+    dabs[k + 2] = Math.max(1e-5, round5(dabs[k + 2] * Math.sqrt(Math.abs(det))))
+  }
+  return { ...s, dabs }
+}
+
+/**
+ * Brush strokes carried by `f`: each dab's centre mapped, its radius (a
+ * fraction of the shorter side) by the scale an area keeps there, as a
+ * radial's radii are.
+ */
+export function remapStrokes(strokes: BrushStrokeSetting[], f: (p: P) => P): BrushStrokeSetting[] {
+  return strokes.map((s) => remapStroke(s, f))
+}
+
+/**
+ * Strokes carried between two frames, kept (`placeMasks` 'render'): a brush
+ * under another lens than the one rendered is carried at every compile, and
+ * a large one is a few hundred thousand map lookups. Keyed by the pair of
+ * frames, the maps themselves, and the stroke's content; at most `KEEP_DABS`
+ * dabs held.
+ */
+const carriedStrokes = new Map<string, BrushStrokeSetting>()
+const KEEP_DABS = 200_000
+let carriedDabs = 0
+const mapIds = new WeakMap<StMap, number>()
+let nextMapId = 0
+function mapId(m: StMap | null | undefined): number {
+  if (!m) return 0
+  let id = mapIds.get(m)
+  if (id === undefined) mapIds.set(m, (id = ++nextMapId))
+  return id
+}
+
+/** A stroke's content, as a short name (its dabs hashed). */
+function strokeSig(s: BrushStrokeSetting): string {
+  let h = 0x811c9dc5
+  for (const v of s.dabs) {
+    h ^= Math.round(v * 1e5) | 0
+    h = Math.imul(h, 0x01000193)
+  }
+  return `${s.id}:${s.dabs.length}:${(h >>> 0).toString(36)}`
+}
+
+function carryStrokesKept(
+  strokes: BrushStrokeSetting[],
+  f: (p: P) => P,
+  pair: string
+): BrushStrokeSetting[] {
+  return strokes.map((s) => {
+    const key = `${pair}|${strokeSig(s)}`
+    const hit = carriedStrokes.get(key)
+    if (hit) {
+      // The newest last: the oldest goes first.
+      carriedStrokes.delete(key)
+      carriedStrokes.set(key, hit)
+      return { ...s, dabs: hit.dabs }
+    }
+    const out = remapStroke(s, f)
+    carriedStrokes.set(key, out)
+    carriedDabs += out.dabs.length / 4
+    while (carriedDabs > KEEP_DABS && carriedStrokes.size > 1) {
+      const oldest = carriedStrokes.keys().next().value as string
+      carriedDabs -= (carriedStrokes.get(oldest)?.dabs.length ?? 0) / 4
+      carriedStrokes.delete(oldest)
+    }
+    return out
+  })
 }
 
 /** A component's points carried by `f` (its radii by the scale an area keeps). */
@@ -242,6 +342,8 @@ export function remapComponent<T extends MaskComponentSetting>(c: T, f: (p: P) =
       const k = areaScale(f, c.centre)
       return { ...c, centre: f(c.centre), radiusX: c.radiusX * k, radiusY: c.radiusY * k }
     }
+    case 'brush':
+      return c.strokes?.length ? { ...c, strokes: remapStrokes(c.strokes, f) } : c
     default:
       return c
   }
@@ -302,8 +404,9 @@ function unframed<T extends Framed>(c: T): T {
  * The recipe with every mask and spot on frame `frames.to`.
  *
  * - `render` (compile): points mapped; a raster plane is left to main, which
- *   hands the engine the plane re-warped (main/brushes.ts); `r` itself when
- *   nothing is on another frame.
+ *   hands the engine the plane re-warped (main/brushes.ts), and the strokes
+ *   over it are mapped as points are; `r` itself when nothing is on another
+ *   frame.
  * - `rebase` (a lens edit settling): the same, written into the recipe:
  *   `masks.lensFrame` becomes `to`, the points move, and a raster keeps
  *   its pixels and says which frame they are on (re-warping it each time
@@ -319,6 +422,15 @@ export function placeMasks(r: Recipe, frames: MaskFrames, how: 'render' | 'rebas
     let m = maps.get(key)
     if (!m) maps.set(key, (m = frameMap(frames.maps, from, to)))
     return m
+  }
+  // A render's strokes come from those kept, when carried by these maps before.
+  const toMap = `${lensFrameKey(to)}#${mapId(frames.maps[lensFrameKey(to)])}`
+  const carry = <T extends MaskComponentSetting>(c: T, from: LensFrame): T => {
+    if (how !== 'render' || c.kind !== 'brush' || !c.strokes?.length)
+      return remapComponent(c, mapFrom(from))
+    const key = lensFrameKey(from)
+    const pair = `${key}#${mapId(frames.maps[key])}>${toMap}`
+    return { ...c, strokes: carryStrokesKept(c.strokes, mapFrom(from), pair) }
   }
   let changed = how === 'rebase' && moved(masks)
   const layers = r.layers.map((l) => {
@@ -336,10 +448,16 @@ export function placeMasks(r: Recipe, frames: MaskFrames, how: 'render' | 'rebas
           return c
         }
         any = true
-        const placed = remapComponent(c, mapFrom(from))
+        const placed = carry(c, from)
         return how === 'rebase' ? unframed(placed) : placed
       }
-      if (how === 'render' || !isRaster(c)) return c
+      if (how === 'render') {
+        // A plane's strokes, where they go to the engine as they are.
+        if (c.kind !== 'brush' || !c.strokes?.length || !moved(from)) return c
+        any = true
+        return carry(c, from)
+      }
+      if (!isRaster(c)) return c
       // A plane in a rebase: it says which frame it is on, if not the new one.
       const own = c.lensFrame
       if (!moved(from)) {

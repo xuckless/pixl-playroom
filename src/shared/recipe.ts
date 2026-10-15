@@ -404,10 +404,14 @@ export interface MaskRefine {
 }
 
 /**
- * A painted plane: 8-bit grey PNG, base64, in the base frame's aspect. Across
- * IPC (and in the renderer's state and the edit history) the plane travels
- * by reference: `png` is empty and `ref` names it in the main process's
- * plane store. Sidecars always hold the PNG itself.
+ * A painted mask: its strokes as vectors (engine 0.21's, E36), painted over
+ * a plane when it has one. The plane is an 8-bit grey PNG, base64, in the
+ * base frame's aspect: a model's mask, an Auto Mask stroke, or a brush an
+ * older version painted. Across IPC (and in the renderer's state and the
+ * edit history) the plane travels by reference: `png` is empty and `ref`
+ * names it in the main process's plane store. Sidecars always hold the PNG
+ * itself. A brush of strokes alone has neither (`png` empty); `width` ×
+ * `height` is still the base frame's aspect at the size a plane would be.
  */
 export interface BrushComponent extends ComponentBase {
   kind: 'brush'
@@ -415,12 +419,35 @@ export interface BrushComponent extends ComponentBase {
   height: number
   png: string
   ref?: string
+  /** Strokes laid over the plane (or nothing), in the order painted. Absent: none. */
+  strokes?: BrushStrokeSetting[]
   /**
    * What made the plane, when a model did: a preset saved from the photo
    * asks for it again on another (looks/smart.ts `toInstructions`). Unset
    * for a painted plane, which belongs to its photo alone.
    */
   source?: BrushSource
+}
+
+/**
+ * One brush stroke as the engine paints it (`MaskShape::Strokes`, 0.21.0,
+ * E36): resolution-free, so it is as sharp on a 45 MP export as on the
+ * proxy it was painted on.
+ */
+export interface BrushStrokeSetting {
+  id: string
+  /**
+   * Four numbers a dab, in the order laid down: x and y as fractions of the
+   * base frame (−1…2: a stroke may run off it), the radius as a fraction of
+   * its shorter side (0…1], the pen's pressure 0…1 (1 for a mouse).
+   */
+  dabs: number[]
+  /** 0…1 of a dab's radius that fades (the brush's Feather). */
+  softness: number
+  /** 0…1: the stroke's strength (the brush's Density); going back over it adds nothing. */
+  flow: number
+  /** An eraser's stroke: takes itself out of what was painted before it. */
+  erase?: true
 }
 
 /** A model's mask, as what to ask for again (see `BrushComponent.source`). */
@@ -1263,6 +1290,39 @@ function brushSource(v: unknown): BrushSource | null {
 }
 
 /**
+ * A brush's strokes from a sidecar: each with an id, whole dabs of finite
+ * numbers held to the engine's ranges; one with no dab is dropped. Null
+ * when none is left.
+ */
+export function normaliseStrokes(v: unknown): BrushStrokeSetting[] | null {
+  if (!Array.isArray(v)) return null
+  const seen = new Set<string>()
+  const out: BrushStrokeSetting[] = []
+  for (const x of v) {
+    if (!isObject(x) || !Array.isArray(x.dabs)) continue
+    const n = Math.floor(x.dabs.length / 4)
+    const dabs: number[] = []
+    for (let k = 0; k < n; k++) {
+      const [px, py, r, p] = (x.dabs as unknown[]).slice(k * 4, k * 4 + 4)
+      if (![px, py, r, p].every((d) => typeof d === 'number' && Number.isFinite(d))) continue
+      if (!((r as number) > 0)) continue
+      dabs.push(num(px, 0, -1, 2), num(py, 0, -1, 2), num(r, 0.01, 1e-6, 1), num(p, 1, 0, 1))
+    }
+    if (dabs.length === 0) continue
+    const id = typeof x.id === 'string' && x.id && !seen.has(x.id) ? x.id : newId()
+    seen.add(id)
+    out.push({
+      id,
+      dabs,
+      softness: num(x.softness, 0.5, 0, 1),
+      flow: num(x.flow, 1, 0, 1),
+      ...(x.erase === true ? { erase: true as const } : {})
+    })
+  }
+  return out.length > 0 ? out : null
+}
+
+/**
  * One mask component from a sidecar: fills what an older version did not
  * write, and drops what this version cannot draw (so an unknown kind never
  * reaches the compiler).
@@ -1291,18 +1351,21 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
     ...((f) => (f !== undefined ? { lensFrame: f } : {}))(normaliseLensFrame(c.lensFrame))
   }
   switch (c.kind) {
-    case 'brush':
-      if (typeof c.png !== 'string') return null
+    case 'brush': {
+      const strokes = normaliseStrokes(c.strokes)
+      if (typeof c.png !== 'string' && !strokes) return null
       return {
         ...base,
         kind: 'brush',
-        png: c.png,
+        png: typeof c.png === 'string' ? c.png : '',
         // A plane held by reference (IPC, history, a project) keeps its reference.
         ...ref,
         ...((src) => (src ? { source: src } : {}))(brushSource(c.source)),
         width: num(c.width, 1),
-        height: num(c.height, 1)
+        height: num(c.height, 1),
+        ...(strokes ? { strokes } : {})
       }
+    }
     case 'polygon': {
       if (!Array.isArray(c.points)) return null
       const rings = ringsOf(c.rings)

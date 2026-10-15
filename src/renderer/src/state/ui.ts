@@ -73,13 +73,14 @@ export interface BrushSettings {
   size: number
   /** 0…100: how much of the radius fades (Lightroom's Feather). */
   softness: number
-  /** 0…100: how much one dab lays down; strokes build up. */
-  flow: number
-  /** 0…100: the most a stroke can reach, however often it passes. */
+  /**
+   * 0…100: a stroke's strength, the engine's per-stroke flow (0.21.0, E36):
+   * going back over it adds nothing; another stroke over it does.
+   */
   density: number
   /** Paint only where the colour matches the colour under the brush's centre. */
   autoMask: boolean
-  /** A pen's pressure scales size and flow. */
+  /** A pen's pressure scales size and strength. */
   pressure: boolean
 }
 /** Lightroom's two brushes, A and B, and the eraser, each remembering its own settings. */
@@ -338,9 +339,9 @@ export const useUi = create<UiState>()(
       maskOverlay: DEFAULT_MASK_OVERLAY,
       setMaskOverlay: (p) => set((s) => ({ maskOverlay: { ...s.maskOverlay, ...p } })),
       brushes: {
-        A: { size: 80, softness: 60, flow: 60, density: 100, autoMask: false, pressure: true },
-        B: { size: 28, softness: 30, flow: 35, density: 100, autoMask: false, pressure: true },
-        erase: { size: 80, softness: 60, flow: 100, density: 100, autoMask: false, pressure: true }
+        A: { size: 80, softness: 60, density: 100, autoMask: false, pressure: true },
+        B: { size: 28, softness: 30, density: 100, autoMask: false, pressure: true },
+        erase: { size: 80, softness: 60, density: 100, autoMask: false, pressure: true }
       },
       brushSlot: 'A',
       setBrushSlot: (brushSlot) => set({ brushSlot }),

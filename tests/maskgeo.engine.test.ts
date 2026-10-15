@@ -4,7 +4,8 @@
  * of mask, and each mask (exposure −3) is drawn on its marker: a radial, a
  * linear (a half disk: the gradient's line through a disk), a bidirectional
  * (its band through a disk), a lasso, a painted plane, a model's plane, a
- * depth range, a clone spot, and a colour range as the control; and, in the
+ * depth range, a clone spot, a brush of engine strokes (0.21.0, E36) alone
+ * and the same strokes over a plane, and a colour range as the control; and, in the
  * lens cases, a radial and a lasso near the corners, where a correction moves
  * the picture most and its map is read nearest its edge. For every
  * framing and lens case the recipe is rendered through `compile` as
@@ -20,11 +21,15 @@
  *                    held to 2 px only where the masks are on the lens rendered).
  *
  * Every case within 2 px. MASKGEO_OUT=<folder> writes the table there.
- * (Engine 0.21's brush Strokes join as a kind once brushes are drawn as them.)
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Recipe, MaskComponentSetting, LocalLayer } from '../src/shared/recipe'
+import type {
+  BrushStrokeSetting,
+  LocalLayer,
+  MaskComponentSetting,
+  Recipe
+} from '../src/shared/recipe'
 import type { RetouchSpot } from '../src/shared/retouch'
 import type { P } from '../src/shared/view'
 
@@ -56,6 +61,8 @@ type Kind =
   | 'depth'
   | 'clone spot'
   | 'range'
+  | 'strokes'
+  | 'strokes on a plane'
   | 'corner radial'
   | 'corner lasso'
 
@@ -70,6 +77,8 @@ const MARKS: Record<Kind, { at: P; rgb: [number, number, number] }> = {
   brush: { at: { x: 0.62, y: 0.52 }, rgb: [0.08, 0.8, 0.08] },
   'model plane': { at: { x: 0.28, y: 0.68 }, rgb: [0.05, 0.8, 0.8] },
   depth: { at: { x: 0.44, y: 0.68 }, rgb: [0.85, 0.08, 0.85] },
+  strokes: { at: { x: 0.78, y: 0.44 }, rgb: [0.4, 0.25, 0.05] },
+  'strokes on a plane': { at: { x: 0.56, y: 0.68 }, rgb: [0.05, 0.55, 0.45] },
   // Near the corners, where a lens moves the picture most and its map is
   // read nearest its edge (held to the lens cases: a warp crops them away).
   'corner radial': { at: { x: 0.075, y: 0.1 }, rgb: [0.55, 0.95, 0.3] },
@@ -110,15 +119,35 @@ function chart(): Uint16Array {
   return rgb
 }
 
-/** A disk on a plane at half the frame's size (as painted planes are smaller than the frame). */
-function diskPlane(at: P): { data: Uint8Array; w: number; h: number } {
+/**
+ * A disk on a plane at half the frame's size (as painted planes are smaller
+ * than the frame); with no centre, an empty plane (strokes over it say where).
+ */
+function diskPlane(at: P | null): { data: Uint8Array; w: number; h: number } {
   const w = W / 2
   const h = H / 2
   const data = new Uint8Array(w * h)
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++)
-      if (Math.hypot(x + 0.5 - at.x * w, y + 0.5 - at.y * h) < R / 2) data[y * w + x] = 255
+  if (at)
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++)
+        if (Math.hypot(x + 0.5 - at.x * w, y + 0.5 - at.y * h) < R / 2) data[y * w + x] = 255
   return { data, w, h }
+}
+
+/**
+ * A brush stroke across a marker as the engine paints it: three hard dabs
+ * in a row about its centre (the middle one on it), a capsule as tall as the
+ * marker; `k` its scale on the masks' frame.
+ */
+function strokeAt(at: P, k: number, id: string): BrushStrokeSetting {
+  const step = (0.4 * R * k) / W
+  const radius = (0.75 * R * k) / H
+  return {
+    id,
+    dabs: [-1, 0, 1].flatMap((i) => [at.x + i * step, at.y, radius, 1]),
+    softness: 0,
+    flow: 1
+  }
 }
 
 const base = { mode: 'Add' as const, opacity: 100, invert: false, feather: 0 }
@@ -212,6 +241,30 @@ function masksAt(
         near: 0,
         far: 33,
         softness: 0
+      }
+    ],
+    // Strokes alone: points, carried as a lasso's are.
+    strokes: [
+      {
+        ...base,
+        id: 'strokes',
+        kind: 'brush',
+        width: W / 2,
+        height: H / 2,
+        png: '',
+        strokes: [strokeAt(pos.strokes, frame.k, 's1')]
+      }
+    ],
+    // Strokes over a plane (an empty one): they stay on the plane's frame.
+    'strokes on a plane': [
+      {
+        ...base,
+        id: 'strokes-plane',
+        kind: 'brush',
+        width: W / 2,
+        height: H / 2,
+        png: 'x',
+        strokes: [strokeAt(pos['strokes on a plane'], frame.k, 's2')]
       }
     ],
     range: [],
@@ -411,6 +464,7 @@ test(
       await import('../src/main/maskframe')
     const { compile, framingTransparent, orientedFrame } = await import('../src/shared/compile')
     const { renderedLens } = await import('../src/shared/edits')
+    const { basePlaneId, brushRoute } = await import('../src/shared/strokes')
     const { frameMap, frameOf, lensFrameKey, lensFrameOf, ownLensFrame } =
       await import('../src/shared/lensframe')
     const { defaultRecipe, newLocalLayer } = await import('../src/shared/recipe')
@@ -601,15 +655,27 @@ test(
         l.settings.basic.exposure = -3
         return l
       })
-      // The model's plane found on the uncorrected frame (Optics off), the rest under the lens.
-      const planeAt: Record<string, P> = {
+      // The model's plane found on the uncorrected frame (Optics off), the
+      // rest under the lens; strokes painted over it there too.
+      const planeAt: Record<string, P | null> = {
         brush: pos.brush,
         model: kase.modelOn === 'none' ? MARKS['model plane'].at : pos['model plane'],
-        depth: pos.depth
+        depth: pos.depth,
+        'strokes-plane': null
       }
       if (kase.modelOn === 'none') {
         const ml = r.layers.find((l) => l.id === 'model plane')!
         ml.components = ml.components.map((c) => ({ ...c, lensFrame: null }))
+        const sl = r.layers.find((l) => l.id === 'strokes on a plane')!
+        sl.components = sl.components.map((c) =>
+          c.kind === 'brush'
+            ? {
+                ...c,
+                lensFrame: null,
+                strokes: [strokeAt(MARKS['strokes on a plane'].at, 1, 's2')]
+              }
+            : c
+        )
       }
       kase.edit(r)
       if (kase.rebase) r = await rebaseMasks(deps, r, W, H)
@@ -621,14 +687,17 @@ test(
       const brushPaths: Record<string, string> = {}
       const tag = kase.name.replace(/\W+/g, '-')
       for (const l of r.layers)
-        for (const c of l.components) {
+        for (const [i, c] of l.components.entries()) {
           if (c.kind !== 'brush' && c.kind !== 'depth') continue
+          if (!c.png) continue
           const p = diskPlane(planeAt[c.id])
           const png = encodeGreyPng(p.data, p.w, p.h).toString('base64')
           const warped = frames ? planeWarpFor(frames, frameOf(c, masksFrame)) : null
           const file = join(dir, `${tag}-${c.id}-${warped?.key ?? 'as'}-${user}.png`)
           writeBrushPlane(file, png, user, undefined, undefined, warped?.warp)
-          brushPaths[c.id] = file
+          // Under strokes that go as they are, the plane is the brush's base.
+          const under = c.kind === 'brush' && brushRoute(l.components, i) !== 'plane'
+          brushPaths[under ? basePlaneId(c.id) : c.id] = file
         }
       const plainRecipe = structuredClone(r)
       plainRecipe.layers = []
@@ -668,7 +737,16 @@ test(
         if (k === 'clone spot') return onMasks(r.retouch[0], r.retouch[0].points[0])
         if (k === 'brush' || k === 'model plane' || k === 'depth') {
           const c = comp(k === 'model plane' ? 'model' : k)
-          return onMasks(c, planeAt[c.id])
+          return onMasks(c, planeAt[c.id]!)
+        }
+        if (k === 'strokes' || k === 'strokes on a plane') {
+          // The middle dab: the stroke's centre.
+          const c = comp(k === 'strokes' ? 'strokes' : 'strokes-plane') as Extract<
+            MaskComponentSetting,
+            { kind: 'brush' }
+          >
+          const d = c.strokes![0].dabs
+          return onMasks(c, { x: d[4], y: d[5] })
         }
         if (k === 'lasso' || k === 'corner lasso') {
           const c = comp(k === 'lasso' ? 'lasso' : 'corner-lasso') as Extract<

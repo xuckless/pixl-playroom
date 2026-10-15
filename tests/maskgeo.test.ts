@@ -414,6 +414,33 @@ test('a model is pointed at the picture as rendered, a mask at the masks’ fram
   }
 })
 
+test('a dab painted with the masks on another lens is as big on the picture as the cursor', () => {
+  const g = uprightWithGrid()
+  const plain = { ...g, lens: null }
+  const screen = { w: 1500, h: 1000 }
+  const plane = { w: 2048, h: 1365 }
+  for (const p of [
+    { x: 0.5, y: 0.5 },
+    { x: 0.12, y: 0.15 },
+    { x: 0.9, y: 0.8 }
+  ]) {
+    // The grid's own area scale about the point, by finite differences.
+    const b = displayToBase(plain, p)
+    const e = 1e-4
+    const to = (q: P): P => displayToBase(g, q)
+    const a = to(p)
+    const bx = to({ x: p.x + e, y: p.y })
+    const by = to({ x: p.x, y: p.y + e })
+    const det = ((bx.x - a.x) * (by.y - a.y) - (bx.y - a.y) * (by.x - a.x)) / (e * e)
+    const want = Math.sqrt(Math.abs(det)) * Math.sqrt((plane.w * plane.h) / (screen.w * screen.h))
+    const got = localScale(g, p, screen, plane)
+    assert.ok(Math.abs(got - want) / want < 1e-3, `${got} vs ${want} at ${b.x},${b.y}`)
+    // Without the grid's scale it would be a few per cent off on this strong map.
+    const without = localScale(plain, p, screen, plane)
+    assert.ok(Math.abs(without - want) / want > 0.005, `${without} vs ${want}`)
+  }
+})
+
 test('the brush’s GPU matrices follow the lens grid about the stroke: exact there, close nearby', () => {
   // What brush.worker is given: the overlay maps display → masks' frame, Auto
   // Mask masks' frame → display, each a matrix (no grid on the GPU).

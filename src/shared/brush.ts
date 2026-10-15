@@ -1,9 +1,16 @@
 /**
- * Painting a brush mask, the way Lightroom's brush behaves: each dab lays
- * down `flow` of paint, building up where strokes cross; a stroke never
- * exceeds its `density`; and the stroke joins the mask as a union (or, when
- * erasing, takes itself out). Auto Mask weighs each pixel of a dab by how
+ * Painting a brush mask, the engine's way (0.21.0, E36): a stroke's strength
+ * is its `flow` (the brush's Density) times the pen's pressure at each dab;
+ * within a stroke the maximum is taken, so going back over it builds nothing
+ * up; strokes combine by screen (`m + s·(1 − m)`), and an erase stroke takes
+ * itself out (`m·(1 − s)`). Auto Mask weighs each pixel of a dab by how
  * close its colour is to the colour under the brush's centre.
+ *
+ * `paintStrokes` is the engine's rasteriser (`mask_stroke.rs`) in
+ * TypeScript: capsules between consecutive dabs, the radius and pressure
+ * running linearly along each, sampled at pixel centres. It draws what the
+ * engine draws where Playroom needs a stroke's plane itself: the loupe's
+ * own mask, a stroke kept to an object, a brush painted into one plane.
  *
  * Planes here are Float32Arrays of 0…1, row by row.
  */
@@ -15,9 +22,10 @@ const smooth = (e0: number, e1: number, x: number): number => {
 }
 
 /**
- * Stamp one dab into a stroke plane. `softness` 0…100 is how much of the
- * radius fades; `flow` 0…1 is what one dab adds; `weight(x, y)` (Auto Mask)
- * scales it per pixel.
+ * Stamp one dab into a stroke plane: the larger of what is there and the
+ * dab, never more. `softness` 0…100 is how much of the radius fades;
+ * `flow` 0…1 is the dab's strength (the stroke's flow times the pressure);
+ * `weight(x, y)` (Auto Mask) scales it per pixel.
  */
 export function stampDab(
   stroke: Float32Array,
@@ -42,30 +50,122 @@ export function stampDab(
       if (d > r) continue
       let a = flow * (1 - smooth(inner, r, d))
       if (weight) a *= weight(x, y)
-      if (a <= 0) continue
       const i = y * w + x
-      stroke[i] = stroke[i] + a * (1 - stroke[i])
+      if (a > stroke[i]) stroke[i] = a
     }
   }
 }
 
-/**
- * The mask after a stroke: painting unites the stroke (capped at
- * `density`) with what was there; erasing takes the capped stroke away.
- */
+/** The mask after a stroke: painting screens it over what was there; erasing takes it away. */
 export function composeStroke(
   plane: Float32Array,
   stroke: Float32Array,
-  density: number,
   erase: boolean
 ): Float32Array {
-  const cap = Math.min(1, Math.max(0, density))
   const out = new Float32Array(plane.length)
   for (let i = 0; i < plane.length; i++) {
-    const s = Math.min(stroke[i], cap)
+    const s = Math.min(1, Math.max(0, stroke[i]))
     out[i] = erase ? plane[i] * (1 - s) : plane[i] + s * (1 - plane[i])
   }
   return out
+}
+
+/** A stroke as `paintStrokes` takes it: the recipe's (`BrushStrokeSetting`), turned or not. */
+export interface StrokeLike {
+  /** x, y, radius, pressure for each dab: fractions of the frame, the radius of its shorter side. */
+  dabs: number[]
+  /** 0…1 of a dab's radius that fades. */
+  softness: number
+  /** 0…1 */
+  flow: number
+  erase?: boolean
+}
+
+/**
+ * Strokes painted onto `plane` (`w × h`) in order, as the engine paints
+ * them: each the maximum over its capsules, screened over the plane, or an
+ * erase stroke taken out of it.
+ */
+export function paintStrokes(
+  plane: Float32Array,
+  w: number,
+  h: number,
+  strokes: StrokeLike[]
+): void {
+  const short = Math.min(w, h)
+  for (const s of strokes) {
+    const n = Math.floor(s.dabs.length / 4)
+    if (n === 0 || !(s.flow > 0)) continue
+    const at = (k: number): [number, number, number, number] => [
+      s.dabs[k * 4] * w,
+      s.dabs[k * 4 + 1] * h,
+      s.dabs[k * 4 + 2] * short,
+      s.dabs[k * 4 + 3]
+    ]
+    // The stroke's own box, where its coverage is gathered before it joins.
+    let bx0 = Infinity
+    let by0 = Infinity
+    let bx1 = -Infinity
+    let by1 = -Infinity
+    for (let k = 0; k < n; k++) {
+      const [x, y, r] = at(k)
+      bx0 = Math.min(bx0, x - r - 1)
+      by0 = Math.min(by0, y - r - 1)
+      bx1 = Math.max(bx1, x + r + 1)
+      by1 = Math.max(by1, y + r + 1)
+    }
+    const x0 = Math.max(0, Math.floor(bx0))
+    const y0 = Math.max(0, Math.floor(by0))
+    const x1 = Math.min(w - 1, Math.ceil(bx1))
+    const y1 = Math.min(h - 1, Math.ceil(by1))
+    if (x1 < x0 || y1 < y0) continue
+    const bw = x1 - x0 + 1
+    const cover = new Float32Array(bw * (y1 - y0 + 1))
+    const soft = Math.min(1, Math.max(0, s.softness))
+    for (let k = 0; k < Math.max(1, n - 1); k++) {
+      const [ax, ay, ra, pa] = at(k)
+      const [bxx, byy, rb, pb] = n === 1 ? [ax, ay, ra, pa] : at(k + 1)
+      const dx = bxx - ax
+      const dy = byy - ay
+      const dd = dx * dx + dy * dy
+      const g = Math.max(ra, rb) + 1
+      const sx0 = Math.max(x0, Math.floor(Math.min(ax, bxx) - g))
+      const sy0 = Math.max(y0, Math.floor(Math.min(ay, byy) - g))
+      const sx1 = Math.min(x1, Math.ceil(Math.max(ax, bxx) + g))
+      const sy1 = Math.min(y1, Math.ceil(Math.max(ay, byy) + g))
+      for (let y = sy0; y <= sy1; y++) {
+        const py = y + 0.5
+        for (let x = sx0; x <= sx1; x++) {
+          const vx = x + 0.5 - ax
+          const vy = py - ay
+          const t = dd > 0 ? Math.min(1, Math.max(0, (vx * dx + vy * dy) / dd)) : 0
+          const qx = vx - t * dx
+          const qy = vy - t * dy
+          const r = ra + t * (rb - ra)
+          const d2 = qx * qx + qy * qy
+          if (!(r > 0) || d2 > r * r) continue
+          const rho = Math.sqrt(d2) / r
+          let f = 1
+          if (soft > 0) {
+            const u = Math.min(1, Math.max(0, (1 - rho) / soft))
+            f = u * u * (3 - 2 * u)
+          }
+          const v = (pa + t * (pb - pa)) * f
+          const i = (y - y0) * bw + (x - x0)
+          if (v > cover[i]) cover[i] = v
+        }
+      }
+    }
+    const flow = Math.min(1, s.flow)
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const c = flow * cover[(y - y0) * bw + (x - x0)]
+        if (c <= 0) continue
+        const i = y * w + x
+        plane[i] = s.erase ? plane[i] * (1 - c) : plane[i] + c * (1 - plane[i])
+      }
+    }
+  }
 }
 
 /** sRGB 0…255 to CIE L*a*b* (D65). */

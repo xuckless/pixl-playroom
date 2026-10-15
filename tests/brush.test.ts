@@ -1,15 +1,24 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { autoMaskWeight, composeStroke, deltaE, srgbToLab, stampDab } from '../src/shared/brush'
+import {
+  autoMaskWeight,
+  composeStroke,
+  deltaE,
+  paintStrokes,
+  srgbToLab,
+  stampDab
+} from '../src/shared/brush'
 
-test('a dab builds up with flow and never passes full', () => {
+test('a stroke never builds up over itself: its dabs take the maximum', () => {
   const s = new Float32Array(16 * 16)
   stampDab(s, 16, 16, 8, 8, 4, 0, 0.5)
   assert.ok(Math.abs(s[8 * 16 + 8] - 0.5) < 1e-6)
-  stampDab(s, 16, 16, 8, 8, 4, 0, 0.5)
-  assert.ok(Math.abs(s[8 * 16 + 8] - 0.75) < 1e-6)
   for (let i = 0; i < 20; i++) stampDab(s, 16, 16, 8, 8, 4, 0, 0.5)
-  assert.ok(s[8 * 16 + 8] <= 1)
+  assert.ok(Math.abs(s[8 * 16 + 8] - 0.5) < 1e-6)
+  // A stronger dab (more pressure) raises it; a weaker one leaves it.
+  stampDab(s, 16, 16, 8, 8, 4, 0, 0.8)
+  stampDab(s, 16, 16, 8, 8, 4, 0, 0.2)
+  assert.ok(Math.abs(s[8 * 16 + 8] - 0.8) < 1e-6)
   assert.equal(s[0], 0)
 })
 
@@ -20,15 +29,46 @@ test('softness fades a dab to its edge', () => {
   assert.ok(s[16 * 32 + 24] > 0 && s[16 * 32 + 24] < s[16 * 32 + 18])
 })
 
-test('density caps a stroke; painting unites, erasing removes', () => {
+test('a stroke screens over the plane; erasing takes it away', () => {
   const plane = new Float32Array([0, 0.5, 1])
-  const stroke = new Float32Array([1, 1, 1])
-  const painted = composeStroke(plane, stroke, 0.6, false)
+  const stroke = new Float32Array([0.6, 0.6, 1])
+  const painted = composeStroke(plane, stroke, false)
   assert.ok(Math.abs(painted[0] - 0.6) < 1e-6)
   assert.ok(Math.abs(painted[1] - 0.8) < 1e-6)
   assert.equal(painted[2], 1)
-  const erased = composeStroke(plane, stroke, 1, true)
+  const erased = composeStroke(plane, new Float32Array([1, 1, 1]), true)
   assert.deepEqual([...erased], [0, 0, 0])
+})
+
+test('strokes as the engine paints them: flow caps a stroke, a second screens, the eraser takes out', () => {
+  const w = 40
+  const h = 20
+  const at = (p: Float32Array, x: number, y: number): number => p[y * w + x]
+  // A hard stroke along the middle, back over itself: never past its flow.
+  const one = {
+    dabs: [0.2, 0.5, 0.2, 1, 0.8, 0.5, 0.2, 1, 0.2, 0.5, 0.2, 1],
+    softness: 0,
+    flow: 0.5
+  }
+  const p = new Float32Array(w * h)
+  paintStrokes(p, w, h, [one])
+  assert.ok(Math.abs(at(p, 20, 10) - 0.5) < 1e-6)
+  assert.equal(at(p, 0, 0), 0)
+  // A second stroke over it screens: 0.5 + 0.5·0.5.
+  paintStrokes(p, w, h, [one])
+  assert.ok(Math.abs(at(p, 20, 10) - 0.75) < 1e-6)
+  // The eraser at full flow takes it out where it passes.
+  paintStrokes(p, w, h, [{ ...one, flow: 1, erase: true }])
+  assert.equal(at(p, 20, 10), 0)
+  // Pressure runs linearly along a segment and scales the flow there.
+  const q = new Float32Array(w * h)
+  paintStrokes(q, w, h, [{ dabs: [0, 0.5, 0.3, 0, 1, 0.5, 0.3, 1], softness: 0, flow: 1 }])
+  assert.ok(Math.abs(at(q, 20, 10) - 20.5 / 40) < 0.01)
+  // One dab is a disc of the radius (a fraction of the shorter side).
+  const d = new Float32Array(w * h)
+  paintStrokes(d, w, h, [{ dabs: [0.5, 0.5, 0.25, 1], softness: 0, flow: 1 }])
+  assert.equal(at(d, 20, 10), 1)
+  assert.equal(at(d, 20 + 5, 10), 0, 'past 5 px (a quarter of 20)')
 })
 
 test('Auto Mask keeps similar colours and drops different ones', () => {
