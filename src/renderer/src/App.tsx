@@ -9,6 +9,8 @@ import { api, errorText } from './lib/api'
 import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { ConfirmHost } from './components/ConfirmHost'
+import { MessagesDialog, Toasts } from './components/Toasts'
+import { TooltipHost } from './components/Tooltip'
 import { ModelPromptHost } from './components/ModelPromptHost'
 import { PixlCpuHost } from './components/PixlCpuHost'
 import { Scopes } from './develop/Scopes'
@@ -133,28 +135,8 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'update' && <UpdateDialog key="update" />}
       {dialog === 'scopes' && <ScopesExpandedDialog key="scopes" />}
       {dialog === 'editing-space' && <EditingSpaceDialog key="editing-space" />}
+      {dialog === 'messages' && <MessagesDialog key="messages" />}
     </AnimatePresence>
-  )
-}
-
-function Toast(): React.JSX.Element | null {
-  const toast = useLibrary((s) => s.toast)
-  if (!toast) return null
-  return (
-    <div className={`toast ${toast.tone}`} key={toast.text} role="status">
-      {toast.text}
-      {toast.action && (
-        <button
-          className="primary"
-          onClick={() => {
-            useLibrary.setState({ toast: null })
-            toast.action?.run()
-          }}
-        >
-          {toast.action.label}
-        </button>
-      )}
-    </div>
   )
 }
 
@@ -609,7 +591,8 @@ export default function App(): React.JSX.Element {
         <ConfirmHost />
         <ModelPromptHost />
         <PixlCpuHost />
-        <Toast />
+        <Toasts />
+        <TooltipHost />
         <EngineBanner />
         <Splash />
         <BetaGate gate={gate} />

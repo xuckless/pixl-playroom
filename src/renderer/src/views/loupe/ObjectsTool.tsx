@@ -16,6 +16,7 @@
  * time and only the pointer's latest place waits behind it.
  */
 import { memo, useEffect, useRef, useState } from 'react'
+import { modName } from '../../lib/commands'
 import {
   boxAround,
   strokePoints,
@@ -291,12 +292,16 @@ export const ObjectsTool = memo(function ObjectsTool({
           ? `${t(concept.ask)} · ${t('Esc when done')}`
           : t(concept.ask)
         : selected
-          ? t('Shift-click adds a part · Alt-click removes one · Enter keeps it')
+          ? t('Shift-click adds a part · {{alt}}-click removes one · Enter keeps it', {
+              alt: modName('alt')
+            })
           : mode === 'auto'
             ? t('Hover to see an object · click to take it · or drag a box')
             : mode === 'box'
               ? t('Drag a box around the object')
-              : t('Brush over the object · Alt-brush what is not part of it')
+              : t('Brush over the object · {{alt}}-brush what is not part of it', {
+                  alt: modName('alt')
+                })
   return (
     <div
       ref={layer}

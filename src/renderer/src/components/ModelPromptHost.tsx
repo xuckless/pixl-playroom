@@ -4,7 +4,7 @@ import { api, errorText } from '../lib/api'
 import { mb, useModels } from '../lib/models'
 import { useModelPrompt, type ModelAsk } from '../state/modelPrompt'
 import { copyOf } from '../views/modelCopy'
-import { Modal } from './ui'
+import { Modal, Progress } from './ui'
 import { rich, t } from '../lib/i18n'
 
 /**
@@ -72,17 +72,21 @@ function ModelPrompt({ ask }: { ask: ModelAsk }): React.JSX.Element {
       {copy && <p>{t(copy.what)}</p>}
       <p className="muted">
         {t('It downloads once and stays on this Mac or PC; everything it does runs here, offline.')}
-        {copy?.where ? ` ${t("You'll find it later in {{where}}.", { where: t(copy.where) })}` : ''}
+        {copy?.where ? ` ${t('You’ll find it later in {{where}}.', { where: t(copy.where) })}` : ''}
       </p>
       {downloading && (
-        <div className="model-prompt-progress" aria-label={t('Downloading')}>
-          <span className="model-bar">
-            <span style={{ width: `${pct}%` }} />
+        <div className="model-prompt-progress">
+          <Progress value={pct / 100} label={t('Downloading')} />
+          <span className="t-num" aria-hidden>
+            {pct}%
           </span>
-          <span className="t-num">{pct}%</span>
         </div>
       )}
-      {error && <p className="error">{error}</p>}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
       {m && (
         <p className="micro muted" title={m.caveat}>
           {m.title.split(':')[0]} · {m.licence} · {m.holder}

@@ -11,6 +11,7 @@ import type { AiSwitches, HeavyBenchmark, HeavyModel } from '../../../shared/hea
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
 import { t, tp } from '../lib/i18n'
+import { Progress } from '../components/ui'
 
 const mb = (bytes: number): string =>
   bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`
@@ -131,13 +132,15 @@ function HeavyCard({
         <div className="model-tech muted">
           {mb(bytes)} · {licence}
         </div>
-        {error && <div className="error micro">{error}</div>}
+        {error && (
+          <div className="error micro" role="alert">
+            {error}
+          </div>
+        )}
         {h?.benchmark && <BenchResult b={h.benchmark} machine={machine} />}
         {bench && (
           <div className="heavy-bench">
-            <div className="model-bar" aria-label={t('Benchmarking')}>
-              <span style={{ width: `${Math.round(bench.progress * 100)}%` }} />
-            </div>
+            <Progress value={bench.progress} label={t('Benchmarking')} />
             <span className="muted micro">
               {t('Benchmark: {{note}}. It works at full load for about a minute.', {
                 note: bench.note
@@ -149,9 +152,7 @@ function HeavyCard({
       <div className="model-act">
         {progress !== null ? (
           <>
-            <div className="model-bar" aria-label={t('Downloading')}>
-              <span style={{ width: `${Math.round(progress * 100)}%` }} />
-            </div>
+            <Progress value={progress} label={t('Downloading')} />
             <button className="sm ghost" onClick={cancel}>
               {t('Cancel')}
             </button>

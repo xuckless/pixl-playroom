@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { clearedFilters, extraFilterCount, type FlagFilter } from '../../../../shared/filter'
+import { GlassSelect } from '../../components/GlassSelect'
+import { Segmented } from '../../components/ui'
 import type { ColorLabel } from '../../../../shared/ipc'
 import { keywordLabel, keywordPaths } from '../../../../shared/keywords'
 import { cameraName } from '../../../../shared/smart'
@@ -133,44 +135,43 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
     <Popover onClose={onClose} className="filter-pop">
       <div className="field">
         <span>{t('Rating')}</span>
-        <div className="seg rating-seg" role="group" aria-label={t('Minimum rating')}>
-          {[0, 1, 2, 3, 4, 5].map((r) => (
-            <button
-              key={r}
-              className={filter.minRating === r ? 'on' : ''}
-              aria-pressed={filter.minRating === r}
-              title={
-                r === 0
-                  ? t('Any rating')
-                  : tp('{{count}} star or more', '{{count}} stars or more', r)
-              }
-              onClick={() => setFilter({ minRating: r })}
-            >
-              {r === 0 ? (
+        <Segmented
+          className="rating-seg"
+          label={t('Minimum rating')}
+          value={filter.minRating}
+          onChange={(minRating) => setFilter({ minRating })}
+          options={[0, 1, 2, 3, 4, 5].map((r) => ({
+            value: r,
+            title:
+              r === 0
+                ? t('Any rating')
+                : tp('{{count}} star or more', '{{count}} stars or more', r),
+            ariaLabel:
+              r === 0
+                ? t('Any rating')
+                : tp('{{count}} star or more', '{{count}} stars or more', r),
+            label:
+              r === 0 ? (
                 t('Any')
               ) : (
                 <>
                   {r}
-                  <span className="seg-star">★</span>
+                  <span className="seg-star" aria-hidden>
+                    ★
+                  </span>
                 </>
-              )}
-            </button>
-          ))}
-        </div>
+              )
+          }))}
+        />
       </div>
       <div className="field">
         <span>{t('Flag')}</span>
-        <select
+        <GlassSelect<FlagFilter>
           value={filter.flag}
-          onChange={(e) => setFilter({ flag: e.target.value as FlagFilter })}
-          aria-label={t('Flag')}
-        >
-          {FLAGS.map(([v, label]) => (
-            <option key={v} value={v}>
-              {t(label)}
-            </option>
-          ))}
-        </select>
+          onChange={(flag) => setFilter({ flag })}
+          label={t('Flag')}
+          options={FLAGS.map(([v, label]) => ({ value: v, label: t(label) }))}
+        />
       </div>
       {cullSuggest && (
         <label
@@ -216,67 +217,58 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
       </div>
       <div className="field">
         <span>{t('Edits')}</span>
-        <div className="seg" role="group" aria-label={t('Edited')}>
-          {(
+        <Segmented
+          label={t('Edited')}
+          value={filter.edited}
+          onChange={(edited) => setFilter({ edited })}
+          options={(
             [
               ['all', tk('Any')],
               ['edited', tk('Edited')],
               ['unedited', tk('Unedited')]
             ] as const
-          ).map(([v, label]) => (
-            <button
-              key={v}
-              className={filter.edited === v ? 'on' : ''}
-              aria-pressed={filter.edited === v}
-              onClick={() => setFilter({ edited: v })}
-            >
-              {t(label)}
-            </button>
-          ))}
-        </div>
+          ).map(([v, label]) => ({ value: v, label: t(label) }))}
+        />
       </div>
       <div className="pop-rule" />
       <div className="field">
         <span>{t('Camera')}</span>
-        <select value={filter.camera} onChange={(e) => setFilter({ camera: e.target.value })}>
-          <option value="">{t('Any camera')}</option>
-          {withCurrent(cameras, filter.camera).map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+        <GlassSelect
+          value={filter.camera}
+          onChange={(camera) => setFilter({ camera })}
+          label={t('Camera')}
+          options={[
+            { value: '', label: t('Any camera') },
+            ...withCurrent(cameras, filter.camera).map((c) => ({ value: c, label: c }))
+          ]}
+        />
       </div>
       <div className="field">
         <span>{t('Lens')}</span>
-        <select value={filter.lens} onChange={(e) => setFilter({ lens: e.target.value })}>
-          <option value="">{t('Any lens')}</option>
-          {withCurrent(lenses, filter.lens).map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+        <GlassSelect
+          value={filter.lens}
+          onChange={(lens) => setFilter({ lens })}
+          label={t('Lens')}
+          options={[
+            { value: '', label: t('Any lens') },
+            ...withCurrent(lenses, filter.lens).map((c) => ({ value: c, label: c }))
+          ]}
+        />
       </div>
       <div className="field">
         <span>{t('Kind')}</span>
-        <div className="seg">
-          {(
+        <Segmented
+          label={t('Kind')}
+          value={filter.kind}
+          onChange={(kind) => setFilter({ kind })}
+          options={(
             [
               ['all', tk('All')],
               ['raw', 'RAW'],
               ['nonraw', tk('Not RAW')]
             ] as const
-          ).map(([v, label]) => (
-            <button
-              key={v}
-              className={filter.kind === v ? 'on' : ''}
-              onClick={() => setFilter({ kind: v })}
-            >
-              {t(label)}
-            </button>
-          ))}
-        </div>
+          ).map(([v, label]) => ({ value: v, label: t(label) }))}
+        />
       </div>
       <Range label="ISO" value={filter.iso} onChange={(iso) => setFilter({ iso })} />
       <Range
@@ -307,14 +299,18 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
       </div>
       <div className="field">
         <span>{t('Keyword')}</span>
-        <select value={filter.keyword} onChange={(e) => setFilter({ keyword: e.target.value })}>
-          <option value="">{t('Any keyword')}</option>
-          {withCurrent(keywords, filter.keyword).map((k) => (
-            <option key={k} value={k}>
-              {keywordLabel(k)}
-            </option>
-          ))}
-        </select>
+        <GlassSelect
+          value={filter.keyword}
+          onChange={(keyword) => setFilter({ keyword })}
+          label={t('Keyword')}
+          options={[
+            { value: '', label: t('Any keyword') },
+            ...withCurrent(keywords, filter.keyword).map((k) => ({
+              value: k,
+              label: keywordLabel(k)
+            }))
+          ]}
+        />
       </div>
       <div className="row between pop-foot">
         <span className="muted small">{t('Search also finds titles, captions and keywords.')}</span>
@@ -505,22 +501,20 @@ export function DuplicateControls(): React.JSX.Element | null {
         </span>
         <span className="bar-value t-num">{level}</span>
       </label>
-      <div className="seg" role="group" aria-label={t('Where to look')}>
-        <button
-          className={shown.folder !== null ? 'on' : ''}
-          disabled={!lastFolder}
-          title={lastFolder ?? t('Open a folder first')}
-          onClick={() => reopen({ folder: lastFolder })}
-        >
-          {t('This folder')}
-        </button>
-        <button
-          className={shown.folder === null ? 'on' : ''}
-          onClick={() => reopen({ folder: null })}
-        >
-          {t('Whole library')}
-        </button>
-      </div>
+      <Segmented
+        label={t('Where to look')}
+        value={shown.folder !== null ? 'folder' : 'library'}
+        onChange={(where) => reopen({ folder: where === 'folder' ? lastFolder : null })}
+        options={[
+          {
+            value: 'folder',
+            label: t('This folder'),
+            disabled: !lastFolder,
+            title: lastFolder ?? t('Open a folder first')
+          },
+          { value: 'library', label: t('Whole library') }
+        ]}
+      />
     </>
   )
 }

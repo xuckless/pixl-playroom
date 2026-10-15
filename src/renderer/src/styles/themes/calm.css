@@ -16,10 +16,11 @@
   --hair2: rgb(var(--fg-rgb) / 0.1);
   --hair3: rgb(var(--fg-rgb) / 0.16);
 
-  /* Ink stays bright on black. */
+  /* Ink stays bright on black; even the quietest (hints, units) reads at
+     4.5:1 on a card (WCAG AA). */
   --text: #e8e8ec;
   --text2: #a8a8b0;
-  --muted: #6e6e76;
+  --muted: #7c7c84;
 
   /* No glow: the accent marks, it does not shine. */
   --glow: transparent;

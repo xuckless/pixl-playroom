@@ -66,8 +66,9 @@ function Node(p: NodeProps): React.JSX.Element {
       {p.onToggle && (
         <button
           className="icon sm ghost"
-          aria-label={p.enabled ? t('Switch off') : t('Switch on')}
-          title={p.enabled ? t('Switch off') : t('Switch on')}
+          aria-pressed={p.enabled}
+          aria-label={t('Show {{name}}', { name: p.name })}
+          title={p.enabled ? t('Turn off') : t('Turn on')}
           onClick={p.onToggle}
         >
           <Icon name={p.enabled ? 'eye' : 'eyeOff'} />

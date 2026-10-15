@@ -993,7 +993,7 @@ export function toInstructions(layers: LocalLayer[], pixels: PixelStep[]): Conve
       kept.push(p.scope ? t('AI deblur in {{mask}}', { mask: p.scope }) : t('AI deblur'))
     } else if (p.kind === 'enhance') {
       warnings.push(
-        t("{{name}}: only a deblur can be kept (an upscale or a JPEG restore is the file's)", {
+        t('{{name}}: only a deblur can be kept (an upscale or a JPEG restore is the file’s)', {
           name: p.label
         })
       )

@@ -704,9 +704,24 @@ export interface QualifierSetting {
   sat: number
   /** 0…100, 50 untouched. */
   hue: number
+  /**
+   * The colour the eyedropper keyed on (hue in degrees, saturation and luma
+   * 0…1): the bands rest there, so a reset puts a band back where the pick
+   * put it. Absent from qualifiers keyed before it was kept.
+   */
+  picked?: QualifierSample
+}
+
+export interface QualifierSample {
+  hue: number
+  saturation: number
+  luminance: number
 }
 
 export const MAX_QUALIFIERS = 8
+
+/** A new band's colour when there is no pick to go back to. */
+const NO_PICK: QualifierSample = { hue: 0, saturation: 0.5, luminance: 0.5 }
 
 const band = (on: boolean, centre: number, width: number, soft: number): KeyBandSetting => ({
   on,
@@ -716,10 +731,7 @@ const band = (on: boolean, centre: number, width: number, soft: number): KeyBand
 })
 
 /** A qualifier keyed around a sampled colour (hue in degrees, saturation and luma 0…1). */
-export function qualifierFromSample(
-  id: string,
-  s: { hue: number; saturation: number; luminance: number }
-): QualifierSetting {
+export function qualifierFromSample(id: string, s: QualifierSample): QualifierSetting {
   return {
     id,
     enabled: true,
@@ -731,7 +743,29 @@ export function qualifierFromSample(
     invert: false,
     gain: one(),
     sat: 50,
-    hue: 50
+    hue: 50,
+    picked: { hue: r4(s.hue), saturation: r4(s.saturation), luminance: r4(s.luminance) }
+  }
+}
+
+/** Where a qualifier's bands rest (their reset): as its pick keyed them, else a new band's. */
+export function qualifierRest(
+  q: QualifierSetting
+): Pick<QualifierSetting, 'keyHue' | 'keySat' | 'keyLum'> {
+  const { keyHue, keySat, keyLum } = qualifierFromSample(q.id, q.picked ?? NO_PICK)
+  return { keyHue, keySat, keyLum }
+}
+
+function sampleOf(v: unknown): QualifierSample | undefined {
+  const o = (v && typeof v === 'object' ? v : null) as Partial<
+    Record<keyof QualifierSample, unknown>
+  > | null
+  if (!o || ![o.hue, o.saturation, o.luminance].every((n) => typeof n === 'number' && isFinite(n)))
+    return undefined
+  return {
+    hue: clamp(o.hue as number, 0, 360),
+    saturation: clamp(o.saturation as number, 0, 1),
+    luminance: clamp(o.luminance as number, 0, 1)
   }
 }
 
@@ -755,7 +789,8 @@ export function normaliseQualifiers(v: unknown): QualifierSetting[] {
     const id = typeof o.id === 'string' && o.id && !seen.has(o.id) ? o.id : null
     if (!id) continue
     seen.add(id)
-    const d = qualifierFromSample(id, { hue: 0, saturation: 0.5, luminance: 0.5 })
+    const d = qualifierFromSample(id, NO_PICK)
+    const picked = sampleOf(o.picked)
     out.push({
       id,
       enabled: o.enabled !== false,
@@ -766,7 +801,8 @@ export function normaliseQualifiers(v: unknown): QualifierSetting[] {
       invert: o.invert === true,
       gain: yrgbOf(o.gain, one(), 0, 4),
       sat: clamp(num(o.sat, 50), 0, 100),
-      hue: clamp(num(o.hue, 50), 0, 100)
+      hue: clamp(num(o.hue, 50), 0, 100),
+      ...(picked ? { picked } : {})
     })
     if (out.length >= MAX_QUALIFIERS) break
   }

@@ -19,13 +19,16 @@
 .histogram path {
   transition: d 0.45s var(--ease);
 }
+.histogram .chart-grid {
+  stroke: rgb(var(--fg-rgb) / 0.06);
+}
 .clip-marker {
   position: absolute;
   top: 4px;
   width: 18px;
   height: 16px;
   padding: 0;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   background: rgb(var(--shade-rgb) / 0.55);
   color: var(--muted);
   border: 1px solid transparent;
@@ -90,7 +93,7 @@
 }
 .hue-chart.empty {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-small);
   padding: 10px 0;
 }
 .hue-bars {
@@ -202,11 +205,25 @@
   background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.02), rgb(var(--shade-rgb) / 0.2));
   margin: 6px 0;
 }
+.curve-hist {
+  fill: color-mix(in srgb, var(--acc) 14%, transparent);
+}
+.curve-grid {
+  stroke: rgb(var(--fg-rgb) / 0.06);
+}
+.curve-rest {
+  stroke: rgb(var(--fg-rgb) / 0.16);
+}
 .curve circle {
+  fill: rgb(var(--shade-rgb));
   transition: r 0.3s var(--spring);
 }
-.curve circle:hover {
+.curve circle:hover,
+.curve circle:focus-visible {
   r: 6;
+}
+.curve circle:focus-visible {
+  stroke-width: 2.5px;
 }
 
 /* ── colour wheels ─────────────────────────────────────────────── */
@@ -424,7 +441,7 @@ fieldset::before {
 }
 .history-changed {
   margin: 2px 10px 8px 25px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   line-height: 1.45;
   color: var(--muted);
 }
@@ -434,7 +451,7 @@ fieldset::before {
   border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent);
   border-radius: var(--r);
   background: color-mix(in srgb, var(--acc) 8%, transparent);
-  font-size: 12px;
+  font-size: var(--fs-body);
   line-height: 1.45;
   color: var(--text2);
 }
@@ -458,7 +475,7 @@ fieldset::before {
   grid-template-columns: 72px minmax(0, 1fr);
   gap: 8px 10px;
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   margin: 8px 0 14px;
 }
 .kv dt {
@@ -813,7 +830,7 @@ aside.right .panels.adjust {
   flex-direction: column;
   gap: 4px;
   margin: 4px 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-body);
   font-variant-numeric: tabular-nums;
 }
 .enhance-sum b {
@@ -867,7 +884,7 @@ aside.right .panels.adjust {
   gap: 6px;
   align-items: center;
   margin: 8px 0 4px;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .lens-using-name {
   flex: 1;
@@ -905,7 +922,7 @@ aside.right .panels.adjust {
   border-bottom: 1px solid var(--hair);
   background: transparent;
   text-align: left;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .lens-pick li button:hover,
 .lens-pick li button.on {
@@ -936,7 +953,7 @@ aside.right .panels.adjust {
 .pixel-step-stale {
   margin: 2px 0 4px;
   color: var(--warn);
-  font-size: 11px;
+  font-size: var(--fs-small);
   line-height: 1.35;
 }
 .pixel-step-label {
@@ -945,7 +962,7 @@ aside.right .panels.adjust {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 
 /* ── DaVinci Resolve's wheels (components/grading/GradeWheel.tsx) ──── */
@@ -963,7 +980,7 @@ aside.right .panels.adjust {
   min-width: 0;
 }
 .gw-label {
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1072,7 +1089,7 @@ aside.right .panels.adjust {
   min-width: 0;
   height: 18px;
   padding: 0 2px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   text-align: center;
   font-variant-numeric: tabular-nums;
   background: rgb(var(--shade-rgb) / 0.35);
@@ -1093,7 +1110,7 @@ aside.right .panels.adjust {
   min-width: 0;
   height: 24px;
   padding: 0 4px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1177,7 +1194,7 @@ aside.right .panels.adjust {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .q-band {
   margin: 8px 0 4px;
@@ -1186,7 +1203,7 @@ aside.right .panels.adjust {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-body);
   margin-bottom: 4px;
 }
 .band-bar {
@@ -1267,7 +1284,7 @@ aside.right .panels.adjust {
 .node-grip {
   cursor: grab;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: -2px;
   user-select: none;
   touch-action: none;
@@ -1285,7 +1302,7 @@ aside.right .panels.adjust {
   text-align: left;
 }
 .node-n {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -1306,14 +1323,14 @@ aside.right .panels.adjust {
   min-width: 0;
 }
 .node-name {
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .node-kind {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;

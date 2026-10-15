@@ -5,6 +5,7 @@
  * expanded viewer one per place.
  */
 import { useState } from 'react'
+import { Segmented } from '../../components/ui'
 import { Histogram, HueChart } from '../../components/charts'
 import { VISION_LABEL, type VisionKind } from '../../../../shared/scopemetrics'
 import { readable } from '../../lib/frames'
@@ -36,40 +37,32 @@ export function ScopeOptions({ kind }: { kind: ExpandedScope }): React.JSX.Eleme
     return (
       <>
         {inMask}
-        <div className="seg sm" role="group" aria-label={t('Waveform')}>
-          <button
-            className={prefs.waveform === 'luma' ? 'on' : ''}
-            onClick={() => set({ waveform: 'luma' })}
-          >
-            Y
-          </button>
-          <button
-            className={prefs.waveform === 'rgb' ? 'on' : ''}
-            onClick={() => set({ waveform: 'rgb' })}
-          >
-            RGB
-          </button>
-        </div>
+        <Segmented
+          className="sm"
+          label={t('Waveform')}
+          value={prefs.waveform}
+          onChange={(waveform) => set({ waveform })}
+          options={[
+            { value: 'luma', label: 'Y' },
+            { value: 'rgb', label: 'RGB' }
+          ]}
+        />
       </>
     )
   if (kind === 'vectorscope')
     return (
       <>
         {inMask}
-        <div className="seg sm" role="group" aria-label={t('Zoom')}>
-          <button
-            className={prefs.vectorZoom === 1 ? 'on' : ''}
-            onClick={() => set({ vectorZoom: 1 })}
-          >
-            1×
-          </button>
-          <button
-            className={prefs.vectorZoom === 2 ? 'on' : ''}
-            onClick={() => set({ vectorZoom: 2 })}
-          >
-            2×
-          </button>
-        </div>
+        <Segmented
+          className="sm"
+          label={t('Zoom')}
+          value={prefs.vectorZoom}
+          onChange={(vectorZoom) => set({ vectorZoom })}
+          options={[
+            { value: 1, label: '1×' },
+            { value: 2, label: '2×' }
+          ]}
+        />
         <button
           className={`chip sm${prefs.skinLine ? ' on' : ''}`}
           aria-pressed={prefs.skinLine}
@@ -173,21 +166,20 @@ function ColoursExpanded(): React.JSX.Element {
   const layerId = useDevelop((s) => s.layerId)
   return (
     <div className="se-colours">
-      <div className="seg sm" role="group" aria-label={t('How the colours look to')}>
-        <button className={vision === null ? 'on' : ''} onClick={() => setVision(null)}>
-          {t('Normal')}
-        </button>
-        {(['protan', 'deutan', 'tritan'] as VisionKind[]).map((k) => (
-          <button
-            key={k}
-            className={vision === k ? 'on' : ''}
-            onClick={() => setVision(k)}
-            title={t(VISION_LABEL[k])}
-          >
-            {k === 'protan' ? t('Protan') : k === 'deutan' ? t('Deutan') : t('Tritan')}
-          </button>
-        ))}
-      </div>
+      <Segmented<VisionKind | null>
+        className="sm"
+        label={t('How the colours look to')}
+        value={vision}
+        onChange={setVision}
+        options={[
+          { value: null, label: t('Normal') },
+          ...(['protan', 'deutan', 'tritan'] as VisionKind[]).map((k) => ({
+            value: k,
+            title: t(VISION_LABEL[k]),
+            label: k === 'protan' ? t('Protan') : k === 'deutan' ? t('Deutan') : t('Tritan')
+          }))
+        ]}
+      />
       <HueChart
         stats={stats}
         before={before?.stats ?? null}
@@ -201,7 +193,7 @@ function ColoursExpanded(): React.JSX.Element {
       />
       <p className="muted small">
         {t(
-          'Click a bar to open that colour in the Colour mixer; Shift-click makes a mask of it. The faint bars are the photo before your edits.'
+          'Click a bar to open that colour in HSL; Shift-click makes a mask of it. The faint bars are the photo before your edits.'
         )}
       </p>
     </div>

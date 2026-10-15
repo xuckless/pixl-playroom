@@ -8,6 +8,7 @@
  * real export request, at a reduced size, to see it as it will be written.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { GlassSelect } from '../components/GlassSelect'
 import {
   CEILING_MAX,
   CEILING_MIN,
@@ -317,7 +318,7 @@ export function ExportDialog(): React.JSX.Element {
                     ? `· ${t('done')}`
                     : ''}
                 {failed.length > 0 && (
-                  <span className="error">
+                  <span className="error" role="alert">
                     {' '}
                     ·{' '}
                     {t('{{count}} failed: {{message}}', {
@@ -605,16 +606,11 @@ export function ExportDialog(): React.JSX.Element {
             onReset={reset('resize')}
           >
             <Field label={t('Resize')}>
-              <select
+              <GlassSelect
                 value={s.resize.mode}
-                onChange={(e) => up('resize', { ...s.resize, mode: e.target.value as ResizeMode })}
-              >
-                {RESIZE_MODES.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {t(m.label)}
-                  </option>
-                ))}
-              </select>
+                onChange={(mode) => up('resize', { ...s.resize, mode })}
+                options={RESIZE_MODES.map((m) => ({ value: m.value, label: t(m.label) }))}
+              />
             </Field>
             {s.resize.mode === 'box' ? (
               <div className="ew-box">
@@ -685,16 +681,11 @@ export function ExportDialog(): React.JSX.Element {
             />
             <div className="ew-intent">
               <Field label={t('Intent')}>
-                <select
+                <GlassSelect
                   value={s.intent}
-                  onChange={(e) => up('intent', e.target.value as ExportSettings['intent'])}
-                >
-                  {INTENT_INFO.map((i) => (
-                    <option key={i.value} value={i.value}>
-                      {t(i.name)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => up('intent', v)}
+                  options={INTENT_INFO.map((i) => ({ value: i.value, label: t(i.name) }))}
+                />
               </Field>
               <InfoTip tip={intentTip()} label={t('Intent')} />
             </div>
@@ -725,20 +716,16 @@ export function ExportDialog(): React.JSX.Element {
               {t('Sharpen for output')}
             </Check>
             <Field label={t('Media')}>
-              <select
+              <GlassSelect<ExportSettings['outputSharpen']['media']>
                 value={s.outputSharpen.media}
                 disabled={hdrOut || !s.outputSharpen.enabled}
-                onChange={(e) =>
-                  up('outputSharpen', {
-                    ...s.outputSharpen,
-                    media: e.target.value as ExportSettings['outputSharpen']['media']
-                  })
-                }
-              >
-                <option value="screen">{t('Screen|medium')}</option>
-                <option value="matte">{t('Matte paper')}</option>
-                <option value="glossy">{t('Glossy paper')}</option>
-              </select>
+                onChange={(media) => up('outputSharpen', { ...s.outputSharpen, media })}
+                options={[
+                  { value: 'screen', label: t('Screen|medium') },
+                  { value: 'matte', label: t('Matte paper') },
+                  { value: 'glossy', label: t('Glossy paper') }
+                ]}
+              />
             </Field>
             <StepSlider
               label={t('Amount')}
@@ -782,13 +769,14 @@ export function ExportDialog(): React.JSX.Element {
             onReset={reset('metaMode', 'metadata', 'removeLocation', 'copyright')}
           >
             <Field label={t('Include')}>
-              <select
+              <GlassSelect<ExportSettings['metaMode']>
                 value={s.metaMode}
-                onChange={(e) => up('metaMode', e.target.value as ExportSettings['metaMode'])}
-              >
-                <option value="all">{t('All')}</option>
-                <option value="copyrightOnly">{t('Copyright only')}</option>
-              </select>
+                onChange={(v) => up('metaMode', v)}
+                options={[
+                  { value: 'all', label: t('All') },
+                  { value: 'copyrightOnly', label: t('Copyright only') }
+                ]}
+              />
             </Field>
             <div className="ew-checks">
               {(['exif', 'icc', 'xmp', 'iptc'] as const).map((k) => (
@@ -824,23 +812,28 @@ export function ExportDialog(): React.JSX.Element {
             onReset={reset('hdr')}
           >
             <Field label={t('Mode')}>
-              <select
+              <GlassSelect<ExportSettings['hdr']['mode']>
                 value={s.hdr.mode}
-                onChange={(e) =>
-                  up('hdr', { ...s.hdr, mode: e.target.value as ExportSettings['hdr']['mode'] })
-                }
-              >
-                <option value="sdr">{t('SDR (tone map HDR sources)')}</option>
-                <option value="keep" disabled={!supportsHdr(s.format)}>
-                  {t('Keep HDR sources HDR')}
-                </option>
-                <option value="expand" disabled={!supportsHdr(s.format)}>
-                  {t('Expand SDR to HDR')}
-                </option>
-                <option value="gainmap" disabled={!supportsGainMap(s.format)}>
-                  {t('SDR + gain map (HDR sources)')}
-                </option>
-              </select>
+                onChange={(mode) => up('hdr', { ...s.hdr, mode })}
+                options={[
+                  { value: 'sdr', label: t('SDR (tone map HDR sources)') },
+                  {
+                    value: 'keep',
+                    label: t('Keep HDR sources HDR'),
+                    disabled: !supportsHdr(s.format)
+                  },
+                  {
+                    value: 'expand',
+                    label: t('Expand SDR to HDR'),
+                    disabled: !supportsHdr(s.format)
+                  },
+                  {
+                    value: 'gainmap',
+                    label: t('SDR + gain map (HDR sources)'),
+                    disabled: !supportsGainMap(s.format)
+                  }
+                ]}
+              />
             </Field>
             {s.hdr.mode === 'gainmap' && (
               <p className="muted small">
@@ -884,20 +877,16 @@ export function ExportDialog(): React.JSX.Element {
             {!s.hdr.pixl && (s.hdr.mode === 'sdr' || s.hdr.mode === 'gainmap') && (
               <>
                 <Field label={t('Operator')}>
-                  <select
+                  <GlassSelect<ExportSettings['hdr']['operator']>
                     value={s.hdr.operator}
-                    onChange={(e) =>
-                      up('hdr', {
-                        ...s.hdr,
-                        operator: e.target.value as ExportSettings['hdr']['operator']
-                      })
-                    }
-                  >
-                    <option value="Bt2390">BT.2390</option>
-                    <option value="Hable">Hable</option>
-                    <option value="Reinhard">Reinhard</option>
-                    <option value="Clip">Clip</option>
-                  </select>
+                    onChange={(operator) => up('hdr', { ...s.hdr, operator })}
+                    options={[
+                      { value: 'Bt2390', label: 'BT.2390' },
+                      { value: 'Hable', label: 'Hable' },
+                      { value: 'Reinhard', label: 'Reinhard' },
+                      { value: 'Clip', label: t('Clip|operator') }
+                    ]}
+                  />
                 </Field>
                 <Field label={t('Target white (nits)')}>
                   <Num
@@ -925,19 +914,15 @@ export function ExportDialog(): React.JSX.Element {
             {s.hdr.mode !== 'sdr' && !s.hdr.pixl && (
               <>
                 <Field label={t('Highlights')}>
-                  <select
+                  <GlassSelect<ExportSettings['hdr']['limit']>
                     value={s.hdr.limit}
-                    onChange={(e) =>
-                      up('hdr', {
-                        ...s.hdr,
-                        limit: e.target.value as ExportSettings['hdr']['limit']
-                      })
-                    }
+                    onChange={(limit) => up('hdr', { ...s.hdr, limit })}
                     title={t('What happens to highlights an edit pushes above the peak')}
-                  >
-                    <option value="clip">{t('Clip at the peak')}</option>
-                    <option value="rolloff">{t('Roll off (BT.2390)')}</option>
-                  </select>
+                    options={[
+                      { value: 'clip', label: t('Clip at the peak') },
+                      { value: 'rolloff', label: t('Roll off (BT.2390)') }
+                    ]}
+                  />
                 </Field>
                 {s.hdr.limit === 'rolloff' && (
                   <Slider
@@ -1018,34 +1003,33 @@ export function ExportDialog(): React.JSX.Element {
               />
             </Field>
             <Field label={t('If it exists')}>
-              <select
+              <GlassSelect<ExportSettings['collision']>
                 value={s.collision}
-                onChange={(e) => up('collision', e.target.value as ExportSettings['collision'])}
-              >
-                <option value="suffix">{t('Add a number')}</option>
-                <option value="skip">{t('Skip')}</option>
-                <option value="overwrite">{t('Overwrite')}</option>
-              </select>
+                onChange={(v) => up('collision', v)}
+                options={[
+                  { value: 'suffix', label: t('Add a number') },
+                  { value: 'skip', label: t('Skip') },
+                  { value: 'overwrite', label: t('Overwrite') }
+                ]}
+              />
             </Field>
             <Check on={s.reveal} onChange={(v) => up('reveal', v)}>
               {t('Show in folder when done')}
             </Check>
           </Card>
           <Card id="export.presets" title={t('Presets')} defaultOpen={false}>
-            <select
+            <GlassSelect
               value=""
-              onChange={(e) => {
-                const p = presets.find((x) => x.id === e.target.value)
+              label={t('Load preset…')}
+              onChange={(id) => {
+                const p = presets.find((x) => x.id === id)
                 if (p) setS(normaliseExportSettings(p.settings))
               }}
-            >
-              <option value="">{t('Load preset…')}</option>
-              {presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: t('Load preset…'), disabled: true },
+                ...presets.map((p) => ({ value: p.id, label: p.name }))
+              ]}
+            />
             <div className="row">
               <input
                 placeholder={t('Preset name')}
@@ -1092,7 +1076,11 @@ export function ExportDialog(): React.JSX.Element {
                 <span className="muted small">{t('Settings changed since: preview again.')}</span>
               )}
             </div>
-            {shown.state === 'error' && <p className="error small">{shown.error}</p>}
+            {shown.state === 'error' && (
+              <p className="error small" role="alert">
+                {shown.error}
+              </p>
+            )}
             {shown.state === 'ready' && shown.preview && (
               <figure className="ew-preview">
                 <img src={shown.preview.url} alt={t('The first photo as it will be exported')} />

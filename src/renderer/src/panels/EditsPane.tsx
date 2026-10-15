@@ -94,11 +94,9 @@ export function EditsPane(): React.JSX.Element {
             <button
               type="button"
               className={`icon sm edit-eye${row.on ? '' : ' on'}`}
-              aria-pressed={!row.on}
-              aria-label={
-                row.on ? t('Turn {{name}} off', { name }) : t('Turn {{name}} on', { name })
-              }
-              title={row.on ? t('Turn {{name}} off', { name }) : t('Turn {{name}} on', { name })}
+              aria-pressed={row.on}
+              aria-label={t('Show {{name}}', { name })}
+              title={row.on ? t('Turn off') : t('Turn on')}
               onClick={(e) => {
                 e.stopPropagation()
                 toggle(row)

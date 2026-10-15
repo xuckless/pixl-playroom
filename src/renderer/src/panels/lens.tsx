@@ -20,6 +20,7 @@ import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { t, tk, tp } from '../lib/i18n'
+import { Icon } from '../components/icons'
 
 type Num = (l: LensSetting) => number
 
@@ -358,7 +359,7 @@ function LensProfileSection(): React.JSX.Element | null {
                     commit(on ? tk('Lens: defish') : tk('Lens: keep the fisheye'))
                   }}
                   title={t(
-                    "Make this fisheye's picture rectilinear: straight lines straight (its projection, from the profile)"
+                    'Make this fisheye’s picture rectilinear: straight lines straight (its projection, from the profile)'
                   )}
                 >
                   {t('Defish')}
@@ -374,7 +375,7 @@ function LensProfileSection(): React.JSX.Element | null {
                   max={100}
                   def={100}
                   title={t(
-                    "How much of the defished picture shows: lower brings more of the fisheye's edge into view"
+                    'How much of the defished picture shows: lower brings more of the fisheye’s edge into view'
                   )}
                   format={(v) => `${Math.round(v)}%`}
                 />
@@ -532,7 +533,8 @@ export function LensPanel(): React.JSX.Element | null {
             onChange={(on) => setTool(on ? 'fringe-pick' : 'none')}
             title={t('Click a purple or green fringe to aim at its hue')}
           >
-            ⌖ {t('Pick')}
+            <Icon name="picker" />
+            {t('Pick')}
           </Toggle>
         }
       >

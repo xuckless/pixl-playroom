@@ -3,11 +3,15 @@ import { t } from '../lib/i18n'
 import { createPortal } from 'react-dom'
 import { placePopover } from '../../../shared/placement'
 import { LiquidGlass } from './glass/LiquidGlass'
+import { Icon } from './icons'
 
 const FOCUSABLE =
   'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
 
 export type PopoverAnchor = RefObject<HTMLElement | null> | HTMLElement | null
+
+/** The popovers open now, the newest last: Escape closes only the newest. */
+const stack: object[] = []
 
 /**
  * A glass popover under (or over) whatever opened it. It lives at the end of
@@ -17,7 +21,9 @@ export type PopoverAnchor = RefObject<HTMLElement | null> | HTMLElement | null
  * anchor is the element the popover is written inside, unless one is given.
  *
  * A click outside it (and outside the anchor, so the anchor's own button can
- * toggle it) or Escape closes it; it keeps Escape from reaching the app's own
+ * toggle it, and outside a popover opened from inside it: a dropdown in a
+ * popover) or Escape closes it (the newest open one only); it keeps Escape
+ * from reaching the app's own
  * shortcuts, and keys and clicks inside it from reaching whatever it is
  * written inside. Opening moves keyboard focus into it (unless something
  * inside already took it), Tab cycles within it, and closing hands focus back
@@ -128,13 +134,18 @@ export function Popover({
   }, [align, side, anchor])
 
   useEffect(() => {
+    const me = {}
+    stack.push(me)
     const down = (e: PointerEvent): void => {
       const t = e.target as Node
       if (ref.current?.contains(t) || anchorEl()?.contains(t)) return
+      // In a popover opened after this one (from inside it): still this one's.
+      const other = (t as Element).closest?.('.popover')
+      if (other && stack.indexOf(me) < stack.length - 1) return
       closeRef.current()
     }
     const key = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && stack[stack.length - 1] === me) {
         e.stopImmediatePropagation()
         closeRef.current()
       }
@@ -143,6 +154,7 @@ export function Popover({
     window.addEventListener('pointerdown', down, true)
     window.addEventListener('keydown', key, true)
     return () => {
+      stack.splice(stack.indexOf(me), 1)
       window.removeEventListener('pointerdown', down, true)
       window.removeEventListener('keydown', key, true)
     }
@@ -198,6 +210,7 @@ export interface MenuItem {
   label: string
   onSelect: () => void
   danger?: boolean
+  /** A choice that is on or off (a ✓ beside it; a screen reader hears which). */
   checked?: boolean
   disabled?: boolean
   hint?: string
@@ -207,7 +220,8 @@ export interface MenuItem {
 
 /**
  * A list of actions in a popover. Arrow keys, Home and End move between the
- * items (wrapping); Enter or Space runs the focused one.
+ * items (wrapping); Enter or Space runs the focused one. An item that is on
+ * or off is a menuitemcheckbox with the app's check.
  */
 export function Menu({
   items,
@@ -240,7 +254,7 @@ export function Menu({
           e.preventDefault()
           e.stopPropagation()
           const list = [
-            ...e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)')
+            ...e.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')
           ]
           if (list.length === 0) return
           const at = list.indexOf(document.activeElement as HTMLElement)
@@ -259,7 +273,8 @@ export function Menu({
           ) : (
             <button
               key={i}
-              role="menuitem"
+              role={it.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+              aria-checked={it.checked}
               className={`menu-item${it.danger ? ' danger' : ''}${it.checked ? ' checked' : ''}`}
               disabled={it.disabled}
               onClick={() => {
@@ -267,7 +282,9 @@ export function Menu({
                 it.onSelect()
               }}
             >
-              <span className="mark">{it.checked ? '●' : ''}</span>
+              <span className="mark" aria-hidden>
+                {it.checked && <Icon name="check" />}
+              </span>
               <span>{it.label}</span>
               {it.dot && <span className="menu-dot" aria-label={t('Changed')} />}
               {it.hint && <span className="hint">{it.hint}</span>}

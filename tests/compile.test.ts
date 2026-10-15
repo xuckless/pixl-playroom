@@ -516,7 +516,7 @@ test('a RAW the engine refuses by name is said plainly', async () => {
   )
   assert.match(
     unsupportedRaw({ Unsupported: { operation: 'raw decode', detail: 'Foveon' } })!,
-    /isn't supported \(Foveon\)/
+    /isn’t supported \(Foveon\)/
   )
   assert.equal(unsupportedRaw({ Unsupported: { operation: 'resize', detail: 'x' } }), null)
   assert.equal(unsupportedRaw(undefined), null)

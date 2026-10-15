@@ -83,6 +83,13 @@ export interface BrushSettings {
   /** A pen's pressure scales size and strength. */
   pressure: boolean
 }
+/** Each brush as it comes: where a double-click (or Alt-click) on its bar's slider puts it back. */
+export const DEFAULT_BRUSHES: Record<BrushSlot, BrushSettings> = {
+  A: { size: 80, softness: 60, density: 100, autoMask: false, pressure: true },
+  B: { size: 28, softness: 30, density: 100, autoMask: false, pressure: true },
+  erase: { size: 80, softness: 60, density: 100, autoMask: false, pressure: true }
+}
+
 /** Lightroom's two brushes, A and B, and the eraser, each remembering its own settings. */
 export type BrushSlot = 'A' | 'B' | 'erase'
 
@@ -338,11 +345,7 @@ export const useUi = create<UiState>()(
       cropGuide: 'thirds',
       maskOverlay: DEFAULT_MASK_OVERLAY,
       setMaskOverlay: (p) => set((s) => ({ maskOverlay: { ...s.maskOverlay, ...p } })),
-      brushes: {
-        A: { size: 80, softness: 60, density: 100, autoMask: false, pressure: true },
-        B: { size: 28, softness: 30, density: 100, autoMask: false, pressure: true },
-        erase: { size: 80, softness: 60, density: 100, autoMask: false, pressure: true }
-      },
+      brushes: DEFAULT_BRUSHES,
       brushSlot: 'A',
       setBrushSlot: (brushSlot) => set({ brushSlot }),
       heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100 },

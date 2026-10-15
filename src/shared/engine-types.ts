@@ -2703,8 +2703,8 @@ export function unsupportedRaw(detail: EngineErrorShape['detail']): string | nul
     )
   if (op === 'raw decode')
     return typeof d?.['detail'] === 'string' && d['detail']
-      ? t("This RAW format isn't supported ({{detail}}).", { detail: d['detail'] })
-      : t("This RAW format isn't supported.")
+      ? t('This RAW format isn’t supported ({{detail}}).', { detail: d['detail'] })
+      : t('This RAW format isn’t supported.')
   return null
 }
 

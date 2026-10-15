@@ -1,0 +1,690 @@
+{
+  "A pen’s pressure sets size and flow": {
+    "en": "A pen’s pressure sets size and flow",
+    "fr": "La pression d’un stylet règle la taille et le flux",
+    "de": "Stiftdruck steuert Größe und Fluss",
+    "ja": "ペンの筆圧でサイズと流量を設定",
+    "vi": "Lực nhấn bút quyết định kích thước và lưu lượng",
+    "zh-Hans": "压感笔的压力控制大小和流量"
+  },
+  "An older edit of this component’s edge or opacity is applied": {
+    "en": "An older edit of this component’s edge or opacity is applied",
+    "fr": "Une ancienne modification du bord ou de l’opacité de ce composant est appliquée",
+    "de": "Eine ältere Änderung an Kante oder Deckkraft dieser Komponente ist angewendet",
+    "ja": "このコンポーネントのエッジまたは不透明度の古い編集が適用されています",
+    "vi": "Đang áp dụng chỉnh sửa cũ hơn về cạnh hoặc độ mờ đục của thành phần này",
+    "zh-Hans": "已应用此组件边缘或不透明度的旧版编辑"
+  },
+  "Brush over the object · {{alt}}-brush what is not part of it": {
+    "en": "Brush over the object · {{alt}}-brush what is not part of it",
+    "fr": "Peignez sur l’objet · {{alt}}-peignez ce qui n’en fait pas partie",
+    "de": "Über das Objekt malen · mit {{alt}} über das malen, was nicht dazugehört",
+    "ja": "オブジェクトの上をブラシでなぞる · {{alt}} を押しながら対象外の部分をなぞる",
+    "vi": "Tô cọ lên đối tượng · {{alt}}-tô phần không thuộc về nó",
+    "zh-Hans": "用画笔涂抹物体 · 按住 {{alt}} 涂抹不属于它的部分"
+  },
+  "Click a bar to open that colour in HSL.": {
+    "en": "Click a bar to open that colour in HSL.",
+    "fr": "Cliquez sur une barre pour ouvrir cette couleur dans TSL.",
+    "de": "Klicken Sie auf einen Balken, um die Farbe in HSL zu öffnen.",
+    "ja": "バーをクリックすると、その色を HSL で開きます。",
+    "vi": "Nhấp vào một thanh để mở màu đó trong HSL.",
+    "zh-Hans": "点按条形可在 HSL 中打开该颜色。"
+  },
+  "Click a bar to open that colour in HSL; Shift-click makes a mask of it. The faint bars are the photo before your edits.": {
+    "en": "Click a bar to open that colour in HSL; Shift-click makes a mask of it. The faint bars are the photo before your edits.",
+    "fr": "Cliquez sur une barre pour ouvrir cette couleur dans TSL ; Maj-clic en crée un masque. Les barres pâles montrent la photo avant vos modifications.",
+    "de": "Klicken Sie auf einen Balken, um die Farbe in HSL zu öffnen; Umschalt-Klick erstellt eine Maske daraus. Die blassen Balken zeigen das Foto vor Ihren Änderungen.",
+    "ja": "バーをクリックするとその色をHSL で開き、Shift キーを押しながらクリックするとその色のマスクを作成します。薄いバーは編集前の写真です。",
+    "vi": "Nhấp vào một thanh để mở màu đó trong HSL; Shift-nhấp để tạo mặt nạ từ màu đó. Các thanh mờ là ảnh trước khi chỉnh sửa.",
+    "zh-Hans": "点按条形可在 HSL 中打开该颜色；按住 Shift 点按可为其创建蒙版。淡色条形是编辑前的照片。"
+  },
+  "Click corners or drag freehand · ⌫ undo point · {{alt}} subtracts · Esc cancels": {
+    "en": "Click corners or drag freehand · ⌫ undo point · {{alt}} subtracts · Esc cancels",
+    "fr": "Cliquez les coins ou tracez à main levée · ⌫ annule le point · {{alt}} soustrait · Esc annule",
+    "de": "Ecken klicken oder frei ziehen · ⌫ Punkt zurück · {{alt}} subtrahiert · Esc bricht ab",
+    "ja": "角をクリックするかフリーハンドでドラッグ · ⌫ でポイントを取り消し · {{alt}} で減算 · Esc でキャンセル",
+    "vi": "Nhấp các góc hoặc kéo tự do · ⌫ hoàn tác điểm · {{alt}} để trừ · Esc để hủy",
+    "zh-Hans": "点按角点或自由拖动 · ⌫ 撤销点 · {{alt}} 减去 · Esc 取消"
+  },
+  "Click or paint · drag the spot to its source · {{alt}}-click sets a source · ⌫ deletes · [ ] size": {
+    "en": "Click or paint · drag the spot to its source · {{alt}}-click sets a source · ⌫ deletes · [ ] size",
+    "fr": "Cliquez ou peignez · faites glisser le point vers sa source · {{alt}}-clic définit une source · ⌫ supprime · [ ] taille",
+    "de": "Klicken oder malen · Stelle zur Quelle ziehen · {{alt}}-Klick setzt Quelle · ⌫ löscht · [ ] Größe",
+    "ja": "クリックまたはペイント · スポットをソースまでドラッグ · {{alt}}+クリックでソースを設定 · ⌫ で削除 · [ ] でサイズ",
+    "vi": "Nhấp hoặc tô · kéo điểm đến nguồn của nó · {{alt}}-nhấp để đặt nguồn · ⌫ để xóa · [ ] kích thước",
+    "zh-Hans": "点按或涂抹 · 将污点拖到其来源 · {{alt}} 点按设置来源 · ⌫ 删除 · [ ] 大小"
+  },
+  "Clip|operator": {
+    "en": "Clip",
+    "fr": "Écrêter",
+    "de": "Beschneiden",
+    "ja": "クリップ",
+    "vi": "Cắt",
+    "zh-Hans": "剪切"
+  },
+  "Couldn’t check for updates: {{error}}": {
+    "en": "Couldn’t check for updates: {{error}}",
+    "fr": "Impossible de rechercher des mises à jour : {{error}}",
+    "de": "Updatesuche fehlgeschlagen: {{error}}",
+    "ja": "アップデートを確認できませんでした：{{error}}",
+    "vi": "Không kiểm tra được cập nhật: {{error}}",
+    "zh-Hans": "无法检查更新：{{error}}"
+  },
+  "Couldn’t identify this device": {
+    "en": "Couldn’t identify this device",
+    "fr": "Impossible d’identifier cet appareil",
+    "de": "Dieses Gerät konnte nicht erkannt werden",
+    "ja": "このデバイスを識別できませんでした",
+    "vi": "Không nhận dạng được thiết bị này",
+    "zh-Hans": "无法识别此设备"
+  },
+  "Couldn’t open the beta terms: {{reason}}": {
+    "en": "Couldn’t open the beta terms: {{reason}}",
+    "fr": "Impossible d’ouvrir les conditions de la bêta : {{reason}}",
+    "de": "Beta-Bedingungen konnten nicht geöffnet werden: {{reason}}",
+    "ja": "ベータ版利用規約を開けませんでした：{{reason}}",
+    "vi": "Không mở được điều khoản beta: {{reason}}",
+    "zh-Hans": "无法打开测试版条款：{{reason}}"
+  },
+  "Couldn’t open the third-party notices: {{reason}}": {
+    "en": "Couldn’t open the third-party notices: {{reason}}",
+    "fr": "Impossible d’ouvrir les avis de tiers : {{reason}}",
+    "de": "Drittanbieter-Hinweise konnten nicht geöffnet werden: {{reason}}",
+    "ja": "サードパーティの通知を開けませんでした：{{reason}}",
+    "vi": "Không mở được thông báo bên thứ ba: {{reason}}",
+    "zh-Hans": "无法打开第三方声明：{{reason}}"
+  },
+  "Couldn’t reach the PIXL account: {{reason}}": {
+    "en": "Couldn’t reach the PIXL account: {{reason}}",
+    "fr": "Impossible de joindre le compte PIXL : {{reason}}",
+    "de": "PIXL-Konto nicht erreichbar: {{reason}}",
+    "ja": "PIXL アカウントに接続できませんでした：{{reason}}",
+    "vi": "Không kết nối được tài khoản PIXL: {{reason}}",
+    "zh-Hans": "无法连接到 PIXL 账户：{{reason}}"
+  },
+  "Couldn’t send the report. Check your connection and try again.": {
+    "en": "Couldn’t send the report. Check your connection and try again.",
+    "fr": "Impossible d’envoyer le rapport. Vérifiez votre connexion et réessayez.",
+    "de": "Der Bericht konnte nicht gesendet werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+    "ja": "レポートを送信できませんでした。接続を確認してもう一度お試しください。",
+    "vi": "Không gửi được báo cáo. Hãy kiểm tra kết nối và thử lại.",
+    "zh-Hans": "无法发送报告。请检查网络连接后重试。"
+  },
+  "Couldn’t start the sign-in: {{reason}}": {
+    "en": "Couldn’t start the sign-in: {{reason}}",
+    "fr": "Impossible de lancer la connexion : {{reason}}",
+    "de": "Anmeldung konnte nicht gestartet werden: {{reason}}",
+    "ja": "サインインを開始できませんでした：{{reason}}",
+    "vi": "Không bắt đầu đăng nhập được: {{reason}}",
+    "zh-Hans": "无法开始登录：{{reason}}"
+  },
+  "Couldn’t update: {{error}}": {
+    "en": "Couldn’t update: {{error}}",
+    "fr": "Impossible de mettre à jour : {{error}}",
+    "de": "Update fehlgeschlagen: {{error}}",
+    "ja": "アップデートできませんでした：{{error}}",
+    "vi": "Không cập nhật được: {{error}}",
+    "zh-Hans": "无法更新：{{error}}"
+  },
+  "Curve": {
+    "en": "Curve",
+    "fr": "Courbe",
+    "de": "Kurve",
+    "ja": "カーブ",
+    "vi": "Đường cong",
+    "zh-Hans": "曲线"
+  },
+  "Delete “{{name}}”": {
+    "en": "Delete “{{name}}”",
+    "fr": "Supprimer « {{name}} »",
+    "de": "„{{name}}“ löschen",
+    "ja": "「{{name}}」を削除",
+    "vi": "Xóa “{{name}}”",
+    "zh-Hans": "删除“{{name}}”"
+  },
+  "Dismiss": {
+    "en": "Dismiss",
+    "fr": "Fermer",
+    "de": "Schließen",
+    "ja": "閉じる",
+    "vi": "Đóng",
+    "zh-Hans": "关闭"
+  },
+  "Don’t send": {
+    "en": "Don’t send",
+    "fr": "Ne pas envoyer",
+    "de": "Nicht senden",
+    "ja": "送信しない",
+    "vi": "Không gửi",
+    "zh-Hans": "不发送"
+  },
+  "Double-click to rename · {{keys}} to move": {
+    "en": "Double-click to rename · {{keys}} to move",
+    "fr": "Double-cliquez pour renommer · {{keys}} pour déplacer",
+    "de": "Doppelklicken zum Umbenennen · {{keys}} zum Verschieben",
+    "ja": "ダブルクリックで名前を変更 · {{keys}} で移動",
+    "vi": "Nhấp đúp để đổi tên · {{keys}} để di chuyển",
+    "zh-Hans": "双击重命名 · {{keys}} 移动"
+  },
+  "Drag along edges that should be upright or level · {{n}}/{{max}} · {{alt}}-click removes": {
+    "en": "Drag along edges that should be upright or level · {{n}}/{{max}} · {{alt}}-click removes",
+    "fr": "Faites glisser le long des bords qui doivent être verticaux ou horizontaux · {{n}}/{{max}} · {{alt}}-clic pour retirer",
+    "de": "An Kanten entlang ziehen, die senkrecht oder waagerecht sein sollen · {{n}}/{{max}} · {{alt}}-Klick entfernt",
+    "ja": "垂直または水平であるべきエッジに沿ってドラッグ · {{n}}/{{max}} · {{alt}}+クリックで削除",
+    "vi": "Kéo dọc các cạnh cần thẳng đứng hoặc nằm ngang · {{n}}/{{max}} · {{alt}}-nhấp để gỡ",
+    "zh-Hans": "沿应垂直或水平的边缘拖动 · {{n}}/{{max}} · {{alt}} 点按可移除"
+  },
+  "Drag to move · {{alt}}-click to remove": {
+    "en": "Drag to move · {{alt}}-click to remove",
+    "fr": "Faites glisser pour déplacer · {{alt}}-clic pour retirer",
+    "de": "Ziehen zum Verschieben · {{alt}}-Klick zum Entfernen",
+    "ja": "ドラッグで移動 · {{alt}}+クリックで削除",
+    "vi": "Kéo để di chuyển · {{alt}}-nhấp để gỡ",
+    "zh-Hans": "拖动以移动 · {{alt}} 点按可移除"
+  },
+  "Erase (or hold {{alt}})": {
+    "en": "Erase (or hold {{alt}})",
+    "fr": "Effacer (ou maintenir {{alt}})",
+    "de": "Löschen (oder {{alt}} halten)",
+    "ja": "消去（または {{alt}} を押したまま）",
+    "vi": "Xóa (hoặc giữ {{alt}})",
+    "zh-Hans": "擦除（或按住 {{alt}}）"
+  },
+  "Error": {
+    "en": "Error",
+    "fr": "Erreur",
+    "de": "Fehler",
+    "ja": "エラー",
+    "vi": "Lỗi",
+    "zh-Hans": "错误"
+  },
+  "For a denser, darker look add Contrast or a curve. Go negative for a soft, misty look.": {
+    "en": "For a denser, darker look add Contrast or a curve. Go negative for a soft, misty look.",
+    "fr": "Pour un rendu plus dense et plus sombre, ajoutez du Contraste ou une courbe. Passez en négatif pour un rendu doux et brumeux.",
+    "de": "Für einen dichteren, dunkleren Look fügen Sie Kontrast oder eine Kurve hinzu. Negative Werte ergeben einen weichen, nebligen Look.",
+    "ja": "より濃く暗い仕上がりにするには、コントラストかカーブを加えてください。マイナスにすると柔らかく霧がかった仕上がりになります。",
+    "vi": "Để có vẻ đậm đặc, tối hơn, hãy thêm Tương phản hoặc một đường cong. Kéo về âm để có vẻ mềm, mờ sương.",
+    "zh-Hans": "如需更浓重、更暗的效果，可加对比度或使用曲线。使用负值可得到柔和、雾蒙蒙的效果。"
+  },
+  "Found a bug? Say what you did, what happened and what you expected. It goes to the Playroom team only; add an email if you’d like a reply.": {
+    "en": "Found a bug? Say what you did, what happened and what you expected. It goes to the Playroom team only; add an email if you’d like a reply.",
+    "fr": "Vous avez trouvé un bug ? Dites ce que vous avez fait, ce qui s’est passé et ce que vous attendiez. Le message n’est envoyé qu’à l’équipe Playroom ; ajoutez un e-mail si vous souhaitez une réponse.",
+    "de": "Einen Fehler gefunden? Beschreiben Sie, was Sie getan haben, was passiert ist und was Sie erwartet haben. Es geht nur an das Playroom-Team; geben Sie eine E-Mail an, wenn Sie eine Antwort möchten.",
+    "ja": "バグを見つけましたか？行ったこと、起きたこと、期待していたことを教えてください。内容は Playroom チームにのみ送信されます。返信をご希望の場合はメールアドレスを追加してください。",
+    "vi": "Gặp lỗi? Hãy cho biết bạn đã làm gì, chuyện gì xảy ra và bạn mong đợi điều gì. Báo cáo chỉ gửi đến đội ngũ Playroom; thêm email nếu bạn muốn được phản hồi.",
+    "zh-Hans": "发现错误？请说明你做了什么、发生了什么以及你预期的结果。报告只会发送给 Playroom 团队；如需回复，请填写电子邮件。"
+  },
+  "From the nearest edges, as a share of the picture’s shorter edge": {
+    "en": "From the nearest edges, as a share of the picture’s shorter edge",
+    "fr": "Depuis les bords les plus proches, en proportion du petit côté de l’image",
+    "de": "Von den nächsten Rändern, als Anteil der kürzeren Bildseite",
+    "ja": "最も近い端から（画像の短辺に対する割合）",
+    "vi": "Từ các cạnh gần nhất, tính theo tỷ lệ cạnh ngắn của ảnh",
+    "zh-Hans": "距最近边缘的距离，以画面短边的比例表示"
+  },
+  "H {{hue}}° · S {{sat}}": {
+    "en": "H {{hue}}° · S {{sat}}",
+    "fr": "T {{hue}}° · S {{sat}}",
+    "de": "H {{hue}}° · S {{sat}}",
+    "ja": "色相 {{hue}}° · 彩度 {{sat}}",
+    "vi": "H {{hue}}° · S {{sat}}",
+    "zh-Hans": "色相 {{hue}}° · 饱和度 {{sat}}"
+  },
+  "Headroom above reference white (203 nits) up to the photo’s peak": {
+    "en": "Headroom above reference white (203 nits) up to the photo’s peak",
+    "fr": "Marge HDR au-dessus du blanc de référence (203 nits) jusqu’au pic de la photo",
+    "de": "Spielraum über dem Referenzweiß (203 nits) bis zur Spitze des Fotos",
+    "ja": "基準白（203 nits）から写真のピークまでのヘッドルーム",
+    "vi": "Khoảng dư HDR từ màu trắng tham chiếu (203 nits) đến đỉnh của ảnh",
+    "zh-Hans": "参考白（203 nits）以上直到照片峰值的余量"
+  },
+  "How far the photo’s edges may pull this one, as a share of its shorter side.": {
+    "en": "How far the photo’s edges may pull this one, as a share of its shorter side.",
+    "fr": "Jusqu’où les contours de la photo peuvent attirer celui-ci, en proportion de son petit côté.",
+    "de": "Wie weit die Kanten des Fotos diese Kante ziehen dürfen, als Anteil seiner kürzeren Seite.",
+    "ja": "写真のエッジがこのエッジを引き寄せられる距離（写真の短辺に対する割合）です。",
+    "vi": "Các cạnh của ảnh có thể kéo cạnh này xa bao nhiêu, tính theo tỷ lệ cạnh ngắn của ảnh.",
+    "zh-Hans": "照片的边缘可将此边缘拉动多远，以照片短边的比例表示。"
+  },
+  "How it points": {
+    "en": "How it points",
+    "fr": "Façon de pointer",
+    "de": "Art der Auswahl",
+    "ja": "指定方法",
+    "vi": "Cách chỉ",
+    "zh-Hans": "指定方式"
+  },
+  "How much of the defished picture shows: lower brings more of the fisheye’s edge into view": {
+    "en": "How much of the defished picture shows: lower brings more of the fisheye’s edge into view",
+    "fr": "La part visible de l’image corrigée du fisheye : plus bas, une plus grande partie du bord du fisheye apparaît",
+    "de": "Wie viel vom entzerrten Bild sichtbar ist: niedriger zeigt mehr vom Rand des Fisheye-Bildes",
+    "ja": "魚眼補正後の画像をどれだけ表示するか：低くすると魚眼の端がより多く見えます",
+    "vi": "Phần ảnh đã khử mắt cá được hiển thị: thấp hơn sẽ đưa thêm phần mép ảnh mắt cá vào khung",
+    "zh-Hans": "鱼眼校正后画面的显示范围：数值越低，鱼眼边缘显示得越多"
+  },
+  "Hue {{hue}}°, saturation {{sat}}": {
+    "en": "Hue {{hue}}°, saturation {{sat}}",
+    "fr": "Teinte {{hue}}°, saturation {{sat}}",
+    "de": "Farbton {{hue}}°, Sättigung {{sat}}",
+    "ja": "色相 {{hue}}°、彩度 {{sat}}",
+    "vi": "Sắc màu {{hue}}°, độ bão hòa {{sat}}",
+    "zh-Hans": "色相 {{hue}}°，饱和度 {{sat}}"
+  },
+  "In {{x}}, out {{y}}": {
+    "en": "In {{x}}, out {{y}}",
+    "fr": "Entrée {{x}}, sortie {{y}}",
+    "de": "Eingang {{x}}, Ausgang {{y}}",
+    "ja": "入力 {{x}}、出力 {{y}}",
+    "vi": "Vào {{x}}, ra {{y}}",
+    "zh-Hans": "输入 {{x}}，输出 {{y}}"
+  },
+  "Include Playroom’s recent log (it names the files it worked on; your home folder is hidden)": {
+    "en": "Include Playroom’s recent log (it names the files it worked on; your home folder is hidden)",
+    "fr": "Inclure le journal récent de Playroom (il nomme les fichiers traités ; votre dossier personnel est masqué)",
+    "de": "Das aktuelle Protokoll von Playroom anhängen (es nennt die bearbeiteten Dateien; Ihr Benutzerordner wird ausgeblendet)",
+    "ja": "Playroom の最近のログを含める（処理したファイル名が含まれます。ホームフォルダーは伏せられます）",
+    "vi": "Kèm nhật ký gần đây của Playroom (có tên các tệp đã xử lý; thư mục home của bạn được ẩn)",
+    "zh-Hans": "附上 Playroom 的近期日志（会列出处理过的文件名；你的主文件夹会被隐藏）"
+  },
+  "It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, HSL and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. On this Mac only the open photo keeps its copy on the graphics chip, and Highlights, Shadows, Whites and Blacks drag without Keep texture until you let go. Turn it off if a drag looks different from the picture you let go on.": {
+    "en": "It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, HSL and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. On this Mac only the open photo keeps its copy on the graphics chip, and Highlights, Shadows, Whites and Blacks drag without Keep texture until you let go. Turn it off if a drag looks different from the picture you let go on.",
+    "fr": "Elle prend en charge une retouche faite uniquement de Contraste, Hautes lumières, Ombres, Blancs, Noirs, Saturation, TSL et Correction du voile, sur une photo qui n’est pas un RAW. Un RAW, et une retouche avec autre chose (balance des blancs, courbes, profil, effets, masques, lissage), se calculent sur le processeur, comme avant. Sur ce Mac, seule la photo ouverte garde sa copie sur la puce graphique, et Hautes lumières, Ombres, Blancs et Noirs se calculent sans Conserver la texture jusqu’à ce que vous relâchiez. Désactivez-le si un glissement diffère de l’image obtenue au relâchement.",
+    "de": "Er übernimmt eine Bearbeitung, die nur aus Kontrast, Lichtern, Tiefen, Weiß, Schwarz, Sättigung, HSL und Dunst entfernen besteht, bei einem Foto, das kein RAW ist. Ein RAW und eine Bearbeitung mit anderem (Weißabgleich, Kurven, ein Profil, Effekte, Masken, Glätten) werden wie bisher auf dem Prozessor gezogen. Auf diesem Mac behält nur das geöffnete Foto seine Kopie auf dem Grafikchip, und Lichter, Tiefen, Weiß und Schwarz werden bis zum Loslassen ohne Struktur erhalten gezogen. Schalten Sie es aus, wenn ein Ziehen anders aussieht als das Bild beim Loslassen.",
+    "ja": "コントラスト、ハイライト、シャドウ、白レベル、黒レベル、彩度、HSL、かすみの除去だけで構成された編集を、RAW 以外の写真で処理します。RAW や、それ以外（ホワイトバランス、カーブ、プロファイル、効果、マスク、スムージング）を含む編集は、これまでどおりプロセッサーで処理されます。この Mac では、開いている写真だけがグラフィックチップにコピーを保持し、ハイライト、シャドウ、白レベル、黒レベルは手を離すまで「テクスチャを保持」なしで処理されます。ドラッグ中の表示が手を離したあとの画像と違って見える場合はオフにしてください。",
+    "vi": "Nó xử lý một chỉnh sửa chỉ gồm Tương phản, Vùng sáng, Vùng tối, Điểm trắng, Điểm đen, Độ bão hòa, HSL và Khử sương mù, trên ảnh không phải RAW. Ảnh RAW, và chỉnh sửa có thứ khác (cân bằng trắng, đường cong, hồ sơ màu, hiệu ứng, mặt nạ, làm mịn), vẫn kéo trên bộ xử lý như trước. Trên máy Mac này chỉ ảnh đang mở giữ bản sao trên chip đồ họa, và Vùng sáng, Vùng tối, Điểm trắng, Điểm đen được kéo không có Giữ kết cấu cho đến khi bạn thả ra. Hãy tắt nếu lúc kéo trông khác với ảnh khi thả ra.",
+    "zh-Hans": "它可处理仅包含对比度、高光、阴影、白色色阶、黑色色阶、饱和度、HSL和去朦胧的编辑，且照片不是 RAW。RAW 照片以及包含其他调整（白平衡、曲线、配置文件、效果、蒙版、平滑）的编辑，仍像以前一样在处理器上拖动。在这台 Mac 上，只有打开的照片会在显卡芯片上保留副本，松开前高光、阴影、白色色阶和黑色色阶的拖动不使用“保留纹理”。如果拖动时的画面与松开后的不一样，请关闭此项。"
+  },
+  "It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, HSL and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. The open photo keeps a copy on the graphics chip (about 130–250 MB). Turn it off if a drag looks different from the picture you let go on.": {
+    "en": "It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, HSL and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. The open photo keeps a copy on the graphics chip (about 130–250 MB). Turn it off if a drag looks different from the picture you let go on.",
+    "fr": "Elle prend en charge une retouche faite uniquement de Contraste, Hautes lumières, Ombres, Blancs, Noirs, Saturation, TSL et Correction du voile, sur une photo qui n’est pas un RAW. Un RAW, et une retouche avec autre chose (balance des blancs, courbes, profil, effets, masques, lissage), se calculent sur le processeur, comme avant. La photo ouverte garde une copie sur la puce graphique (environ 130–250 Mo). Désactivez-le si un glissement diffère de l’image obtenue au relâchement.",
+    "de": "Er übernimmt eine Bearbeitung, die nur aus Kontrast, Lichtern, Tiefen, Weiß, Schwarz, Sättigung, HSL und Dunst entfernen besteht, bei einem Foto, das kein RAW ist. Ein RAW und eine Bearbeitung mit anderem (Weißabgleich, Kurven, ein Profil, Effekte, Masken, Glätten) werden wie bisher auf dem Prozessor gezogen. Das geöffnete Foto behält eine Kopie auf dem Grafikchip (etwa 130–250 MB). Schalten Sie es aus, wenn ein Ziehen anders aussieht als das Bild beim Loslassen.",
+    "ja": "コントラスト、ハイライト、シャドウ、白レベル、黒レベル、彩度、HSL、かすみの除去だけで構成された編集を、RAW 以外の写真で処理します。RAW や、それ以外（ホワイトバランス、カーブ、プロファイル、効果、マスク、スムージング）を含む編集は、これまでどおりプロセッサーで処理されます。開いている写真はグラフィックチップにコピーを保持します（約 130–250 MB）。ドラッグ中の表示が手を離したあとの画像と違って見える場合はオフにしてください。",
+    "vi": "Nó xử lý một chỉnh sửa chỉ gồm Tương phản, Vùng sáng, Vùng tối, Điểm trắng, Điểm đen, Độ bão hòa, HSL và Khử sương mù, trên ảnh không phải RAW. Ảnh RAW, và chỉnh sửa có thứ khác (cân bằng trắng, đường cong, hồ sơ màu, hiệu ứng, mặt nạ, làm mịn), vẫn kéo trên bộ xử lý như trước. Ảnh đang mở giữ một bản sao trên chip đồ họa (khoảng 130–250 MB). Hãy tắt nếu lúc kéo trông khác với ảnh khi thả ra.",
+    "zh-Hans": "它可处理仅包含对比度、高光、阴影、白色色阶、黑色色阶、饱和度、HSL和去朦胧的编辑，且照片不是 RAW。RAW 照片以及包含其他调整（白平衡、曲线、配置文件、效果、蒙版、平滑）的编辑，仍像以前一样在处理器上拖动。打开的照片会在显卡芯片上保留一份副本（约 130–250 MB）。如果拖动时的画面与松开后的不一样，请关闭此项。"
+  },
+  "Keep it modest here; Curves give finer control.": {
+    "en": "Keep it modest here; Curves give finer control.",
+    "fr": "Restez modéré ici ; les Courbes offrent un contrôle plus fin.",
+    "de": "Hier zurückhaltend bleiben; die Kurven erlauben feinere Kontrolle.",
+    "ja": "ここでは控えめに。カーブの方が細かく調整できます。",
+    "vi": "Nên dùng vừa phải ở đây; Đường cong cho phép kiểm soát tinh hơn.",
+    "zh-Hans": "这里请适度调整；曲线可提供更精细的控制。"
+  },
+  "Layers in the engine’s own terms (a {{type}} as JSON: stages in any space, any op — CDL, qualifiers, LUTs, blend modes). They run after the panels and masks. The engine names the field when one is wrong.": {
+    "en": "Layers in the engine’s own terms (a {{type}} as JSON: stages in any space, any op — CDL, qualifiers, LUTs, blend modes). They run after the panels and masks. The engine names the field when one is wrong.",
+    "fr": "Des calques dans les termes propres au moteur (un {{type}} en JSON : des étapes dans n’importe quel espace, n’importe quelle opération — CDL, qualificateurs, LUT, modes de fusion). Ils s’exécutent après les panneaux et les masques. Le moteur nomme le champ fautif le cas échéant.",
+    "de": "Ebenen in den eigenen Begriffen der Engine (ein {{type}} als JSON: Stufen in jedem Farbraum, jede Operation – CDL, Qualifier, LUTs, Mischmodi). Sie laufen nach den Bedienfeldern und Masken. Die Engine nennt das Feld, wenn eines falsch ist.",
+    "ja": "エンジン独自の用語によるレイヤー（JSON 形式の {{type}}：任意の色空間のステージ、任意の操作 — CDL、修飾子、LUT、描画モード）。パネルとマスクの後に実行されます。誤りがある場合は、エンジンがそのフィールド名を示します。",
+    "vi": "Các lớp theo cách mô tả riêng của engine (một {{type}} dạng JSON: các giai đoạn trong mọi không gian, mọi phép toán — CDL, bộ chọn vùng, LUT, chế độ hòa trộn). Chúng chạy sau các bảng và mặt nạ. Engine sẽ chỉ ra trường nào bị sai.",
+    "zh-Hans": "以引擎自身术语表示的图层（JSON 格式的 {{type}}：任意空间中的阶段、任意操作 — CDL、限定器、LUT、混合模式）。它们在面板和蒙版之后运行。字段有误时，引擎会指出是哪一个。"
+  },
+  "Licences aren’t required yet: every feature works either way. Once they are, an ended trial stops exporting only; editing keeps working.": {
+    "en": "Licences aren’t required yet: every feature works either way. Once they are, an ended trial stops exporting only; editing keeps working.",
+    "fr": "Les licences ne sont pas encore obligatoires : toutes les fonctions marchent dans tous les cas. Ensuite, un essai terminé bloque seulement l’export ; la retouche reste possible.",
+    "de": "Lizenzen sind noch nicht erforderlich: Alle Funktionen arbeiten so oder so. Sobald sie es sind, stoppt eine abgelaufene Testversion nur den Export; Bearbeiten funktioniert weiter.",
+    "ja": "ライセンスはまだ必要ありません：どちらの場合もすべての機能を使えます。必要になった後でも、トライアル終了後に停止するのは書き出しだけで、編集は引き続き使えます。",
+    "vi": "Hiện chưa bắt buộc giấy phép: mọi tính năng đều hoạt động. Khi bắt buộc, bản dùng thử hết hạn chỉ dừng tính năng xuất; chỉnh sửa vẫn hoạt động.",
+    "zh-Hans": "目前尚不需要许可证：所有功能均可使用。需要许可证之后，试用期结束只会停止导出；编辑仍可继续。"
+  },
+  "Make the focused photo its stack’s cover": {
+    "en": "Make the focused photo its stack’s cover",
+    "fr": "Faire de la photo active la couverture de sa pile",
+    "de": "Fokussiertes Foto zum Titelbild seines Stapels machen",
+    "ja": "フォーカス中の写真をスタックのカバーにします",
+    "vi": "Đặt ảnh đang chọn làm ảnh bìa của nhóm",
+    "zh-Hans": "将当前照片设为其堆叠的封面"
+  },
+  "Make this fisheye’s picture rectilinear: straight lines straight (its projection, from the profile)": {
+    "en": "Make this fisheye’s picture rectilinear: straight lines straight (its projection, from the profile)",
+    "fr": "Rendre l’image de ce fisheye rectilinéaire : lignes droites redressées (sa projection, d’après le profil)",
+    "de": "Das Fisheye-Bild entzerren: gerade Linien werden gerade (seine Projektion, aus dem Profil)",
+    "ja": "この魚眼レンズの画像を直線投影に変換し、直線をまっすぐにします（投影方式はプロファイルから）",
+    "vi": "Chuyển ảnh mắt cá này sang phép chiếu thẳng: đường thẳng sẽ thẳng (phép chiếu lấy từ hồ sơ)",
+    "zh-Hans": "将此鱼眼画面校正为直线投影：让直线保持笔直（投影方式取自配置文件）"
+  },
+  "Measure each photo’s own white": {
+    "en": "Measure each photo’s own white",
+    "fr": "Mesurer le blanc propre à chaque photo",
+    "de": "Eigenes Weiß jedes Fotos messen",
+    "ja": "写真ごとに白を測定",
+    "vi": "Đo điểm trắng riêng của từng ảnh",
+    "zh-Hans": "测量每张照片自身的白点"
+  },
+  "Not rated": {
+    "en": "Not rated",
+    "fr": "Non classé",
+    "de": "Nicht bewertet",
+    "ja": "レーティングなし",
+    "vi": "Chưa xếp hạng",
+    "zh-Hans": "未评星"
+  },
+  "Nothing said yet.": {
+    "en": "Nothing said yet.",
+    "fr": "Aucun message pour l’instant.",
+    "de": "Noch keine Meldungen.",
+    "ja": "まだメッセージはありません。",
+    "vi": "Chưa có thông báo nào.",
+    "zh-Hans": "暂无消息。"
+  },
+  "PIXL’s own looks, made with Playroom’s sliders. Cameras, film stocks and films are named only as what inspired a look; PIXL is not affiliated with or endorsed by their owners.": {
+    "en": "PIXL’s own looks, made with Playroom’s sliders. Cameras, film stocks and films are named only as what inspired a look; PIXL is not affiliated with or endorsed by their owners.",
+    "fr": "Les looks propres à PIXL, créés avec les curseurs de Playroom. Les appareils, pellicules et films ne sont cités que comme inspiration d’un look ; PIXL n’est ni affilié à leurs propriétaires ni approuvé par eux.",
+    "de": "PIXLs eigene Looks, erstellt mit den Reglern von Playroom. Kameras, Filmmaterialien und Filme werden nur als Inspiration eines Looks genannt; PIXL ist mit ihren Inhabern weder verbunden noch von ihnen unterstützt.",
+    "ja": "Playroom のスライダーで作った PIXL 独自のルックです。カメラ、フィルム、映画の名前は、ルックの着想元として挙げているだけです。PIXL はそれらの権利者と提携しておらず、承認も受けていません。",
+    "vi": "Phong cách riêng của PIXL, tạo bằng các thanh trượt của Playroom. Tên máy ảnh, loại phim và bộ phim chỉ được nêu như nguồn cảm hứng cho phong cách; PIXL không liên kết với hay được chủ sở hữu của chúng chứng thực.",
+    "zh-Hans": "PIXL 自有风格，使用 Playroom 的滑块制作。提及的相机、胶片和电影仅表示风格的灵感来源；PIXL 与其所有者无关联，也未获其认可。"
+  },
+  "Panels": {
+    "en": "Panels",
+    "fr": "Panneaux",
+    "de": "Bereiche",
+    "ja": "パネル",
+    "vi": "Bảng",
+    "zh-Hans": "面板"
+  },
+  "Point colour or Log wheels": {
+    "en": "Point colour or Log wheels",
+    "fr": "Couleur ponctuelle ou Roues Log",
+    "de": "Punktfarbe oder Log-Räder",
+    "ja": "ポイントカラーまたは Log ホイール",
+    "vi": "Màu điểm hoặc Bánh xe Log",
+    "zh-Hans": "点颜色或 Log 色轮"
+  },
+  "Point {{n}} of {{count}}": {
+    "en": "Point {{n}} of {{count}}",
+    "fr": "Point {{n}} sur {{count}}",
+    "de": "Punkt {{n}} von {{count}}",
+    "ja": "ポイント {{n}}/{{count}}",
+    "vi": "Điểm {{n}}/{{count}}",
+    "zh-Hans": "第 {{n}} 个点，共 {{count}} 个"
+  },
+  "Qualifier: remove": {
+    "en": "Qualifier: remove",
+    "fr": "Qualificateur : suppression",
+    "de": "Qualifier: entfernen",
+    "ja": "クオリファイアー：削除",
+    "vi": "Bộ lọc màu: gỡ",
+    "zh-Hans": "限定器：移除"
+  },
+  "Recent Messages…": {
+    "en": "Recent Messages…",
+    "fr": "Messages récents…",
+    "de": "Letzte Meldungen…",
+    "ja": "最近のメッセージ…",
+    "vi": "Thông báo gần đây…",
+    "zh-Hans": "最近的消息…"
+  },
+  "Recent messages": {
+    "en": "Recent messages",
+    "fr": "Messages récents",
+    "de": "Letzte Meldungen",
+    "ja": "最近のメッセージ",
+    "vi": "Thông báo gần đây",
+    "zh-Hans": "最近的消息"
+  },
+  "Save this mask’s settings…": {
+    "en": "Save this mask’s settings…",
+    "fr": "Enregistrer les paramètres de ce masque…",
+    "de": "Einstellungen dieser Maske speichern…",
+    "ja": "このマスクの設定を保存…",
+    "vi": "Lưu thiết lập của mặt nạ này…",
+    "zh-Hans": "存储此蒙版的设置…"
+  },
+  "Saved curve preset “{{name}}”": {
+    "en": "Saved curve preset “{{name}}”",
+    "fr": "Paramètre prédéfini de courbe « {{name}} » enregistré",
+    "de": "Kurvenvorgabe „{{name}}“ gespeichert",
+    "ja": "カーブプリセット「{{name}}」を保存しました",
+    "vi": "Đã lưu preset đường cong “{{name}}”",
+    "zh-Hans": "已存储曲线预设“{{name}}”"
+  },
+  "Saved mask preset “{{name}}”": {
+    "en": "Saved mask preset “{{name}}”",
+    "fr": "Paramètre prédéfini de masque « {{name}} » enregistré",
+    "de": "Maskenvorgabe „{{name}}“ gespeichert",
+    "ja": "マスクプリセット「{{name}}」を保存しました",
+    "vi": "Đã lưu preset mặt nạ “{{name}}”",
+    "zh-Hans": "已存储蒙版预设“{{name}}”"
+  },
+  "Saved white balance “{{name}}”": {
+    "en": "Saved white balance “{{name}}”",
+    "fr": "Balance des blancs « {{name}} » enregistrée",
+    "de": "Weißabgleich „{{name}}“ gespeichert",
+    "ja": "ホワイトバランス「{{name}}」を保存しました",
+    "vi": "Đã lưu cân bằng trắng “{{name}}”",
+    "zh-Hans": "已存储白平衡“{{name}}”"
+  },
+  "Shift-click adds a part · {{alt}}-click removes one · Enter keeps it": {
+    "en": "Shift-click adds a part · {{alt}}-click removes one · Enter keeps it",
+    "fr": "Maj-clic ajoute une partie · {{alt}}-clic en retire une · Entrée valide",
+    "de": "Umschalt-Klick fügt einen Teil hinzu · {{alt}}-Klick entfernt einen · Enter übernimmt",
+    "ja": "Shift+クリックで部分を追加 · {{alt}}+クリックで部分を削除 · Enter で確定",
+    "vi": "Shift-nhấp thêm một phần · {{alt}}-nhấp bớt một phần · Enter để giữ",
+    "zh-Hans": "Shift+点击添加部分 · {{alt}}+点击移除部分 · Enter 确认"
+  },
+  "Shift-click adds · {{alt}}-click removes": {
+    "en": "Shift-click adds · {{alt}}-click removes",
+    "fr": "Maj-clic ajoute · {{alt}}-clic retire",
+    "de": "Umschalt-Klick fügt hinzu · {{alt}}-Klick entfernt",
+    "ja": "Shift+クリックで追加 · {{alt}}+クリックで削除",
+    "vi": "Shift-nhấp để thêm · {{alt}}-nhấp để bớt",
+    "zh-Hans": "Shift+点击添加 · {{alt}}+点击移除"
+  },
+  "Show the panel": {
+    "en": "Show the panel",
+    "fr": "Afficher le panneau",
+    "de": "Bereich anzeigen",
+    "ja": "パネルを表示",
+    "vi": "Hiện bảng",
+    "zh-Hans": "显示面板"
+  },
+  "Show {{name}}": {
+    "en": "Show {{name}}",
+    "fr": "Afficher {{name}}",
+    "de": "{{name}} anzeigen",
+    "ja": "{{name}} を表示",
+    "vi": "Hiện {{name}}",
+    "zh-Hans": "显示 {{name}}"
+  },
+  "Stop the look’s AI work": {
+    "en": "Stop the look’s AI work",
+    "fr": "Arrêter le travail IA du look",
+    "de": "KI-Arbeit des Looks stoppen",
+    "ja": "ルックの AI 処理を停止",
+    "vi": "Dừng tác vụ AI của phong cách",
+    "zh-Hans": "停止风格的 AI 处理"
+  },
+  "Takes the place of {{name}} ({{alt}}: on top of it)": {
+    "en": "Takes the place of {{name}} ({{alt}}: on top of it)",
+    "fr": "Remplace {{name}} ({{alt}} : par-dessus)",
+    "de": "Ersetzt {{name}} ({{alt}}: darüber legen)",
+    "ja": "{{name}} と置き換えます（{{alt}}：その上に重ねる）",
+    "vi": "Thay thế {{name}} ({{alt}}: chồng lên trên)",
+    "zh-Hans": "替换 {{name}}（{{alt}}：叠加在其上）"
+  },
+  "That sign-in answer wasn’t for this sign-in.": {
+    "en": "That sign-in answer wasn’t for this sign-in.",
+    "fr": "Cette réponse de connexion ne correspondait pas à cette connexion.",
+    "de": "Diese Anmeldeantwort gehörte nicht zu dieser Anmeldung.",
+    "ja": "そのサインイン応答はこのサインインに対するものではありません。",
+    "vi": "Phản hồi đăng nhập đó không dành cho lần đăng nhập này.",
+    "zh-Hans": "该登录响应不属于本次登录。"
+  },
+  "The account server’s answer couldn’t be verified ({{problem}}).": {
+    "en": "The account server’s answer couldn’t be verified ({{problem}}).",
+    "fr": "La réponse du serveur de comptes n’a pas pu être vérifiée ({{problem}}).",
+    "de": "Die Antwort des Kontoservers konnte nicht verifiziert werden ({{problem}}).",
+    "ja": "アカウントサーバーの応答を検証できませんでした（{{problem}}）。",
+    "vi": "Không thể xác minh phản hồi của máy chủ tài khoản ({{problem}}).",
+    "zh-Hans": "无法验证账户服务器的响应（{{problem}}）。"
+  },
+  "The account server’s keys couldn’t be verified ({{problem}}).": {
+    "en": "The account server’s keys couldn’t be verified ({{problem}}).",
+    "fr": "Les clés du serveur de comptes n’ont pas pu être vérifiées ({{problem}}).",
+    "de": "Die Schlüssel des Kontoservers konnten nicht verifiziert werden ({{problem}}).",
+    "ja": "アカウントサーバーの鍵を検証できませんでした（{{problem}}）。",
+    "vi": "Không thể xác minh khóa của máy chủ tài khoản ({{problem}}).",
+    "zh-Hans": "无法验证账户服务器的密钥（{{problem}}）。"
+  },
+  "The mark’s width, as a share of the picture’s shorter edge": {
+    "en": "The mark’s width, as a share of the picture’s shorter edge",
+    "fr": "La largeur de la marque, en proportion du petit côté de l’image",
+    "de": "Die Breite des Zeichens, als Anteil der kürzeren Bildkante",
+    "ja": "マークの幅（画像の短辺に対する割合）",
+    "vi": "Chiều rộng của dấu, tính theo tỷ lệ cạnh ngắn của ảnh",
+    "zh-Hans": "水印的宽度，以图片短边的比例表示"
+  },
+  "The overlay steps aside while a slider that changes the photo moves (Lightroom’s auto toggle)": {
+    "en": "The overlay steps aside while a slider that changes the photo moves (Lightroom’s auto toggle)",
+    "fr": "L’incrustation s’efface pendant qu’un curseur qui modifie la photo bouge (le basculement auto de Lightroom)",
+    "de": "Die Überlagerung tritt zurück, während ein Regler bewegt wird, der das Foto ändert (wie Lightrooms automatisches Umschalten)",
+    "ja": "写真を変えるスライダーを動かしている間はオーバーレイを隠します（Lightroom の自動切り替え）",
+    "vi": "Lớp phủ tạm ẩn khi bạn kéo một thanh trượt làm thay đổi ảnh (giống chế độ tự động bật/tắt của Lightroom)",
+    "zh-Hans": "拖动会改变照片的滑块时，叠加会暂时隐藏（类似 Lightroom 的自动切换）"
+  },
+  "The photo’s depth, the range tinted": {
+    "en": "The photo’s depth, the range tinted",
+    "fr": "La profondeur de la photo, la plage teintée",
+    "de": "Die Tiefe des Fotos, der Bereich eingefärbt",
+    "ja": "写真の深度（範囲を色付けで表示）",
+    "vi": "Độ sâu của ảnh, dải được tô màu",
+    "zh-Hans": "照片的深度，范围部分已着色"
+  },
+  "This RAW format isn’t supported ({{detail}}).": {
+    "en": "This RAW format isn’t supported ({{detail}}).",
+    "fr": "Ce format RAW n’est pas pris en charge ({{detail}}).",
+    "de": "Dieses RAW-Format wird nicht unterstützt ({{detail}}).",
+    "ja": "この RAW 形式には対応していません（{{detail}}）。",
+    "vi": "Định dạng RAW này chưa được hỗ trợ ({{detail}}).",
+    "zh-Hans": "不支持此 RAW 格式（{{detail}}）。"
+  },
+  "This RAW format isn’t supported.": {
+    "en": "This RAW format isn’t supported.",
+    "fr": "Ce format RAW n’est pas pris en charge.",
+    "de": "Dieses RAW-Format wird nicht unterstützt.",
+    "ja": "この RAW 形式には対応していません。",
+    "vi": "Định dạng RAW này chưa được hỗ trợ.",
+    "zh-Hans": "不支持此 RAW 格式。"
+  },
+  "This mask’s overlay colour": {
+    "en": "This mask’s overlay colour",
+    "fr": "Couleur d’incrustation de ce masque",
+    "de": "Überlagerungsfarbe dieser Maske",
+    "ja": "このマスクのオーバーレイの色",
+    "vi": "Màu lớp phủ của mặt nạ này",
+    "zh-Hans": "此蒙版的叠加颜色"
+  },
+  "Use the overlay’s colour": {
+    "en": "Use the overlay’s colour",
+    "fr": "Utiliser la couleur de l’incrustation",
+    "de": "Farbe der Überlagerung verwenden",
+    "ja": "オーバーレイの色を使用",
+    "vi": "Dùng màu của lớp phủ",
+    "zh-Hans": "使用叠加的颜色"
+  },
+  "Works on Highlights, Shadows, Whites and Blacks, HSL, Dehaze, Vibrance, Point colour and Colour grading. It shows when you let go of a slider, not while you drag.": {
+    "en": "Works on Highlights, Shadows, Whites and Blacks, HSL, Dehaze, Vibrance, Point colour and Colour grading. It shows when you let go of a slider, not while you drag.",
+    "fr": "Agit sur Hautes lumières, Ombres, Blancs et Noirs, TSL, Correction du voile, Vibrance, Couleur ponctuelle et Étalonnage des couleurs. L’effet apparaît quand vous relâchez un curseur, pas pendant le glissement.",
+    "de": "Funktioniert bei Lichtern, Tiefen, Weiß und Schwarz, HSL, Dunst entfernen, Dynamik, Punktfarbe und Color Grading. Es erscheint, wenn Sie einen Regler loslassen, nicht während des Ziehens.",
+    "ja": "ハイライト、シャドウ、白レベル、黒レベル、HSL、かすみの除去、自然な彩度、ポイントカラー、カラーグレーディングで機能します。ドラッグ中ではなく、スライダーを離したときに反映されます。",
+    "vi": "Áp dụng cho Vùng sáng, Vùng tối, Điểm trắng và Điểm đen, HSL, Khử sương mù, Độ rực, Màu điểm và Chỉnh màu theo tông. Hiệu ứng hiện khi bạn thả thanh trượt, không phải trong lúc kéo.",
+    "zh-Hans": "适用于高光、阴影、白色色阶和黑色色阶、HSL、去朦胧、自然饱和度、点颜色和颜色分级。松开滑块时才会显示，拖动过程中不显示。"
+  },
+  "You’ll find it later in {{where}}.": {
+    "en": "You’ll find it later in {{where}}.",
+    "fr": "Vous le retrouverez plus tard dans {{where}}.",
+    "de": "Sie finden es später unter {{where}}.",
+    "ja": "後で {{where}} から使えます。",
+    "vi": "Sau này bạn sẽ tìm thấy nó trong {{where}}.",
+    "zh-Hans": "之后可在{{where}}中找到。"
+  },
+  "colour wheel": {
+    "en": "colour wheel",
+    "fr": "roue chromatique",
+    "de": "Farbrad",
+    "ja": "カラーホイール",
+    "vi": "bánh xe màu",
+    "zh-Hans": "色轮"
+  },
+  "curve point": {
+    "en": "curve point",
+    "fr": "point de courbe",
+    "de": "Kurvenpunkt",
+    "ja": "カーブのポイント",
+    "vi": "điểm đường cong",
+    "zh-Hans": "曲线点"
+  },
+  "{{count}} stars_one": {
+    "en": "{{count}} star",
+    "fr": "{{count}} étoile",
+    "de": "{{count}} Stern",
+    "ja": "星{{count}}つ",
+    "vi": "{{count}} sao",
+    "zh-Hans": "{{count}} 星"
+  },
+  "{{count}} stars_other": {
+    "en": "{{count}} stars",
+    "fr": "{{count}} étoiles",
+    "de": "{{count}} Sterne",
+    "ja": "星{{count}}つ",
+    "vi": "{{count}} sao",
+    "zh-Hans": "{{count}} 星"
+  },
+  "{{name}} balance": {
+    "en": "{{name}} balance",
+    "fr": "Balance {{name}}",
+    "de": "{{name}}-Balance",
+    "ja": "{{name}} のバランス",
+    "vi": "Cân bằng {{name}}",
+    "zh-Hans": "{{name}} 平衡"
+  },
+  "{{name}} master": {
+    "en": "{{name}} master",
+    "fr": "{{name}} maître",
+    "de": "{{name}} Master",
+    "ja": "{{name}} のマスター",
+    "vi": "{{name}} tổng",
+    "zh-Hans": "{{name}} 主控"
+  },
+  "{{name}}: Enter adds a point": {
+    "en": "{{name}}: Enter adds a point",
+    "fr": "{{name}} : Entrée ajoute un point",
+    "de": "{{name}}: Eingabe fügt einen Punkt hinzu",
+    "ja": "{{name}}：Enter でポイントを追加",
+    "vi": "{{name}}: Enter để thêm điểm",
+    "zh-Hans": "{{name}}：按 Enter 添加点"
+  },
+  "{{name}}: only a deblur can be kept (an upscale or a JPEG restore is the file’s)": {
+    "en": "{{name}}: only a deblur can be kept (an upscale or a JPEG restore is the file’s)",
+    "fr": "{{name}} : seul un défloutage peut être conservé (un agrandissement ou une restauration JPEG appartient au fichier)",
+    "de": "{{name}}: Nur eine Unschärfekorrektur kann übernommen werden (Hochskalieren oder JPEG-Wiederherstellung gehört zur Datei)",
+    "ja": "{{name}}：保持できるのはぼけ除去のみです（アップスケールや JPEG 修復はファイル固有のもの）",
+    "vi": "{{name}}: chỉ giữ được bước khử mờ (phóng lớn hoặc phục hồi JPEG thuộc về tệp)",
+    "zh-Hans": "{{name}}：只能保留去模糊（放大或 JPEG 修复属于文件本身）"
+  },
+  "{{open}} {{close}} size · {{alt}} erases": {
+    "en": "{{open}} {{close}} size · {{alt}} erases",
+    "fr": "{{open}} {{close}} taille · {{alt}} efface",
+    "de": "{{open}} {{close}} Größe · {{alt}} radiert",
+    "ja": "{{open}} {{close}} サイズ · {{alt}} で消去",
+    "vi": "{{open}} {{close}} kích thước · {{alt}} để xóa",
+    "zh-Hans": "{{open}} {{close}} 调整大小 · {{alt}} 擦除"
+  },
+  "{{reason}} — this model is only on Playroom’s model server": {
+    "en": "{{reason}} — this model is only on Playroom’s model server",
+    "fr": "{{reason}} — ce modèle n’est disponible que sur le serveur de modèles de Playroom",
+    "de": "{{reason}} – dieses Modell gibt es nur auf dem Modellserver von Playroom",
+    "ja": "{{reason}} — このモデルは Playroom のモデルサーバーにのみあります",
+    "vi": "{{reason}} — mô hình này chỉ có trên máy chủ mô hình của Playroom",
+    "zh-Hans": "{{reason}} — 此模型仅在 Playroom 的模型服务器上提供"
+  },
+  "σ̂ of white noise on each plane, the denoiser’s own estimator, in 8-bit code values": {
+    "en": "σ̂ of white noise on each plane, the denoiser’s own estimator, in 8-bit code values",
+    "fr": "σ̂ du bruit blanc sur chaque plan, selon l’estimateur du débruiteur, en valeurs de code 8 bits",
+    "de": "σ̂ des weißen Rauschens je Ebene, der eigene Schätzer des Entrauschers, in 8-Bit-Codewerten",
+    "ja": "各プレーンのホワイトノイズの σ̂（ノイズ除去機能自体の推定値、8ビットのコード値）",
+    "vi": "σ̂ của nhiễu trắng trên từng mặt phẳng, theo bộ ước lượng riêng của bộ khử nhiễu, tính bằng giá trị mã 8 bit",
+    "zh-Hans": "各平面白噪声的 σ̂，由降噪器自身估算，以 8 位代码值表示"
+  }
+}

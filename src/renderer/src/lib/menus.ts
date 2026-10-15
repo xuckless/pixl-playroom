@@ -457,7 +457,9 @@ function viewMenu(): Item[] {
     act('view.filmstrip', t('Show Filmstrip'), () => ui().setFilmstrip(!ui().filmstrip), {
       checked: ui().filmstrip,
       enabled: !modal() && developing
-    })
+    }),
+    sep,
+    cmd('view.messages', t('Recent Messages…'))
   ]
 }
 

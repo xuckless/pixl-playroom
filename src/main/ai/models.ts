@@ -785,7 +785,7 @@ function explain(err: unknown, url: string, file: string, only = false): string 
     why = t('{{host}} does not have {{file}} yet', { host, file })
   else why = e.message
   return only
-    ? t("{{reason}} — this model is only on Playroom's model server", { reason: why })
+    ? t('{{reason}} — this model is only on Playroom’s model server', { reason: why })
     : why
 }
 

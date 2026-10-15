@@ -137,7 +137,7 @@ export class Access {
     const keysetIat = ks.ok ? ks.iat : f.keysetIat
     if (!ks.ok && ks.problem !== 'stale')
       throw new AccountError(
-        t("The account server's keys couldn't be verified ({{problem}}).", { problem: ks.problem }),
+        t('The account server’s keys couldn’t be verified ({{problem}}).', { problem: ks.problem }),
         'network'
       )
     const seenAt = Math.max(f.seenAt ?? 0, now)
@@ -145,7 +145,7 @@ export class Access {
     const c = this.check(next)
     if (!c?.ok)
       throw new AccountError(
-        t("The account server's answer couldn't be verified ({{problem}}).", {
+        t('The account server’s answer couldn’t be verified ({{problem}}).', {
           problem: c?.problem ?? 'no device'
         }),
         'network'

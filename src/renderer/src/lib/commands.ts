@@ -46,12 +46,15 @@ import {
   allConflicts,
   chordLabel,
   chordOf,
+  modifierKey,
+  modifierName,
   onLayout,
   parseChord,
   resolveBindings,
   sameChord,
   type Bindings,
-  type KeyContext
+  type KeyContext,
+  type Modifier
 } from './keys'
 
 export interface KeyCommand {
@@ -388,7 +391,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.makeCover',
-    label: tk("Make the focused photo its stack's cover"),
+    label: tk('Make the focused photo its stack’s cover'),
     group: 'Library',
     context: 'library',
     keys: ['Shift+S'],
@@ -732,6 +735,14 @@ export const COMMANDS: KeyCommand[] = [
     }
   },
   {
+    id: 'view.messages',
+    label: tk('Recent messages'),
+    group: 'View',
+    context: 'global',
+    keys: ['Mod+Shift+M'],
+    run: () => lib().setDialog('messages')
+  },
+  {
     id: 'tool.crop',
     label: tk('Crop tool'),
     group: 'Tools',
@@ -994,6 +1005,23 @@ export function keyHint(id: string): string {
   const c = currentBindings()[id]?.[0]
   return c ? chordLabel(c, IS_MAC, layoutKey) : ''
 }
+
+/** A modifier named for this platform, for a sentence ("Option-click removes"). */
+export const modName = (m: Modifier): string => modifierName(m, IS_MAC)
+
+/** A modifier ahead of a key for this platform ("⌥↑↓", "Alt+↑↓"). */
+export const modKey = (m: Modifier): string => modifierKey(m, IS_MAC)
+
+/**
+ * A key no command holds, as this platform shows it (`"Mod+Alt+E"` is ⌥⌘E on
+ * a Mac, Ctrl+Alt+E elsewhere): a menu's accelerator, Escape, Return.
+ */
+export function chordText(spec: string): string {
+  return chordLabel(parseChord(spec), IS_MAC, layoutKey)
+}
+
+/** `"Label (key)"` for a key no command holds. */
+export const withChord = (label: string, spec: string): string => `${label} (${chordText(spec)})`
 
 /** `"Label (key)"`, or just the label when the command has no key. */
 export function withKey(label: string, id: string): string {

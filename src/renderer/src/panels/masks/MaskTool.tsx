@@ -366,7 +366,7 @@ export function HiddenChip({ c }: { c: MaskComponentSetting }): React.JSX.Elemen
   return (
     <div
       className="mf-chip"
-      title={t("An older edit of this component's edge or opacity is applied")}
+      title={t('An older edit of this component’s edge or opacity is applied')}
     >
       <span>{t('Edge adjusted')}</span>
       <button

@@ -5,7 +5,7 @@
  * layout and what each place shows are kept (the ui store's `scopes`).
  */
 import { t } from '../lib/i18n'
-import { Modal } from '../components/ui'
+import { Modal, Segmented } from '../components/ui'
 import { Icon } from '../components/icons'
 import { cycleExpanded, type ExpandedScope } from '../../../shared/scopes'
 import { useLibrary } from '../state/library'
@@ -60,18 +60,15 @@ export function ScopesExpandedDialog(): React.JSX.Element {
       }
     >
       <div className="se-tabs">
-        <div className="seg" role="group" aria-label={t('Scopes at once')}>
-          {([1, 2, 4] as const).map((n) => (
-            <button
-              key={n}
-              className={layout === n ? 'on' : ''}
-              aria-pressed={layout === n}
-              onClick={() => setScopes({ layout: n })}
-            >
-              {n === 1 ? t('One') : n === 2 ? t('Two') : t('Four')}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label={t('Scopes at once')}
+          value={layout}
+          onChange={(n) => setScopes({ layout: n })}
+          options={([1, 2, 4] as const).map((n) => ({
+            value: n,
+            label: n === 1 ? t('One') : n === 2 ? t('Two') : t('Four')
+          }))}
+        />
       </div>
       <div className="se-grid">
         {Array.from({ length: layout }, (_, i) => (

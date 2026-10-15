@@ -56,7 +56,7 @@ function CustomLayers(): React.JSX.Element | null {
     <div className="custom-layers">
       <p className="muted small">
         {rich(
-          "Layers in the engine's own terms (a {{type}} as JSON: stages in any space, any op — CDL, qualifiers, LUTs, blend modes). They run after the panels and masks. The engine names the field when one is wrong.",
+          'Layers in the engine’s own terms (a {{type}} as JSON: stages in any space, any op — CDL, qualifiers, LUTs, blend modes). They run after the panels and masks. The engine names the field when one is wrong.',
           { type: <code>GradeLayer</code> }
         )}
       </p>
@@ -120,7 +120,11 @@ function CustomLayers(): React.JSX.Element | null {
               onChange={(e) => setDraft((d) => ({ ...d, [c.id]: e.target.value }))}
               onKeyDown={(e) => e.stopPropagation()}
             />
-            {bad[c.id] && <p className="error small">{bad[c.id]}</p>}
+            {bad[c.id] && (
+              <p className="error small" role="alert">
+                {bad[c.id]}
+              </p>
+            )}
           </div>
         )
       })}

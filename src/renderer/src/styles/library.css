@@ -182,7 +182,7 @@
 .cull-why .cull-acts button {
   height: 22px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 /* Suggested rejects shown: the line above the grid. */
 .cull-bar {
@@ -191,7 +191,7 @@
   gap: 10px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--hair);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
 }
 .cull-bar .grow {
@@ -217,7 +217,7 @@
 .thumb-wait {
   color: var(--muted);
   letter-spacing: 0.14em;
-  font-size: 11px;
+  font-size: var(--fs-small);
   animation: statusPulse 1.6s ease-in-out infinite;
 }
 .thumb-wait.unreadable {
@@ -299,7 +299,7 @@
   background: var(--s1);
   border-top: 1px solid transparent;
   border-image: var(--hl-x) 1;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--text2);
   flex: none;
 }
@@ -383,7 +383,7 @@
   padding: 0 4px;
   display: inline-grid;
   place-items: center;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--acc-ink);
   background: var(--acc);
   border-radius: 8px;
@@ -598,7 +598,7 @@
   min-height: 36px;
   grid-template-columns: 84px minmax(0, 1fr);
 }
-.filter-pop select {
+.filter-pop .glass-select {
   width: 100%;
   max-width: none;
 }
@@ -612,7 +612,7 @@
 }
 .seg-star {
   margin-left: 2px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--acc);
 }
 .label-pick {
@@ -765,7 +765,7 @@
   height: 22px;
   padding: 0 7px;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: #fff;
   background: rgb(var(--shade-rgb) / 0.6);
   border-color: rgb(var(--fg-rgb) / 0.22);
@@ -810,7 +810,11 @@
   border-color: color-mix(in srgb, var(--acc) 42%, transparent);
 }
 .thumb.in-stack .thumb-meta {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 5%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--acc) 16%, transparent),
+    color-mix(in srgb, var(--acc) 5%, transparent)
+  );
   border-top-color: color-mix(in srgb, var(--acc) 30%, transparent);
 }
 .thumb.in-stack:not(.stack-cover) .thumb-img {
@@ -831,7 +835,7 @@
   gap: 10px;
   padding: 10px 0 16px;
   color: var(--text2);
-  font-size: 12px;
+  font-size: var(--fs-body);
   font-family: var(--font-body);
   animation: rowIn 0.55s var(--spring) both;
 }
@@ -841,7 +845,12 @@
 .dupe-head .line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), var(--hair) 40%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    var(--hair) 40%,
+    transparent
+  );
 }
 .grid.loading {
   opacity: 0.55;
@@ -856,7 +865,7 @@
   gap: 14px;
   color: var(--text2);
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: var(--fs-title);
 }
 
 /* ── info drawer and the metadata editor ───────────────────────── */
@@ -999,7 +1008,7 @@
   border: none;
   background: transparent;
   box-shadow: none;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .kw-offers {
   position: absolute;
@@ -1019,7 +1028,7 @@
 .kw-offer {
   padding: 6px 8px;
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
   border-radius: var(--r);
   cursor: pointer;
@@ -1055,7 +1064,11 @@
   margin: 4px 0 2px 4px;
   padding: 8px 0 8px 12px;
   border-left: 1px solid var(--acc-a35);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 5%, transparent), transparent 60%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 5%, transparent),
+    transparent 60%
+  );
   animation: rowIn 0.45s var(--spring) both;
 }
 .rule-group-head {
@@ -1066,7 +1079,7 @@
   color: var(--text2);
   font-size: 12.5px;
 }
-.rule-group-head select {
+.rule-group-head .glass-select {
   width: 82px;
 }
 .rule-row {
@@ -1076,11 +1089,11 @@
   min-height: 32px;
   animation: rowIn 0.4s var(--spring) both;
 }
-.rule-row select.rule-field {
+.rule-row .glass-select.rule-field {
   width: 148px;
   flex: none;
 }
-.rule-row select.rule-op {
+.rule-row .glass-select.rule-op {
   width: 158px;
   flex: none;
 }
@@ -1090,7 +1103,7 @@
   gap: 7px;
   min-width: 0;
 }
-select.rule-value {
+.glass-select.rule-value {
   width: 180px;
 }
 .rule-row input.rule-text {
@@ -1104,20 +1117,20 @@ select.rule-value {
 .rule-row input.rule-date {
   width: 150px;
 }
-.rule-value .stars span {
-  font-size: 15px;
+.rule-value .stars button {
+  font-size: var(--fs-large);
 }
 .rule-and {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .rule-empty {
   margin: 2px 0 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .rule-preview {
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .rule-preview .big {
   font-size: 20px;

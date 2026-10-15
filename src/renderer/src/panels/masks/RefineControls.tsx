@@ -185,7 +185,7 @@ export function RefineControls({
           format={(v) => `${v.toFixed(2)}%`}
           tip={{
             what: tk(
-              "How far the photo's edges may pull this one, as a share of its shorter side."
+              'How far the photo’s edges may pull this one, as a share of its shorter side.'
             ),
             expect: tk('About three times how far off the edge is. Too wide and a halo comes back.')
           }}

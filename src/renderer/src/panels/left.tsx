@@ -166,6 +166,7 @@ export function PresetsPane(): React.JSX.Element | null {
               <button
                 className="icon sm"
                 title={t('Remove from My Looks')}
+                aria-label={t('Remove from My Looks')}
                 onClick={(e) => {
                   e.stopPropagation()
                   useLooks.getState().remove(p.id)
@@ -189,6 +190,7 @@ export function PresetsPane(): React.JSX.Element | null {
                 <button
                   className="icon sm"
                   title={t('Delete preset')}
+                  aria-label={t('Delete preset')}
                   onClick={(e) => {
                     e.stopPropagation()
                     void api.presets.remove(p.id).then(presetsChanged)
@@ -208,6 +210,7 @@ export function PresetsPane(): React.JSX.Element | null {
               <button
                 className="icon sm"
                 title={t('Add to My Looks')}
+                aria-label={t('Add to My Looks')}
                 onClick={(e) => {
                   e.stopPropagation()
                   useLooks.getState().add(p.id)
@@ -241,12 +244,18 @@ function AppliedLookBar(): React.JSX.Element | null {
     <div className="applied-look">
       <div className="applied-look-head">
         <strong title={t('Applied: {{look}}', { look: applied.label })}>{applied.name}</strong>
-        <button className="icon sm" title={t('Take the look off')} onClick={removeLook}>
+        <button
+          className="icon sm"
+          title={t('Take the look off')}
+          aria-label={t('Take the look off')}
+          onClick={removeLook}
+        >
           <Icon name="reset" />
         </button>
         <button
           className="icon sm"
           title={t('Keep it as it is: the next look goes on top')}
+          aria-label={t('Keep it as it is: the next look goes on top')}
           onClick={() => useLooks.setState({ applied: null })}
         >
           <Icon name="check" />
@@ -292,7 +301,7 @@ function LookRunProgress({ runId }: { runId: string }): React.JSX.Element | null
             : run.label}
         </span>
         {run.phase === 'running' && <span className="t">{formatEta(left)}</span>}
-        <button className="sm ghost" onClick={cancelLookRun} title={t("Stop the look's AI work")}>
+        <button className="sm ghost" onClick={cancelLookRun} title={t('Stop the look’s AI work')}>
           {t('Cancel')}
         </button>
       </div>
@@ -389,6 +398,7 @@ function MaskPresetsGroup(): React.JSX.Element | null {
             <button
               className="icon sm"
               title={t('Delete mask preset')}
+              aria-label={t('Delete mask preset')}
               onClick={(e) => {
                 e.stopPropagation()
                 void remove(p.name)
@@ -410,7 +420,7 @@ function MaskPresetsGroup(): React.JSX.Element | null {
           >
             <span className="rail-label">
               <Icon name="plus" />
-              {t("Save this mask's settings…")}
+              {t('Save this mask’s settings…')}
             </span>
           </div>
         ) : (

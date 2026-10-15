@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { maskContextMenu } from '../../lib/menus'
+import { GlassSelect } from '../../components/GlassSelect'
+import { Segmented } from '../../components/ui'
 import type { MaskMode } from '../../../../shared/engine-types'
 import { effectiveMode, nextMaskMode } from '../../../../shared/masks'
 import { hasControls, hiddenAdjusted } from '../../../../shared/maskcontrols'
@@ -33,7 +35,7 @@ import { ToolPicker } from './ToolPicker'
 import { NameChips } from './NameChips'
 import { useReorder } from './useReorder'
 import { NodeView } from './NodeView'
-import { keyHint, withKey } from '../../lib/commands'
+import { keyHint, withKey, modKey } from '../../lib/commands'
 import { t, tk } from '../../lib/i18n'
 
 /**
@@ -221,7 +223,7 @@ function ComponentRow({
           <button
             className="mf-select"
             aria-pressed={on}
-            title={t('Double-click to rename · Alt+↑↓ to move')}
+            title={t('Double-click to rename · {{keys}} to move', { keys: `${modKey('alt')}↑↓` })}
             onClick={() => setComp(on ? null : c.id)}
             onDoubleClick={() => setRename(c.name ?? '')}
             onKeyDown={(e) => moveByKey(e, index, count, (to) => moveComponent(c.id, to))}
@@ -234,6 +236,7 @@ function ComponentRow({
           <button
             className={`icon sm${c.invert ? ' on' : ''}`}
             title={c.invert ? t('Inverted — click to un-invert') : t('Invert this component')}
+            aria-label={t('Invert this component')}
             aria-pressed={c.invert}
             onClick={() =>
               patchComponent(c.id, tk('Invert component'), (x) => (x.invert = !x.invert))
@@ -245,6 +248,7 @@ function ComponentRow({
             <button
               className="icon sm"
               title={t('Component options')}
+              aria-label={t('Component options')}
               aria-expanded={menu}
               onClick={() => setMenu(!menu)}
             >
@@ -301,32 +305,35 @@ function AddBar({ onMore }: { onMore: (mode: MaskMode) => void }): React.JSX.Ele
   }
   return (
     <div className="mf-add">
-      <div className="seg" role="group" aria-label={t('How a new component joins this mask')}>
-        {(['Add', 'Subtract', 'Intersect'] as MaskMode[]).map((m) => (
-          <button
-            key={m}
-            className={join === m ? 'on' : ''}
-            aria-pressed={join === m}
-            aria-label={t(MODE_LABEL[m])}
-            title={t(JOIN_TITLE[m])}
-            onClick={() => setJoin(m)}
-          >
-            <span className={`mf-join m-${m.toLowerCase()}`}>{MODE_MARK[m]}</span>
-          </button>
-        ))}
-      </div>
+      <Segmented
+        label={t('How a new component joins this mask')}
+        value={join}
+        onChange={setJoin}
+        options={(['Add', 'Subtract', 'Intersect'] as MaskMode[]).map((m) => ({
+          value: m,
+          ariaLabel: t(MODE_LABEL[m]),
+          title: t(JOIN_TITLE[m]),
+          label: <span className={`mf-join m-${m.toLowerCase()}`}>{MODE_MARK[m]}</span>
+        }))}
+      />
       <div className="mf-add-tools" role="group" aria-label={t(JOIN_WITH[join])}>
         {ADD_TOOLS.map((tool) => (
           <button
             key={tool.kind}
             className="icon sm"
             title={t(JOIN_TOOL[join], { tool: t(tool.label) })}
+            aria-label={t(JOIN_TOOL[join], { tool: t(tool.label) })}
             onClick={() => add(tool.kind)}
           >
             <Icon name={tool.icon} />
           </button>
         ))}
-        <button className="icon sm" title={t(JOIN_EVERY[join])} onClick={() => onMore(join)}>
+        <button
+          className="icon sm"
+          title={t(JOIN_EVERY[join])}
+          aria-label={t(JOIN_EVERY[join])}
+          onClick={() => onMore(join)}
+        >
           <Icon name="more" />
         </button>
       </div>
@@ -422,7 +429,7 @@ function MaskRow({
           <button
             className="mf-select"
             aria-pressed={selected}
-            title={t('Double-click to rename · Alt+↑↓ to move')}
+            title={t('Double-click to rename · {{keys}} to move', { keys: `${modKey('alt')}↑↓` })}
             onClick={() => setLayer(selected ? null : layer.id)}
             onDoubleClick={() => setRenaming(layer.name)}
             onFocus={() => setHover(layer.id)}
@@ -440,7 +447,7 @@ function MaskRow({
           <span className="mf-menu-anchor">
             <button
               className="mf-swatch-btn"
-              title={t("This mask's overlay colour")}
+              title={t('This mask’s overlay colour')}
               aria-label={t('Overlay colour')}
               aria-expanded={colour}
               onClick={() => setColour(!colour)}
@@ -475,7 +482,7 @@ function MaskRow({
                       })
                     }
                   >
-                    {t("Use the overlay's colour")}
+                    {t('Use the overlay’s colour')}
                   </button>
                 )}
               </Popover>
@@ -484,6 +491,7 @@ function MaskRow({
           <button
             className={`icon sm mf-act${layer.invert ? ' on' : ''}`}
             title={layer.invert ? t('Inverted — click to un-invert') : t('Invert this mask')}
+            aria-label={t('Invert this mask')}
             aria-pressed={layer.invert}
             onClick={invert}
           >
@@ -491,8 +499,9 @@ function MaskRow({
           </button>
           <button
             className="icon sm mf-act mf-eye"
-            title={withKey(layer.enabled ? t('Hide this mask') : t('Show this mask'), 'mask.hide')}
-            aria-pressed={!layer.enabled}
+            title={withKey(layer.enabled ? t('Turn off') : t('Turn on'), 'mask.hide')}
+            aria-label={t('Show this mask')}
+            aria-pressed={layer.enabled}
             onClick={toggleHidden}
           >
             <Icon name={layer.enabled ? 'eye' : 'eyeOff'} />
@@ -501,6 +510,7 @@ function MaskRow({
             <button
               className="icon sm"
               title={t('Mask options')}
+              aria-label={t('Mask options')}
               aria-expanded={menu}
               onClick={() => setMenu(!menu)}
             >
@@ -612,17 +622,12 @@ function OverlayControls(): React.JSX.Element {
               {keyHint('mask.overlayMode') &&
                 ` · ${t('{{key}} cycles', { key: keyHint('mask.overlayMode') })}`}
             </span>
-            <select
+            <GlassSelect<OverlayMode>
               value={o.mode}
-              onChange={(e) => set({ mode: e.target.value as OverlayMode })}
-              aria-label={t('Overlay mode')}
-            >
-              {OVERLAY_MODES.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {t(m.label)}
-                </option>
-              ))}
-            </select>
+              onChange={(mode) => set({ mode })}
+              label={t('Overlay mode')}
+              options={OVERLAY_MODES.map((m) => ({ value: m.value, label: t(m.label) }))}
+            />
             <label className="op-row">
               <span>{t('Colour')}</span>
               <input
@@ -682,7 +687,7 @@ function OverlayControls(): React.JSX.Element {
             <label
               className="check"
               title={t(
-                "The overlay steps aside while a slider that changes the photo moves (Lightroom's auto toggle)"
+                'The overlay steps aside while a slider that changes the photo moves (Lightroom’s auto toggle)'
               )}
             >
               <input

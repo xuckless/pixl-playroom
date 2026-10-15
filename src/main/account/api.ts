@@ -136,7 +136,7 @@ export class AccountApi {
       })
     } catch (err) {
       throw new AccountError(
-        t("Couldn't reach the PIXL account: {{reason}}", {
+        t('Couldn’t reach the PIXL account: {{reason}}', {
           reason: err instanceof Error ? err.message : String(err)
         }),
         'network'

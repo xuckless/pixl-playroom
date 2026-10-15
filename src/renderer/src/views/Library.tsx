@@ -13,6 +13,7 @@ import { autoWbBatch } from '../lib/autowb'
 import { choosePhotos } from '../lib/openPhotos'
 import { LABEL_COLOURS } from '../lib/helpers'
 import { folderName, KEYS_MIME, sourceTrail } from '../lib/sources'
+import { gridTakesFocus } from '../lib/roving'
 import { useThumbFirst } from '../lib/thumbs'
 import { IdentityBar } from '../shell/IdentityBar'
 import { useDevelop } from '../state/develop'
@@ -32,6 +33,24 @@ const LABEL_NAME: Record<string, string> = {
   green: tk('Green'),
   blue: tk('Blue'),
   purple: tk('Purple')
+}
+
+/**
+ * Whether keyboard focus is in the grid: the focused photo then takes it as
+ * the arrows move the focus (a tile scrolled out of the page drops it, and
+ * the next one picks it up; never from a field or button elsewhere).
+ */
+let gridFocused = false
+
+/** What a tile says to a screen reader: its name, rating, flag and label. */
+function tileLabel(item: LibraryItem): string {
+  const parts = [item.name]
+  if (item.rating > 0) parts.push(tp('{{count}} star', '{{count}} stars', item.rating))
+  if (item.flag === 'pick') parts.push(t('Picked'))
+  if (item.flag === 'reject') parts.push(t('Rejected'))
+  if (item.label && LABEL_NAME[item.label]) parts.push(t(LABEL_NAME[item.label]))
+  if (item.edited) parts.push(t('Edited'))
+  return parts.join(', ')
 }
 
 /** A tile's part in a stack: the cover (collapsed or open), or a member of an open one. */
@@ -66,6 +85,8 @@ const Thumb = memo(function Thumb({
 }): React.JSX.Element {
   const selected = useLibrary((s) => selectionSet(s.selection).has(item.key))
   const focus = useLibrary((s) => s.focus === item.key)
+  // With no photo focused, the first takes the grid's stop.
+  const stop = useLibrary((s) => (s.focus === null && index === 0) || s.focus === item.key)
   const select = useLibrary((s) => s.select)
   const setMeta = useLibrary((s) => s.setMeta)
   const toggleStack = useLibrary((s) => s.toggleStack)
@@ -75,6 +96,17 @@ const Thumb = memo(function Thumb({
   const older = usePipeline((p) => !!item.legacy && olderDevelop(item.legacy, item.isRaw, p))
   const ref = useRef<HTMLDivElement>(null)
   useThumbFirst(ref, item.key, !item.thumbUrl && !item.unreadable && !item.offline)
+  useEffect(() => {
+    const el = ref.current
+    const at = document.activeElement
+    if (
+      focus &&
+      el &&
+      !el.contains(at) &&
+      gridTakesFocus(gridFocused, !at || at === document.body, !!at?.closest('.grid'))
+    )
+      el.focus({ preventScroll: true })
+  }, [focus])
   const cls = [
     'thumb',
     selected && 'selected',
@@ -93,6 +125,11 @@ const Thumb = memo(function Thumb({
       ref={ref}
       className={cls}
       style={{ width: size, animationDelay: `${Math.min(index, 24) * 18}ms` }}
+      role="gridcell"
+      aria-selected={selected}
+      aria-label={tileLabel(item)}
+      // One stop for the grid: the focused photo; the arrows move it.
+      tabIndex={stop ? 0 : -1}
       draggable
       onDragStart={(e) => {
         // Dragging a selected photo drags the selection; any other, just itself.
@@ -245,7 +282,11 @@ const Thumb = memo(function Thumb({
             </span>
           )}
         </span>
-        <Stars value={item.rating} onChange={(v) => void setMeta({ rating: v }, [item.key])} />
+        <Stars
+          compact
+          value={item.rating}
+          onChange={(v) => void setMeta({ rating: v }, [item.key])}
+        />
       </div>
     </div>
   )
@@ -460,7 +501,7 @@ export function Toolbar(): React.JSX.Element {
         title={withKey(t('Export selected'), 'export')}
       >
         <Icon name="export" />
-        {t('Export')}
+        {t('Export…')}
       </LiquidGlass>
       <button
         className={`icon lg${info ? ' on' : ''}`}
@@ -714,8 +755,18 @@ export function LibraryView(): React.JSX.Element {
     <div
       ref={scroller}
       className={`grid${opening ? ' loading' : ''}${entering ? ' entering' : ''}`}
+      role="grid"
+      aria-label={t('Photos')}
+      aria-multiselectable
+      aria-rowcount={rows.length}
+      onFocus={() => (gridFocused = true)}
+      onBlur={(e) => {
+        // Focus leaving for somewhere else (not a tile scrolled away, which has none).
+        if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget as Node))
+          gridFocused = false
+      }}
     >
-      <div className="grid-space" style={{ height: virtual.getTotalSize() }}>
+      <div className="grid-space" role="presentation" style={{ height: virtual.getTotalSize() }}>
         {virtual.getVirtualItems().map((v) => {
           const row = rows[v.index]
           if (row.kind === 'head')
@@ -726,11 +777,13 @@ export function LibraryView(): React.JSX.Element {
                 ref={virtual.measureElement}
                 className={`dupe-head${row.first ? ' first' : ''}`}
                 style={{ transform: `translateY(${v.start}px)` }}
+                role="row"
+                aria-rowindex={v.index + 1}
               >
                 <span className={`badge${row.group.kind === 'exact' ? '' : ' ghost'}`}>
                   {row.group.kind === 'exact' ? t('Exact') : t('Similar')}
                 </span>
-                <span className="t-num">
+                <span className="t-num" role="rowheader">
                   {tp('{{count}} photo', '{{count}} photos', row.count)}
                   {' · '}
                   {row.group.kind === 'near' && row.group.distance !== undefined
@@ -746,6 +799,8 @@ export function LibraryView(): React.JSX.Element {
               data-index={v.index}
               ref={virtual.measureElement}
               className="grid-row"
+              role="row"
+              aria-rowindex={v.index + 1}
               style={{
                 transform: `translateY(${v.start}px)`,
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`

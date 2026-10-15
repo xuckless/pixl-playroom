@@ -5,6 +5,7 @@
  * Looks in the rail.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { modName } from '../../lib/commands'
 import type { Preset } from '../../../../shared/ipc'
 import { LOOKS } from '../../../../shared/looks/catalog'
 import {
@@ -209,6 +210,8 @@ export function LooksBrowser(): React.JSX.Element | null {
           <button
             className={`icon sm look-keep${kept(p.id) ? ' kept' : ''}`}
             title={kept(p.id) ? t('In My Looks: remove') : t('Add to My Looks')}
+            aria-label={t('In My Looks')}
+            aria-pressed={kept(p.id)}
             onClick={(e) => {
               e.stopPropagation()
               toggleKeep(p)
@@ -308,7 +311,10 @@ export function LooksBrowser(): React.JSX.Element | null {
               onClick={(e) => apply(focused, { stack: e.altKey })}
               title={
                 applied
-                  ? t('Takes the place of {{name}} (Alt: on top of it)', { name: appliedName })
+                  ? t('Takes the place of {{name}} ({{alt}}: on top of it)', {
+                      name: appliedName,
+                      alt: modName('alt')
+                    })
                   : undefined
               }
             >
@@ -336,7 +342,7 @@ export function LooksBrowser(): React.JSX.Element | null {
         ) : (
           <p className="looks-disclaimer">
             {t(
-              "PIXL's own looks, made with Playroom's sliders. Cameras, film stocks and films are named only as what inspired a look; PIXL is not affiliated with or endorsed by their owners."
+              'PIXL’s own looks, made with Playroom’s sliders. Cameras, film stocks and films are named only as what inspired a look; PIXL is not affiliated with or endorsed by their owners.'
             )}
           </p>
         )

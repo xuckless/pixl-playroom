@@ -138,6 +138,21 @@ const PATHS = {
     </>
   ),
   check: <path d="M5 12l5 5 9-10" />,
+  heal: <path d="M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z" />,
+  /** Something to think twice about (a confirm that deletes). */
+  warning: (
+    <>
+      <path d="M12 3 2 21h20z" />
+      <path d="M12 10v5M12 18v.01" />
+    </>
+  ),
+  /** A key or matte: white where it selects (the qualifier's key view). */
+  matte: (
+    <>
+      <rect x="3" y="3" width="18" height="18" />
+      <path d="M12 3h9v18h-9z" className="fill-cur" />
+    </>
+  ),
   brush: (
     <>
       <path d="M4 20c2-6 8-6 10-12" />

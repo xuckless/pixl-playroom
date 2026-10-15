@@ -22,7 +22,7 @@ import { WB_PRESETS } from '../../../shared/wb'
 import { opOf, wbFromSaved } from '../../../shared/wbconvert'
 import { AddColourControl } from '../components/AddColour'
 import { ColorWheel, CurveEditor } from '../components/editors'
-import { Section, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
+import { Section, Segmented, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useDevelop, type CurveChannel } from '../state/develop'
 import { useLibrary } from '../state/library'
@@ -118,6 +118,7 @@ export function RS({
         onGesture?.(false)
         commit(label)
       }}
+      onCancel={() => onGesture?.(false)}
     />
   )
 }
@@ -401,7 +402,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
     const next = [...saved.filter((p) => !(p.name === name && (p.op || p.absolute === abs))), entry]
     setSaved(next)
     await api.app.setSetting(WB_PRESETS_KEY, next)
-    useLibrary.getState().say(t('Saved white balance "{{name}}"', { name }))
+    useLibrary.getState().say(t('Saved white balance “{{name}}”', { name }))
   }
   const shot = session.asShot
   const shownTemp =
@@ -483,7 +484,8 @@ function WhiteBalanceRows(): React.JSX.Element | null {
             onChange={(on) => setTool(on ? 'wb-picker' : 'none')}
             title={withKey(t('Pick a neutral in the photo'), 'tool.wb')}
           >
-            ⌖ {t('Pick')}
+            <Icon name="picker" />
+            {t('Pick')}
           </Toggle>
         </div>
       )}
@@ -798,10 +800,10 @@ export function ToneCurveCustom(): React.JSX.Element | null {
   const setChannel = useDevelop((s) => s.setCurveChannel)
   if (!recipe) return null
   const colours: Record<CurveChannel, string> = {
-    master: '#c9bdf7',
-    red: '#ff5a5a',
-    green: '#5aff78',
-    blue: '#5a8cff'
+    master: 'var(--ch-y)',
+    red: 'var(--ch-r)',
+    green: 'var(--ch-g)',
+    blue: 'var(--ch-b)'
   }
   const hist =
     channel === 'master'
@@ -828,6 +830,7 @@ export function ToneCurveCustom(): React.JSX.Element | null {
       <CurveEditor
         points={recipe.toneCurve[channel]}
         colour={colours[channel]}
+        label={t('Curves')}
         histogram={hist}
         onChange={(p: CurvePointSetting[], live) => edit((r) => (r.toneCurve[channel] = p), live)}
         onCommit={() => commit(`Curves: Custom (${channel})`)}
@@ -1128,7 +1131,8 @@ function PointColorSection(): React.JSX.Element | null {
               : t('Pick a colour in the photo')
           }
         >
-          ⌖ {t('Pick')}
+          <Icon name="picker" />
+          {t('Pick')}
         </Toggle>
       }
     >
@@ -1141,6 +1145,8 @@ function PointColorSection(): React.JSX.Element | null {
             key={p.id}
             className={`icon mf-swatch-btn${p.id === sel?.id ? ' on' : ''}`}
             title={t('Colour {{n}}', { n: i + 1 })}
+            aria-label={t('Colour {{n}}', { n: i + 1 })}
+            aria-pressed={p.id === sel?.id}
             onClick={() => setPointId(p.id)}
           >
             <span
@@ -1150,7 +1156,12 @@ function PointColorSection(): React.JSX.Element | null {
           </button>
         ))}
         {sel && (
-          <button className="icon" title={t('Remove this colour')} onClick={remove}>
+          <button
+            className="icon"
+            title={t('Remove this colour')}
+            aria-label={t('Remove this colour')}
+            onClick={remove}
+          >
             <Icon name="trash" />
           </button>
         )}
@@ -1295,7 +1306,7 @@ function NoiseAnalysis(): React.JSX.Element {
             {noise && (
               <span
                 title={t(
-                  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values"
+                  'σ̂ of white noise on each plane, the denoiser’s own estimator, in 8-bit code values'
                 )}
               >
                 {t('σ̂ luma {{luma}} · chroma {{chroma}}', {
@@ -1882,19 +1893,17 @@ export function GeometryBody(): React.JSX.Element | null {
   return (
     <ToolPanel>
       <Section id="crop.upright" title={t('Upright')} tip={TIPS['geometry.upright']}>
-        <div className="seg upright-modes" role="group" aria-label={t('Upright')}>
-          {UPRIGHT_MODES.map((m) => (
-            <button
-              key={m.value}
-              className={g.upright.mode === m.value ? 'on' : ''}
-              aria-pressed={g.upright.mode === m.value}
-              title={t(m.title)}
-              onClick={() => void applyUpright(m.value)}
-            >
-              {t(m.label)}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          className="upright-modes"
+          label={t('Upright')}
+          value={g.upright.mode}
+          onChange={(m) => void applyUpright(m)}
+          options={UPRIGHT_MODES.map((m) => ({
+            value: m.value,
+            label: t(m.label),
+            title: t(m.title)
+          }))}
+        />
         {g.upright.mode === 'guided' && tool !== 'upright-guide' && (
           <div className="row">
             <button className="sm" onClick={startGuides}>

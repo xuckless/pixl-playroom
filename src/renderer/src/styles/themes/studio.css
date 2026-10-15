@@ -17,7 +17,8 @@
 
   --text: #ececec;
   --text2: #bdbdbd;
-  --muted: #8c8c8c;
+  /* 4.5:1 on a card (WCAG AA). */
+  --muted: #a5a5a5;
 
   --glow: transparent;
   --glow-soft: transparent;

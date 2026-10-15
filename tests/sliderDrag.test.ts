@@ -25,12 +25,12 @@ test('a drag moves by distance, the width spanning the whole range', () => {
   assert.equal(dragValue(90, 100, 200, -100, 100, 1), 100)
 })
 
-test('Alt drags a tenth as fast', () => {
+test('Shift (fine) drags a tenth as fast', () => {
   assert.equal(dragValue(0, 50, 200, -100, 100, 1, true), 5)
   assert.equal(dragValue(0, 30, 300, -5, 5, 0.01, true), 0.1)
 })
 
-test('keys step once, Shift ten steps, Alt a tenth of one', () => {
+test('keys step once, Page keys ten steps, Shift a tenth of one', () => {
   assert.equal(keyValue(0, 1, -100, 100, 1, 'none'), 1)
   assert.equal(keyValue(0, -1, -100, 100, 1, 'coarse'), -10)
   assert.equal(keyValue(0, 1, -5, 5, 0.01, 'fine'), 0.001)

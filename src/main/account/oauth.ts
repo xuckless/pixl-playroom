@@ -83,7 +83,7 @@ function sameState(a: string | null, b: string): boolean {
 export function readCallback(url: URL, state: string): string {
   const q = url.searchParams
   if (!sameState(q.get('state'), state))
-    throw new OAuthError(t("That sign-in answer wasn't for this sign-in."), 'state')
+    throw new OAuthError(t('That sign-in answer wasn’t for this sign-in.'), 'state')
   const error = q.get('error')
   if (error) {
     const why = q.get('error_description') || error
@@ -195,7 +195,7 @@ export function listenForCallback(opts: {
               'port-in-use'
             )
           : new OAuthError(
-              t("Couldn't start the sign-in: {{reason}}", { reason: err.message }),
+              t('Couldn’t start the sign-in: {{reason}}', { reason: err.message }),
               'network'
             )
       )
@@ -244,7 +244,7 @@ async function tokenRequest(
     })
   } catch (err) {
     throw new OAuthError(
-      t("Couldn't reach the PIXL account: {{reason}}", {
+      t('Couldn’t reach the PIXL account: {{reason}}', {
         reason: err instanceof Error ? err.message : String(err)
       }),
       'network'

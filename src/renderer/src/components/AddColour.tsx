@@ -23,6 +23,7 @@ import { InfoTip, type Tip } from './InfoTip'
 import { Popover } from './Popover'
 import { Slider, Toggle } from './ui'
 import { t } from '../lib/i18n'
+import { Icon } from './icons'
 
 /** The last target colour chosen, offered again next time (sRGB code values). */
 let lastGoal: Vec3 = [0.36, 0.62, 0.66]
@@ -101,7 +102,8 @@ function MatchTarget({
           onPickOne(srgbToP3(rgb), hex)
         }}
       >
-        ⌖ {t('Pick the colour to change')}
+        <Icon name="picker" />
+        {t('Pick the colour to change')}
       </button>
       <button className="sm ghost" onClick={onPickBoth}>
         {t('Pick both in the photo')}
@@ -175,7 +177,8 @@ export function AddColourControl({
           onChange={toggle('white')}
           title={t('Click a colour in the photo: add its complement, so it turns neutral')}
         >
-          ⌖ {t('Neutralise')}
+          <Icon name="picker" />
+          {t('Neutralise')}
         </Toggle>
         <button
           ref={matchButton}
@@ -188,7 +191,8 @@ export function AddColourControl({
             setMatching(!matching)
           }}
         >
-          ⌖ {t('Match')}
+          <Icon name="picker" />
+          {t('Match')}
         </button>
         {matching && (
           <MatchTarget

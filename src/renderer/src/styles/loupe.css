@@ -117,7 +117,7 @@
   gap: 12px;
   height: 30px;
   padding: 0 12px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   letter-spacing: 0.08em;
   color: var(--text2);
   pointer-events: none;
@@ -160,12 +160,12 @@
   transition: width 0.25s linear;
 }
 .hud-sub {
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--muted);
 }
 /* the PIXL demosaic's state for the open RAW (a development kit's) */
 .pixl-chip {
-  font-size: 11px;
+  font-size: var(--fs-small);
   opacity: 0.85;
 }
 .pixl-dot {
@@ -415,7 +415,7 @@
   padding: 7px 16px;
   border-color: color-mix(in srgb, var(--acc) 45%, transparent);
   color: #fff;
-  font-size: 15px;
+  font-size: var(--fs-large);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -454,7 +454,7 @@
   border: 1px solid var(--hair);
   cursor: pointer;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.12em;
   transition:
     transform 0.4s var(--spring),
@@ -500,7 +500,7 @@
   left: 100%;
   top: 100%;
   margin: 2px 0 0 2px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   color: #fff;
   text-shadow: 0 0 3px #000;
@@ -511,7 +511,7 @@
 .split-tag {
   position: absolute;
   z-index: 4;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: rgb(var(--fg-rgb) / 0.85);
@@ -720,7 +720,7 @@
 }
 .rebuild-text span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-small);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -124,7 +124,7 @@ button.lg {
 button.sm {
   height: 24px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 button.icon {
   width: 28px;
@@ -210,7 +210,7 @@ button.on:not(.icon):not(.chip)::after {
 }
 .kbd {
   font-family: var(--font);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--muted);
   border: 1px solid var(--hair);
   border-radius: var(--r);
@@ -222,7 +222,7 @@ button.on:not(.icon):not(.chip)::after {
 .copy-badge {
   display: inline-flex;
   align-items: center;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--acc);
@@ -235,7 +235,7 @@ button.on:not(.icon):not(.chip)::after {
 .chip {
   height: 26px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .chip.on {
   color: var(--acc);
@@ -303,7 +303,7 @@ button.on:not(.icon):not(.chip)::after {
 }
 .seg .k {
   margin-left: 7px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: rgb(var(--fg-rgb) / 0.35);
 }
 
@@ -328,7 +328,7 @@ textarea {
   padding: 7px 9px;
   width: 100%;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   resize: vertical;
 }
@@ -385,7 +385,7 @@ input.name {
   color: var(--text2);
   font-weight: 500;
 }
-.select select {
+.select .glass-select {
   width: 100%;
   min-width: 0;
 }
@@ -474,9 +474,10 @@ input[type='checkbox']:disabled {
 .slider:hover {
   background: rgb(var(--fg-rgb) / 0.05);
 }
+/* A solid ring, 3:1 against every theme's surfaces (WCAG 1.4.11). */
 .slider:focus-visible {
   box-shadow:
-    inset 0 0 0 1px var(--acc-a55),
+    inset 0 0 0 2px var(--acc),
     0 0 14px -6px var(--glow);
 }
 .sl-rail {
@@ -513,7 +514,7 @@ input[type='checkbox']:disabled {
   align-items: center;
   gap: 6px;
   margin-bottom: 2px;
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
 }
 .step-slider .ss-value {
@@ -544,7 +545,7 @@ input[type='checkbox']:disabled {
   border: none;
   background: transparent;
   box-shadow: none;
-  font-size: 11px;
+  font-size: var(--fs-small);
   letter-spacing: 0.02em;
   color: var(--muted);
   white-space: nowrap;
@@ -742,6 +743,29 @@ input[type='checkbox']:disabled {
   cursor: pointer;
   user-select: none;
 }
+/* The title as the fold's button (ui.tsx Section, CardHeader): no frame of its
+   own, only the ring when the keyboard is on it. */
+.fold-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  letter-spacing: inherit;
+}
+.fold-btn:hover:not(:disabled) {
+  background: none;
+}
+:where(.fold-btn):active:not(:disabled) {
+  transform: none;
+}
 .section > header .title {
   font-size: 10.5px;
   font-weight: 600;
@@ -840,7 +864,7 @@ input[type='checkbox']:disabled {
 }
 .card > header .title {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -872,9 +896,10 @@ input[type='checkbox']:disabled {
   width: 13px;
   height: 13px;
 }
+/* Quiet until the header is hovered or focused, never hidden: where they are is seen. */
 .card-eye,
 .card-reset {
-  opacity: 0;
+  opacity: 0.35;
   transition: opacity 0.2s var(--ease);
 }
 .card > header:hover .card-eye,
@@ -938,6 +963,22 @@ input[type='checkbox']:disabled {
   padding: 10px 12px 11px;
   pointer-events: auto;
 }
+/* A tooltip (components/Tooltip.tsx) is read, never pointed at. */
+.popover.tooltip {
+  z-index: 80;
+  pointer-events: none;
+}
+/* A title's note: one line or a few, as wide as its words. */
+.popover.tooltip.title-tip {
+  width: auto;
+  max-width: 280px;
+  padding: 6px 9px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  white-space: pre-line;
+}
 .tip-pop .tip-title {
   margin-bottom: 4px;
   color: var(--text);
@@ -948,7 +989,7 @@ input[type='checkbox']:disabled {
 .tip-pop p {
   margin: 0;
   color: var(--text2);
-  font-size: 12px;
+  font-size: var(--fs-body);
   line-height: 1.45;
 }
 .tip-pop p + p {
@@ -958,7 +999,7 @@ input[type='checkbox']:disabled {
   display: inline-block;
   margin-right: 6px;
   color: var(--acc);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1015,7 +1056,9 @@ input[type='checkbox']:disabled {
   transition: transform var(--dur-toggle) var(--spring);
 }
 .popover.gs-menu {
-  width: 260px;
+  min-width: 200px;
+  max-width: 360px;
+  overflow-y: auto;
 }
 .glass-select.on svg {
   transform: rotate(180deg);
@@ -1041,26 +1084,39 @@ input[type='checkbox']:disabled {
     0 20px 50px -20px rgb(var(--shade-rgb) / 0.8);
 }
 
-/* stars */
+/* stars: each a 24 px tall target (WCAG 2.5.8), the glyph as it was */
 .stars {
   display: inline-flex;
-  gap: 1px;
   letter-spacing: 0;
 }
-.stars span {
-  color: rgb(var(--fg-rgb) / 0.18);
-  cursor: pointer;
-  font-size: 11px;
-  transition:
-    color 0.2s,
-    transform 0.3s var(--spring);
+.stars > span,
+.stars button {
+  color: rgb(var(--fg-rgb) / 0.4);
+  font-size: var(--fs-small);
 }
-.stars span:hover {
+.stars button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.stars.compact button {
+  width: 14px;
+}
+.stars button span {
+  transition: transform 0.3s var(--spring);
+}
+.stars button:hover span {
   transform: scale(1.3);
 }
-.stars span.on {
+.stars .on {
   color: var(--star);
-  text-shadow: 0 0 8px rgba(232, 197, 107, 0.5);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--star) 50%, transparent);
 }
 
 /* ── liquid glass ──────────────────────────────────────────────────

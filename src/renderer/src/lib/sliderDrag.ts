@@ -1,9 +1,58 @@
 /**
  * The arithmetic of the bar sliders: a drag moves the value by how far the
- * pointer went (the bar's width spans the whole range; Alt a tenth of it),
+ * pointer went (the bar's width spans the whole range; Shift a tenth of it),
  * never to where it was pressed; keys step it. Values land on the slider's
  * step and stay inside its range.
+ *
+ * And the one rule every dragged or stepped control keeps (the sliders, the
+ * wheels' discs, rings and YRGB numbers, curve points, number fields):
+ * Shift moves it finely, a tenth as fast; Alt (Option) puts it back to its
+ * default, as a double-click does; Escape cancels the edit under way. From
+ * the keys: arrows step (Shift a tenth of a step), Page Up and Page Down ten
+ * steps, Home goes back to the default.
  */
+
+/** How much slower Shift moves a control. */
+export const FINE = 0.1
+
+export interface Mods {
+  shiftKey: boolean
+  altKey: boolean
+}
+
+/** Shift held: the control moves finely. */
+export const isFine = (e: Mods): boolean => e.shiftKey
+
+/** Alt (Option) held on a press: the control goes back to its default. */
+export const isReset = (e: Mods): boolean => e.altKey
+
+export type KeyMod = 'none' | 'coarse' | 'fine'
+
+/** A key that steps a control: which way, and how far; null for any other key. */
+export function keyStep(e: {
+  key: string
+  shiftKey: boolean
+}): { dir: 1 | -1; mod: KeyMod } | null {
+  const fine = e.shiftKey ? 'fine' : 'none'
+  switch (e.key) {
+    case 'ArrowRight':
+    case 'ArrowUp':
+      return { dir: 1, mod: fine }
+    case 'ArrowLeft':
+    case 'ArrowDown':
+      return { dir: -1, mod: fine }
+    case 'PageUp':
+      return { dir: 1, mod: 'coarse' }
+    case 'PageDown':
+      return { dir: -1, mod: 'coarse' }
+    default:
+      return null
+  }
+}
+
+/** How far a step goes, as a share of one: ten for Page keys, a tenth with Shift. */
+export const stepScale = (mod: KeyMod): number =>
+  mod === 'coarse' ? 10 : mod === 'fine' ? FINE : 1
 
 const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v))
 
@@ -23,7 +72,7 @@ export function snap(v: number, min: number, max: number, step: number): number 
   return clamp(Number((min + n * step).toFixed(places(step))), min, max)
 }
 
-/** The value after a drag of `dx` pixels across a bar `width` wide, from `start`. */
+/** The value after a drag of `dx` pixels across a bar `width` wide, from `start` (`fine`: Shift). */
 export function dragValue(
   start: number,
   dx: number,
@@ -34,12 +83,12 @@ export function dragValue(
   fine = false
 ): number {
   const perPx = (max - min) / Math.max(1, width)
-  return snap(start + dx * perPx * (fine ? 0.1 : 1), min, max, step)
+  return snap(start + dx * perPx * (fine ? FINE : 1), min, max, step)
 }
 
 /**
- * The value after a key: an arrow steps once (Shift ten steps, Alt a tenth
- * of one, never less than a hundredth of the range's step grid allows).
+ * The value after a key: an arrow steps once (Page Up and Page Down ten
+ * steps, Shift a tenth of one).
  */
 export function keyValue(
   v: number,
@@ -47,9 +96,9 @@ export function keyValue(
   min: number,
   max: number,
   step: number,
-  mod: 'none' | 'coarse' | 'fine'
+  mod: KeyMod
 ): number {
-  const by = mod === 'coarse' ? step * 10 : mod === 'fine' ? step / 10 : step
+  const by = step * stepScale(mod)
   const next = clamp(v + dir * by, min, max)
   // A fine step finer than the grid keeps its own precision.
   return mod === 'fine' ? Number(next.toFixed(places(step) + 1)) : snap(next, min, max, step)
@@ -78,20 +127,20 @@ export function dragValueLog(
   step: number,
   fine = false
 ): number {
-  const t = logFraction(start, min, max) + (dx / Math.max(1, width)) * (fine ? 0.1 : 1)
+  const t = logFraction(start, min, max) + (dx / Math.max(1, width)) * (fine ? FINE : 1)
   return snap(logValue(t, min, max), min, max, step)
 }
 
-/** A key on a log slider: one hundredth of the bar (Shift a tenth, Alt a thousandth). */
+/** A key on a log slider: one hundredth of the bar (Page keys a tenth, Shift a thousandth). */
 export function keyValueLog(
   v: number,
   dir: 1 | -1,
   min: number,
   max: number,
   step: number,
-  mod: 'none' | 'coarse' | 'fine'
+  mod: KeyMod
 ): number {
-  const by = mod === 'coarse' ? 0.1 : mod === 'fine' ? 0.001 : 0.01
+  const by = 0.01 * stepScale(mod)
   const next = logValue(logFraction(v, min, max) + dir * by, min, max)
   const snapped = snap(next, min, max, step)
   // Never stuck: a step too small to move past the grid takes one grid step.
