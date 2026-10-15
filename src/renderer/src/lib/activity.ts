@@ -117,9 +117,9 @@ export function exportActivity(p: ExportProgress): Activity {
 }
 
 /**
- * The receipts the pill keeps: finished exports not dismissed, newest
- * first. `seen` ones lose their dot (the list was opened); a failed one
- * keeps it until it is dismissed.
+ * The dot the pill keeps after a receipt has been said: only for an export
+ * that went wrong (some or all of it), until the list is opened. One that
+ * went well has said so for a few seconds (`freshReceipt`) and leaves no dot.
  */
 export function receiptDot(
   jobs: ExportProgress[],
@@ -127,10 +127,9 @@ export function receiptDot(
   dismissed: Record<string, true>
 ): Outcome | null {
   const kept = jobs.filter((p) => p.finished && !dismissed[p.jobId])
-  const marked = kept.filter((p) => outcome(p) !== 'ok' || !seen[p.jobId])
+  const marked = kept.filter((p) => outcome(p) !== 'ok' && !seen[p.jobId])
   if (marked.length === 0) return null
-  const all = marked.map(outcome)
-  return all.includes('failed') ? 'failed' : all.includes('partial') ? 'partial' : 'ok'
+  return marked.some((p) => outcome(p) === 'failed') ? 'failed' : 'partial'
 }
 
 /** The finished export to say in the pill, while it is fresh: the newest, for RECEIPT_SHOWN_MS. */

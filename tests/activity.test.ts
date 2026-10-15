@@ -197,7 +197,7 @@ test('a receipt lists failures by name, then what was written short, each said o
   assert.deepEqual(receiptLines(exp('b', { finished: true, outputs: ['x'] })), [])
 })
 
-test('a receipt is said for a few seconds, then is a dot until the list is opened', async () => {
+test('a receipt is said for a few seconds; only one that went wrong stays a dot, until the list is opened', async () => {
   const { freshReceipt, receiptDot, RECEIPT_SHOWN_MS } =
     await import('../src/renderer/src/lib/activity')
   const ok = exp('ok', { finished: true, finishedAt: 1000, outputs: ['x'] })
@@ -207,12 +207,13 @@ test('a receipt is said for a few seconds, then is a dot until the list is opene
   // A stopped export is never announced.
   const stopped = exp('s', { finished: true, stopped: true, finishedAt: 1000 })
   assert.equal(freshReceipt([stopped], {}, 1000), null)
-  assert.equal(receiptDot([ok], {}, {}), 'ok')
-  assert.equal(receiptDot([ok], { ok: true }, {}), null)
-  // A failed one keeps its dot when seen, until it is dismissed.
+  // One that went well leaves no dot once it has been said.
+  assert.equal(receiptDot([ok], {}, {}), null)
+  // One that went wrong keeps its dot until the list is opened, or it is dismissed.
   const bad = exp('bad', { finished: true, errors: [{ name: 'a', message: 'x' }] })
-  assert.equal(receiptDot([ok, bad], { ok: true, bad: true }, {}), 'failed')
-  assert.equal(receiptDot([ok, bad], { ok: true, bad: true }, { bad: true }), null)
+  assert.equal(receiptDot([ok, bad], {}, {}), 'failed')
+  assert.equal(receiptDot([ok, bad], { ok: true, bad: true }, {}), null)
+  assert.equal(receiptDot([ok, bad], {}, { bad: true }), null)
   // Running exports are not receipts.
   assert.equal(receiptDot([exp('r')], {}, {}), null)
 })
