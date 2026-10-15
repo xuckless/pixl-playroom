@@ -1,0 +1,258 @@
+{
+  "A little goes a long way: 20 to 40 reads as colour negative.": {
+    "en": "A little goes a long way: 20 to 40 reads as colour negative.",
+    "fr": "Un peu suffit : de 20 à 40, on reconnaît le négatif couleur.",
+    "de": "Wenig reicht weit: 20 bis 40 wirkt wie Farbnegativfilm.",
+    "ja": "少しで十分です。20〜40 でカラーネガらしくなります。",
+    "vi": "Một chút là đủ: từ 20 đến 40 đã ra chất phim âm bản màu.",
+    "zh-Hans": "少量即可：20 到 40 就有彩色负片的味道。"
+  },
+  "A red glow around bright highlights, as light scattered back through a colour film’s base.": {
+    "en": "A red glow around bright highlights, as light scattered back through a colour film’s base.",
+    "fr": "Un halo rouge autour des hautes lumières vives, comme la lumière renvoyée à travers le support d’un film couleur.",
+    "de": "Ein rotes Leuchten um helle Lichter, wie Licht, das durch den Träger eines Farbfilms zurückgestreut wird.",
+    "ja": "明るいハイライトの周りに赤い光のにじみを加えます。カラーフィルムのベースで反射した光のようにです。",
+    "vi": "Quầng đỏ quanh vùng sáng chói, như ánh sáng phản ngược qua lớp nền của phim màu.",
+    "zh-Hans": "在明亮高光周围加上一圈红色光晕，如同光线在彩色胶片片基中反射回来。"
+  },
+  "Adds colour grain beside the grey: the coarser dye clouds of a colour film.": {
+    "en": "Adds colour grain beside the grey: the coarser dye clouds of a colour film.",
+    "fr": "Ajoute un grain coloré à côté du grain gris : les nuages de colorants plus grossiers d’un film couleur.",
+    "de": "Fügt der grauen Körnung eine Farbkörnung hinzu: die gröberen Farbstoffwolken eines Farbfilms.",
+    "ja": "グレーの粒子に加えてカラーの粒子を加えます。カラーフィルムの粗い色素の粒です。",
+    "vi": "Thêm hạt màu bên cạnh hạt xám: những đám thuốc nhuộm thô hơn của phim màu.",
+    "zh-Hans": "在灰色颗粒之外加入彩色颗粒：彩色胶片较粗的染料云。"
+  },
+  "Amount sets how much; each colour below takes that much of it (100 is all). Aqua and cyan respond about a third as strongly.": {
+    "en": "Amount sets how much; each colour below takes that much of it (100 is all). Aqua and cyan respond about a third as strongly.",
+    "fr": "Intensité règle la quantité ; chaque couleur ci-dessous en prend cette part (100, tout). Le turquoise et le cyan réagissent environ trois fois moins.",
+    "de": "Stärke legt fest, wie viel; jede Farbe darunter nimmt diesen Anteil davon (100 ist alles). Aquamarin und Cyan reagieren nur etwa ein Drittel so stark.",
+    "ja": "適用量で強さを決め、下の各色はその割合だけ受けます（100 で全量）。アクアとシアンの効きは約 3 分の 1 です。",
+    "vi": "Cường độ đặt mức tổng; mỗi màu bên dưới nhận phần đó (100 là toàn bộ). Xanh ngọc và lục lam chỉ phản ứng khoảng một phần ba.",
+    "zh-Hans": "强度决定整体多少；下方每种颜色按该比例取用（100 为全部）。浅绿色和青色的反应约为三分之一。"
+  },
+  "Bloom": {
+    "en": "Bloom",
+    "fr": "Bloom",
+    "de": "Bloom",
+    "ja": "ブルーム",
+    "vi": "Bloom",
+    "zh-Hans": "柔光"
+  },
+  "Bloom style": {
+    "en": "Bloom style",
+    "fr": "Style de bloom",
+    "de": "Bloom-Stil",
+    "ja": "ブルームのスタイル",
+    "vi": "Kiểu bloom",
+    "zh-Hans": "柔光样式"
+  },
+  "Diffusion": {
+    "en": "Diffusion",
+    "fr": "Diffusion",
+    "de": "Diffusion",
+    "ja": "ディフュージョン",
+    "vi": "Khuếch tán",
+    "zh-Hans": "柔焦"
+  },
+  "Diffusion softens contrast and lifts the shadows next to bright areas; Glow haloes lights and keeps the blacks.": {
+    "en": "Diffusion softens contrast and lifts the shadows next to bright areas; Glow haloes lights and keeps the blacks.",
+    "fr": "Diffusion adoucit le contraste et éclaircit les ombres près des zones claires ; Lueur auréole les lumières et garde les noirs.",
+    "de": "Diffusion mildert den Kontrast und hellt die Tiefen neben hellen Flächen auf; Leuchten umgibt Lichter mit einem Schein und erhält das Schwarz.",
+    "ja": "ディフュージョンはコントラストを和らげ、明るい部分の近くのシャドウを持ち上げます。グローは光源ににじみを加え、黒は保ちます。",
+    "vi": "Khuếch tán làm dịu tương phản và nâng vùng tối cạnh vùng sáng; Phát sáng tạo quầng quanh nguồn sáng và giữ nguyên màu đen.",
+    "zh-Hans": "柔焦柔化对比度，并提亮明亮区域旁的阴影；辉光为光源加上光晕，同时保留黑色。"
+  },
+  "Diffusion veils the whole picture as a diffusion filter does; Glow spreads only the highlights.": {
+    "en": "Diffusion veils the whole picture as a diffusion filter does; Glow spreads only the highlights.",
+    "fr": "Diffusion voile toute l’image comme un filtre de diffusion ; Lueur ne diffuse que les hautes lumières.",
+    "de": "Diffusion legt einen Schleier über das ganze Bild wie ein Diffusionsfilter; Leuchten breitet nur die Lichter aus.",
+    "ja": "ディフュージョンはディフュージョンフィルターのように画像全体を柔らかく覆い、グローはハイライトだけをにじませます。",
+    "vi": "Khuếch tán phủ một lớp mờ lên toàn ảnh như kính lọc khuếch tán; Phát sáng chỉ lan tỏa vùng sáng.",
+    "zh-Hans": "柔焦像柔焦滤镜一样为整张照片蒙上一层柔光；辉光只让高光向外扩散。"
+  },
+  "Even": {
+    "en": "Even",
+    "fr": "Uniforme",
+    "de": "Gleichmäßig",
+    "ja": "均一",
+    "vi": "Đều",
+    "zh-Hans": "均匀"
+  },
+  "Film": {
+    "en": "Film",
+    "fr": "Film",
+    "de": "Film",
+    "ja": "フィルム",
+    "vi": "Phim",
+    "zh-Hans": "胶片"
+  },
+  "Film: in the midtones, as grain always was. Even: the same everywhere. Scanned negative: strongest in the shadows, fading in the highlights.": {
+    "en": "Film: in the midtones, as grain always was. Even: the same everywhere. Scanned negative: strongest in the shadows, fading in the highlights.",
+    "fr": "Film : dans les tons moyens, comme le grain l’a toujours été. Uniforme : partout pareil. Négatif scanné : plus fort dans les ombres, s’estompant dans les hautes lumières.",
+    "de": "Film: in den Mitteltönen, wie die Körnung schon immer war. Gleichmäßig: überall gleich. Gescanntes Negativ: am stärksten in den Tiefen, in den Lichtern schwächer.",
+    "ja": "フィルム：これまでの粒子と同じく中間調に。均一：どこでも同じ。スキャンしたネガ：シャドウで最も強く、ハイライトでは弱まります。",
+    "vi": "Phim: ở tông trung, như hạt vẫn luôn thế. Đều: như nhau ở mọi nơi. Âm bản quét: mạnh nhất ở vùng tối, nhạt dần ở vùng sáng.",
+    "zh-Hans": "胶片：集中在中间调，与以往的颗粒相同。均匀：处处一样。扫描负片：在阴影中最强，在高光中渐弱。"
+  },
+  "Finishing touches: a vignette, a colour wash, halation, bloom and film grain.": {
+    "en": "Finishing touches: a vignette, a colour wash, halation, bloom and film grain.",
+    "fr": "Touches finales : vignetage, voile de couleur, halation, bloom et grain de film.",
+    "de": "Letzter Schliff: Vignette, Farbschleier, Halation, Bloom und Filmkörnung.",
+    "ja": "仕上げ：周辺減光、カラーウォッシュ、ハレーション、ブルーム、フィルムの粒子。",
+    "vi": "Bước hoàn thiện: làm tối góc, phủ màu, quầng sáng, bloom và hạt phim.",
+    "zh-Hans": "收尾效果：暗角、颜色涂染、光晕、柔光和胶片颗粒。"
+  },
+  "Foliage turned red-magenta and reds turned yellow, as on infrared colour film.": {
+    "en": "Foliage turned red-magenta and reds turned yellow, as on infrared colour film.",
+    "fr": "Feuillage rouge magenta et rouges virant au jaune, comme sur un film couleur infrarouge.",
+    "de": "Laub wird rot-magenta und Rot wird gelb, wie auf Infrarot-Farbfilm.",
+    "ja": "赤外線カラーフィルムのように、草木は赤みがかったマゼンタに、赤は黄色に変わります。",
+    "vi": "Tán lá chuyển đỏ tím, màu đỏ chuyển vàng, như trên phim màu hồng ngoại.",
+    "zh-Hans": "如红外彩色胶片：植物变成红品色，红色变成黄色。"
+  },
+  "Glow": {
+    "en": "Glow",
+    "fr": "Lueur",
+    "de": "Leuchten",
+    "ja": "グロー",
+    "vi": "Phát sáng",
+    "zh-Hans": "辉光"
+  },
+  "Grain response": {
+    "en": "Grain response",
+    "fr": "Réponse du grain",
+    "de": "Körnungsverlauf",
+    "ja": "粒子の出方",
+    "vi": "Phân bố hạt",
+    "zh-Hans": "颗粒分布"
+  },
+  "Greens turned purple, blues turned green and yellows turned pink.": {
+    "en": "Greens turned purple, blues turned green and yellows turned pink.",
+    "fr": "Les verts virent au violet, les bleus au vert et les jaunes au rose.",
+    "de": "Grün wird violett, Blau wird grün und Gelb wird rosa.",
+    "ja": "緑は紫に、青は緑に、黄は桃色に変わります。",
+    "vi": "Xanh lá chuyển tím, xanh dương chuyển xanh lá, vàng chuyển hồng.",
+    "zh-Hans": "绿色变紫，蓝色变绿，黄色变粉。"
+  },
+  "Halation": {
+    "en": "Halation",
+    "fr": "Halation",
+    "de": "Halation",
+    "ja": "ハレーション",
+    "vi": "Quầng sáng",
+    "zh-Hans": "光晕"
+  },
+  "How bright, as shown, a part of the picture must be before it glows.": {
+    "en": "How bright, as shown, a part of the picture must be before it glows.",
+    "fr": "La luminosité, telle qu’affichée, qu’une partie de l’image doit atteindre pour rayonner.",
+    "de": "Wie hell ein Bildteil in der Anzeige sein muss, bevor er leuchtet.",
+    "ja": "画像のどこかが光り始めるのに必要な、表示上の明るさです。",
+    "vi": "Một vùng ảnh phải sáng đến đâu (như đang hiển thị) thì mới phát sáng.",
+    "zh-Hans": "画面某处按显示亮度需要多亮才开始发光。"
+  },
+  "Lamps, neon and bright windows pick up a warm fringe. It acts on light, so brighter highlights glow more.": {
+    "en": "Lamps, neon and bright windows pick up a warm fringe. It acts on light, so brighter highlights glow more.",
+    "fr": "Lampes, néons et fenêtres claires prennent une frange chaude. L’effet agit sur la lumière : plus une haute lumière est vive, plus elle rayonne.",
+    "de": "Lampen, Neon und helle Fenster bekommen einen warmen Saum. Es wirkt auf das Licht, daher leuchten hellere Lichter stärker.",
+    "ja": "ランプやネオン、明るい窓に暖かい縁取りが付きます。光に作用するので、明るいハイライトほど強く光ります。",
+    "vi": "Đèn, neon và ô cửa sáng có viền ấm. Hiệu ứng tác động lên ánh sáng nên vùng càng sáng càng phát sáng mạnh.",
+    "zh-Hans": "灯光、霓虹和明亮的窗户会带上一圈暖色边缘。它作用于光线，高光越亮，光晕越强。"
+  },
+  "Leaves brightness alone; with Amount at 0 it is colour grain only.": {
+    "en": "Leaves brightness alone; with Amount at 0 it is colour grain only.",
+    "fr": "Ne touche pas à la luminosité ; avec Intensité à 0, il n’y a que le grain coloré.",
+    "de": "Lässt die Helligkeit unverändert; bei Stärke 0 gibt es nur Farbkörnung.",
+    "ja": "明るさは変えません。適用量が 0 ならカラーの粒子だけになります。",
+    "vi": "Không đổi độ sáng; khi Cường độ bằng 0 thì chỉ còn hạt màu.",
+    "zh-Hans": "不改变亮度；强度为 0 时只有彩色颗粒。"
+  },
+  "Lower it to let more of the picture glow.": {
+    "en": "Lower it to let more of the picture glow.",
+    "fr": "Baissez-le pour qu’une plus grande partie de l’image rayonne.",
+    "de": "Senken Sie ihn, damit mehr vom Bild leuchtet.",
+    "ja": "下げると、画像のより多くの部分が光ります。",
+    "vi": "Hạ xuống để nhiều phần ảnh phát sáng hơn.",
+    "zh-Hans": "调低可让画面更多部分发光。"
+  },
+  "Makes colour denser, as slide film’s dyes do: saturated colours darken (or lighten, left) while their hue stays, and greys are untouched.": {
+    "en": "Makes colour denser, as slide film’s dyes do: saturated colours darken (or lighten, left) while their hue stays, and greys are untouched.",
+    "fr": "Rend la couleur plus dense, comme les colorants d’un film inversible : les couleurs saturées foncent (ou s’éclaircissent, à gauche) en gardant leur teinte, et les gris ne bougent pas.",
+    "de": "Macht Farbe dichter, wie die Farbstoffe eines Diafilms: Gesättigte Farben werden dunkler (oder nach links heller), ihr Farbton bleibt, und Grautöne bleiben unberührt.",
+    "ja": "スライドフィルムの色素のように色の密度を上げます。彩度の高い色は色相を保ったまま暗く（左では明るく）なり、グレーは変わりません。",
+    "vi": "Làm màu đặc hơn, như thuốc nhuộm của phim dương bản: màu bão hòa tối đi (hoặc sáng lên khi kéo trái) mà giữ nguyên sắc màu, còn màu xám không đổi.",
+    "zh-Hans": "像反转片的染料那样让颜色更浓：饱和的颜色变暗（向左则变亮）而色相不变，灰色不受影响。"
+  },
+  "Most at home in night scenes under tungsten and neon.": {
+    "en": "Most at home in night scenes under tungsten and neon.",
+    "fr": "Idéal pour les scènes de nuit sous lumière tungstène et néons.",
+    "de": "Am besten in Nachtszenen unter Glühlampen- und Neonlicht.",
+    "ja": "タングステン光やネオンの夜景で最も映えます。",
+    "vi": "Hợp nhất với cảnh đêm dưới đèn sợi đốt và neon.",
+    "zh-Hans": "最适合钨丝灯和霓虹下的夜景。"
+  },
+  "Pair it with a little Saturation: colour richer and deeper, not just louder.": {
+    "en": "Pair it with a little Saturation: colour richer and deeper, not just louder.",
+    "fr": "Associez-le à un peu de Saturation : une couleur plus riche et plus profonde, pas seulement plus criarde.",
+    "de": "Kombinieren Sie sie mit etwas Sättigung: Farbe wird satter und tiefer, nicht nur lauter.",
+    "ja": "彩度を少し足すと、ただ派手なだけでなく、深みのある豊かな色になります。",
+    "vi": "Kết hợp với chút Độ bão hòa: màu giàu và sâu hơn, không chỉ rực hơn.",
+    "zh-Hans": "搭配少许饱和度：颜色更浓郁深沉，而不只是更艳。"
+  },
+  "Response": {
+    "en": "Response",
+    "fr": "Réponse",
+    "de": "Verlauf",
+    "ja": "出方",
+    "vi": "Phân bố",
+    "zh-Hans": "分布"
+  },
+  "Scanned negative": {
+    "en": "Scanned negative",
+    "fr": "Négatif scanné",
+    "de": "Gescanntes Negativ",
+    "ja": "スキャンしたネガ",
+    "vi": "Âm bản quét",
+    "zh-Hans": "扫描负片"
+  },
+  "The targeted tool moves the H, S and L tabs, not Density": {
+    "en": "The targeted tool moves the H, S and L tabs, not Density",
+    "fr": "L'outil ciblé agit sur les onglets T, S et L, pas sur Densité",
+    "de": "Das selektive Werkzeug bewegt die Register H, S und L, nicht „Dichte“",
+    "ja": "ターゲット補正ツールで動くのは H・S・L タブで、密度は動きません",
+    "vi": "Công cụ mục tiêu điều chỉnh các thẻ H, S và L, không phải Mật độ",
+    "zh-Hans": "目标调整工具作用于 H、S、L 选项卡，而非“密度”"
+  },
+  "Threshold": {
+    "en": "Threshold",
+    "fr": "Seuil",
+    "de": "Schwelle",
+    "ja": "しきい値",
+    "vi": "Ngưỡng",
+    "zh-Hans": "阈值"
+  },
+  "Warmth": {
+    "en": "Warmth",
+    "fr": "Chaleur",
+    "de": "Wärme",
+    "ja": "暖かさ",
+    "vi": "Độ ấm",
+    "zh-Hans": "暖度"
+  },
+  "Warmth tints the glow: warm for a dreamy haze, cool for a smoggy city.": {
+    "en": "Warmth tints the glow: warm for a dreamy haze, cool for a smoggy city.",
+    "fr": "Chaleur teinte la lueur : chaude pour un voile onirique, froide pour une ville dans le smog.",
+    "de": "Wärme tönt das Leuchten: warm für einen verträumten Dunst, kühl für eine smogverhangene Stadt.",
+    "ja": "暖かさで光の色を変えます。暖かくすれば夢のような霞に、冷たくすればスモッグの街に。",
+    "vi": "Độ ấm nhuộm màu quầng sáng: ấm cho làn sương mơ màng, lạnh cho thành phố khói bụi.",
+    "zh-Hans": "暖度为光晕着色：暖调营造梦幻薄雾，冷调营造雾霾都市。"
+  },
+  "Where in the tones the grain is strongest.": {
+    "en": "Where in the tones the grain is strongest.",
+    "fr": "Les tons où le grain est le plus marqué.",
+    "de": "In welchen Tönen die Körnung am stärksten ist.",
+    "ja": "どの明るさで粒子が最も強く出るか。",
+    "vi": "Hạt rõ nhất ở vùng tông nào.",
+    "zh-Hans": "颗粒在哪个影调范围最强。"
+  }
+}
