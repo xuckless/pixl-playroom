@@ -153,6 +153,25 @@ the Windows release test, masks stated on the source frame), in
       house style), translations.
 - [ ] **S** · Release-As 0.6.0-beta, the PR.
 
+### Found in testing — "Render frame was disposed" in main · 1 pt
+
+Found by a user 2026-10-15 on the installed 0.6.0-beta: a main-process
+error dialog, `Render frame was disposed before WebFrameMain could be
+accessed`, from `EngineClient.connectPreviews` on a host's `spawn`. An
+engine host started again (after a crash, or waking from its rest) while
+the window was reloading: the page's frame was gone but its `WebContents`
+was not destroyed, so `wc.isDestroyed()` let it through and
+`wc.postMessage` threw, uncaught.
+
+- [x] **S** · `connectPreviews` sends the page its port first, in a
+      `try`; when the frame is gone it closes both ports, logs, and leaves
+      the reconnecting to that page's `did-finish-load`
+      (`src/main/engine/client.ts`).
+- [ ] **S** · Owner: if it comes back, the log line
+      `preview channel not sent` says it was caught; a repro (what was
+      on screen, a reload or a crash before it) would help pin what started
+      the host.
+
 ## Top priority — Phase N: engine 0.18.0 (passes 85–103)
 
 **Status (2026-10-08)**: passes 85–103 are done and tested on the branch; what
