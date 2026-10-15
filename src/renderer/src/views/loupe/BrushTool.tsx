@@ -1,4 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { frameOf, sameLensFrame, type LensFrame } from '../../../../shared/lensframe'
 import {
   isNeutral,
   newId,
@@ -6,10 +7,12 @@ import {
   type BrushStrokeSetting
 } from '../../../../shared/recipe'
 import {
+  carryBrush,
   keepsDab,
   keptDab,
   paintsLive,
   withStroke,
+  type CarriedBrush,
   type PaintedDab
 } from '../../../../shared/strokes'
 import {
@@ -27,7 +30,7 @@ import {
 import { api, errorText } from '../../lib/api'
 import { isFrame, pictureBitmap as framePixels, readable } from '../../lib/frames'
 import { touchInteracting } from '../../lib/interacting'
-import { planePngOn, rememberPlane } from '../../lib/planes'
+import { brushOn, planePng, planePngOn, rememberPlane } from '../../lib/planes'
 import type { Dab } from '../../workers/brush.worker'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { useDevelop } from '../../state/develop'
@@ -54,6 +57,36 @@ function strokeAlpha(): number {
   return Math.min(0.6, Math.max(0.2, o.opacity / 100))
 }
 
+/** A brush carried onto the masks' lens frame: its plane there (and stored), its strokes mapped. */
+interface OnMasks extends CarriedBrush {
+  png: string | null
+}
+
+/**
+ * A brush drawn on another lens frame than the masks' (a plane kept where a
+ * lens edit found it, a model's mask found with Optics off, a pasted mask)
+ * carried onto the masks' frame, where a new stroke's dabs land. A vector
+ * stroke leaves the re-warped plane as it is, so it is stored; an Auto Mask
+ * stroke paints into it and stores what comes back.
+ */
+async function onMasksFrame(
+  key: string,
+  c: BrushComponent,
+  masks: LensFrame,
+  auto: boolean
+): Promise<OnMasks> {
+  const [png, moved] = await Promise.all([
+    c.png || c.ref ? planePngOn(key, c, masks) : Promise.resolve(null),
+    brushOn(key, c, masks)
+  ])
+  const out: OnMasks = { png, ...(moved.strokes ? { strokes: moved.strokes } : {}) }
+  if (png && !auto) {
+    out.ref = await api.develop.putPlane(png)
+    rememberPlane(out.ref, png)
+  }
+  return out
+}
+
 interface Stroke {
   compId: string
   isNew: boolean
@@ -75,6 +108,10 @@ interface Stroke {
   /** The adjustment renders under the brush as it paints. */
   live: boolean
   liveTimer: ReturnType<typeof setTimeout> | null
+  /** The brush being carried onto the masks' lens frame, when it is on another. */
+  onMasks: Promise<OnMasks> | null
+  /** What `onMasks` carried, once it has. */
+  moved: OnMasks | null
 }
 
 /**
@@ -174,8 +211,15 @@ export const BrushLayer = memo(function BrushLayer({
   const liveDraft = (s: Stroke): void => {
     s.liveTimer = null
     if (stroke.current !== s || !layerId) return
+    // A brush on another lens frame shows once it is carried onto the masks'.
+    if (s.onMasks && !s.moved) return
     const so = strokeSoFar(s)
-    if (so) edit((r) => withStroke(r, layerId, s.compId, so, madeBrush(s)), true)
+    const moved = s.moved
+    if (so)
+      edit((r) => {
+        if (moved) carryBrush(r, layerId, s.compId, moved)
+        withStroke(r, layerId, s.compId, so, madeBrush(s))
+      }, true)
   }
 
   const dab = (s: Stroke, q: P, pressure: number): void => {
@@ -281,16 +325,35 @@ export const BrushLayer = memo(function BrushLayer({
       vector,
       lastDab: null,
       live,
-      liveTimer: null
+      liveTimer: null,
+      onMasks: null,
+      moved: null
     }
     paint(p, pressure)
     if (g.lens) postScreen(p)
-    // An Auto Mask stroke joins the brush's plane: its strokes are painted in
-    // with it, on the masks' lens frame, where the pointer's dabs land (view.ts).
+    // The pointer's dabs land on the masks' lens frame (view.ts): a brush on
+    // another is carried onto it, its plane re-warped and its strokes mapped.
+    const masks = recipe.masks?.lensFrame ?? null
+    const moving =
+      existing && d.session && !sameLensFrame(frameOf(existing, masks), masks)
+        ? onMasksFrame(d.session.key, existing, masks, auto)
+        : null
+    stroke.current.onMasks = moving
+    void moving
+      ?.then((m) => {
+        const s = stroke.current
+        if (s?.onMasks === moving) s.moved = m
+      })
+      .catch(() => undefined)
+    // An Auto Mask stroke joins the brush's plane: its strokes are painted in with it.
     let png: string | null = null
+    let under: BrushStrokeSetting[] | undefined = existing?.strokes
     try {
-      if (auto && existing && (existing.png || existing.ref) && d.session)
-        png = await planePngOn(d.session.key, existing, recipe.masks?.lensFrame ?? null)
+      if (auto && moving) {
+        const m = await moving
+        png = m.png
+        under = m.strokes
+      } else if (auto && existing && (existing.png || existing.ref)) png = await planePng(existing)
     } catch (err) {
       stroke.current = null
       return useLibrary.getState().say(errorText(err), 'error')
@@ -307,7 +370,7 @@ export const BrushLayer = memo(function BrushLayer({
         w: planeW,
         h: planeH,
         png,
-        ...(auto && existing?.strokes?.length ? { strokes: existing.strokes } : {}),
+        ...(auto && under?.length ? { strokes: under } : {}),
         softness: set.softness,
         erase,
         picture,
@@ -344,7 +407,11 @@ export const BrushLayer = memo(function BrushLayer({
         void worker.finish(false).catch(() => undefined)
         const whole = strokeSoFar(s)
         if (!whole) return
-        edit((r) => withStroke(r, layerId, s.compId, whole, madeBrush(s)))
+        const moved = s.onMasks ? await s.onMasks : null
+        edit((r) => {
+          if (moved) carryBrush(r, layerId, s.compId, moved)
+          withStroke(r, layerId, s.compId, whole, madeBrush(s))
+        })
       } else {
         const png = await worker.finish(true)
         if (!png) return

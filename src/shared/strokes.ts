@@ -247,3 +247,31 @@ export function withStroke(
   if (at >= 0) strokes[at] = stroke
   else strokes.push(stroke)
 }
+
+/** A brush carried onto the masks' lens frame (BrushTool): its plane re-warped and stored, its strokes mapped. */
+export interface CarriedBrush {
+  /** The re-warped plane's reference, when it has a plane a stroke leaves as it is. */
+  ref?: string
+  strokes?: BrushStrokeSetting[]
+}
+
+/**
+ * The brush in `r` as `m` carried it onto the masks' frame, no frame of its
+ * own: a stroke painted into it now lands where its earlier ones are. The
+ * stroke being painted (a live draft's) stays after them.
+ */
+export function carryBrush(r: Recipe, layerId: string, compId: string, m: CarriedBrush): void {
+  const c = r.layers
+    .find((l) => l.id === layerId)
+    ?.components.find((x): x is BrushComponent => x.id === compId && x.kind === 'brush')
+  if (!c) return
+  if (m.ref) {
+    c.png = ''
+    c.ref = m.ref
+  }
+  if (m.strokes) {
+    const ids = new Set(m.strokes.map((x) => x.id))
+    c.strokes = [...m.strokes, ...(c.strokes ?? []).filter((x) => !ids.has(x.id))]
+  }
+  delete c.lensFrame
+}

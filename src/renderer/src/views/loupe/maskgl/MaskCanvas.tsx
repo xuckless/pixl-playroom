@@ -8,7 +8,7 @@ import {
   masksToRendered,
   type ViewGeometry
 } from '../../../../../shared/view'
-import { paintedBitmap, planePng, planePngOn } from '../../../lib/planes'
+import { brushOn, paintedBitmap, planePng, planePngOn } from '../../../lib/planes'
 import {
   isVector,
   lensFrameKey,
@@ -357,12 +357,14 @@ export function MaskCanvas({
       else {
         waiting = true
         if (!got) {
-          // On the frame shown: its plane re-warped.
+          // On the frame shown: its plane re-warped, its strokes carried.
           const photo = s.session?.key
           const png = (): Promise<string> =>
             photo ? planePngOn(photo, comp, shownFrame, masksFrame) : planePng(comp)
           const made = comp.strokes?.length
-            ? paintedBitmap(comp, decodeOpts, png)
+            ? (photo ? brushOn(photo, comp, shownFrame, masksFrame) : Promise.resolve(comp)).then(
+                (shown) => paintedBitmap(shown, decodeOpts, png)
+              )
             : png().then((b64) => {
                 const bytes = Uint8Array.from(atob(b64), (x) => x.charCodeAt(0))
                 return createImageBitmap(new Blob([bytes], { type: 'image/png' }), decodeOpts)

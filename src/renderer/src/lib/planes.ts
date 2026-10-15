@@ -1,5 +1,5 @@
 import { paintStrokes } from '../../../shared/brush'
-import { sameLensFrame, type LensFrame } from '../../../shared/lensframe'
+import { gridPoint, remapStrokes, sameLensFrame, type LensFrame } from '../../../shared/lensframe'
 import type { BrushComponent, PlaneComponent } from '../../../shared/recipe'
 import { api } from './api'
 
@@ -45,6 +45,24 @@ export async function planePngOn(
   // A plane held here (a selection being made) is not in the plane store yet.
   const ref = c.png || !c.ref ? await api.develop.putPlane(await planePng(c)) : c.ref
   return api.develop.planeOnFrame(key, ref, from, to)
+}
+
+/**
+ * A brush with its strokes on lens frame `to`: as it is, or, when it is on
+ * another (as `planePngOn` says), its dabs carried through the main
+ * process's grid between the two frames. Its plane goes by `planePngOn`.
+ */
+export async function brushOn(
+  key: string,
+  c: BrushComponent,
+  to: LensFrame,
+  masks: LensFrame = to
+): Promise<BrushComponent> {
+  const from = c.lensFrame !== undefined ? c.lensFrame : masks
+  if (!c.strokes?.length || sameLensFrame(from, to)) return c
+  const grid = await api.develop.maskGrid(key, from, to)
+  if (!grid) return c
+  return { ...c, strokes: remapStrokes(c.strokes, (p) => gridPoint(grid.toRendered, grid.n, p)) }
 }
 
 /**

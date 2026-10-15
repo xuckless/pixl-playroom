@@ -22,7 +22,14 @@ import { gradientKey, rasterGradient } from '../shared/gradients'
 import { edgeKey } from '../shared/maskedge'
 import type { LensCorrection } from '../shared/engine-types'
 import { renderedLens } from '../shared/edits'
-import { frameMap, frameOf, remapComponent, warpPlane, type MaskFrames } from '../shared/lensframe'
+import {
+  frameMap,
+  frameOf,
+  placeMasks,
+  remapComponent,
+  warpPlane,
+  type MaskFrames
+} from '../shared/lensframe'
 import { planeWarpFor } from './maskframe'
 import { planeEdge, snapsToObject } from '../shared/refine'
 import type { Recipe } from '../shared/recipe'
@@ -161,7 +168,10 @@ export async function brushPlanes(
     (snapKey ??= snapper ? snapper.key(photoKey, lens).catch(() => null) : Promise.resolve(null))
   const frames = opts.frames ?? null
   const masks = recipe.masks?.lensFrame ?? null
-  for (const layer of recipe.layers) {
+  // A brush's way to the engine is decided on its strokes as compile places
+  // them (their radii scale with the lens), so both name the same files.
+  const placed = frames ? placeMasks(recipe, frames, 'render') : recipe
+  for (const [l, layer] of recipe.layers.entries()) {
     for (const [i, drawn] of layer.components.entries()) {
       // A plane drawn under another lens: re-warped onto the one rendered.
       const warped = frames ? planeWarpFor(frames, frameOf(drawn, masks)) : null
@@ -189,7 +199,7 @@ export async function brushPlanes(
         continue
       }
       if (c.kind !== 'brush') continue
-      if (brushRoute(layer.components, i) !== 'plane') {
+      if (brushRoute(placed.layers[l].components, i) !== 'plane') {
         // Its strokes go to the engine as they are (compile carries them to
         // the lens rendered): only the plane under them is a file.
         if (!c.png) continue

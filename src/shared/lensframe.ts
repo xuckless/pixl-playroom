@@ -11,12 +11,12 @@
  * and a raster's own `lensFrame` where it differs), and when that is not the
  * frame rendered every mask is carried from one to the other:
  *
- * - a point (a lasso's, a gradient's ends or centre, a spot's) through the
- *   old correction's ST map back to the photo, then forward through the
- *   inverse of the new one (Newton's method on the new map, which is smooth
- *   and monotone);
+ * - a point (a lasso's, a gradient's ends or centre, a spot's, a brush
+ *   stroke's dab) through the old correction's ST map back to the photo,
+ *   then forward through the inverse of the new one (Newton's method on the
+ *   new map, which is smooth and monotone);
  * - a radius by the scale an area keeps there (√|det J|); an ellipse stays
- *   an ellipse;
+ *   an ellipse, a dab a dab;
  * - a raster plane re-warped once, through the same map, into a file of
  *   its own (main/brushes.ts).
  *
@@ -36,7 +36,7 @@
  */
 import type { Distortion, LensCorrection } from './engine-types'
 import { lensCorrection } from './lens'
-import type { MaskComponentSetting, Recipe } from './recipe'
+import type { BrushComponent, BrushStrokeSetting, MaskComponentSetting, Recipe } from './recipe'
 import type { RetouchSpot } from './retouch'
 
 /** A point, normalised to its frame. */
@@ -184,16 +184,30 @@ export function areaScale(f: (p: P) => P, p: P): number {
 /** A component's own frame, if it has one (a raster made under another lens, a pasted mask). */
 type Framed = { lensFrame?: LensFrame }
 
-/** Whether a component is placed by points (not a plane): carried by mapping them. */
+/** A brush with a plane of pixels under its strokes (an older brush's, a model's, Auto Mask's). */
+const hasPlane = (c: BrushComponent): boolean => !!(c.png || c.ref)
+
+/**
+ * Whether a component is placed by points (not a plane): carried by mapping
+ * them. A brush of strokes alone (0.21.0, E36) is: its dabs are points.
+ */
 export function isVector(c: MaskComponentSetting): boolean {
   return (
-    c.kind === 'polygon' || c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional'
+    c.kind === 'polygon' ||
+    c.kind === 'linear' ||
+    c.kind === 'radial' ||
+    c.kind === 'bidirectional' ||
+    (c.kind === 'brush' && !hasPlane(c) && (c.strokes?.length ?? 0) > 0)
   )
 }
 
-/** Whether a component is a plane of pixels (a brush, a model's mask, a depth map). */
+/**
+ * Whether a component is a plane of pixels (a brush, a model's mask, a
+ * depth map). A brush's strokes over its plane stay on the plane's frame
+ * (`lensFrame`), and are mapped with it only where it is rendered.
+ */
 export function isRaster(c: MaskComponentSetting): boolean {
-  return c.kind === 'brush' || c.kind === 'depth'
+  return (c.kind === 'brush' && !isVector(c)) || c.kind === 'depth'
 }
 
 /** The frame a component (or a spot) is on: its own, else the masks'. */
@@ -210,6 +224,25 @@ export function framesIn(r: Recipe): LensFrame[] {
     for (const c of l.components) if (isVector(c) || isRaster(c)) add(frameOf(c, masks))
   for (const s of r.retouch) add(frameOf(s, masks))
   return [...out.values()]
+}
+
+/**
+ * Brush strokes carried by `f`: each dab's centre mapped, its radius (a
+ * fraction of the shorter side) by the scale an area keeps there, as a
+ * radial's radii are.
+ */
+export function remapStrokes(strokes: BrushStrokeSetting[], f: (p: P) => P): BrushStrokeSetting[] {
+  return strokes.map((s) => {
+    const dabs = s.dabs.slice()
+    for (let k = 0; k + 3 < dabs.length; k += 4) {
+      const centre = { x: dabs[k], y: dabs[k + 1] }
+      const q = f(centre)
+      dabs[k] = q.x
+      dabs[k + 1] = q.y
+      dabs[k + 2] = dabs[k + 2] * areaScale(f, centre)
+    }
+    return { ...s, dabs }
+  })
 }
 
 /** A component's points carried by `f` (its radii by the scale an area keeps). */
@@ -242,6 +275,8 @@ export function remapComponent<T extends MaskComponentSetting>(c: T, f: (p: P) =
       const k = areaScale(f, c.centre)
       return { ...c, centre: f(c.centre), radiusX: c.radiusX * k, radiusY: c.radiusY * k }
     }
+    case 'brush':
+      return c.strokes?.length ? { ...c, strokes: remapStrokes(c.strokes, f) } : c
     default:
       return c
   }
@@ -302,8 +337,9 @@ function unframed<T extends Framed>(c: T): T {
  * The recipe with every mask and spot on frame `frames.to`.
  *
  * - `render` (compile): points mapped; a raster plane is left to main, which
- *   hands the engine the plane re-warped (main/brushes.ts); `r` itself when
- *   nothing is on another frame.
+ *   hands the engine the plane re-warped (main/brushes.ts), and the strokes
+ *   over it are mapped as points are; `r` itself when nothing is on another
+ *   frame.
  * - `rebase` (a lens edit settling): the same, written into the recipe:
  *   `masks.lensFrame` becomes `to`, the points move, and a raster keeps
  *   its pixels and says which frame they are on (re-warping it each time
@@ -339,7 +375,13 @@ export function placeMasks(r: Recipe, frames: MaskFrames, how: 'render' | 'rebas
         const placed = remapComponent(c, mapFrom(from))
         return how === 'rebase' ? unframed(placed) : placed
       }
-      if (how === 'render' || !isRaster(c)) return c
+      if (how === 'render') {
+        // A plane's strokes, where they go to the engine as they are.
+        if (c.kind !== 'brush' || !c.strokes?.length || !moved(from)) return c
+        any = true
+        return remapComponent(c, mapFrom(from))
+      }
+      if (!isRaster(c)) return c
       // A plane in a rebase: it says which frame it is on, if not the new one.
       const own = c.lensFrame
       if (!moved(from)) {

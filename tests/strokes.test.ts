@@ -21,6 +21,7 @@ import {
   MAX_DABS,
   basePlaneId,
   brushRoute,
+  carryBrush,
   engineStrokes,
   keepsDab,
   keptDab,
@@ -280,4 +281,41 @@ test('painting shows the adjustment under the brush where the mask does somethin
   assert.equal(r.layers[0].components.length, 1)
   assert.equal(c.strokes!.length, 1)
   assert.equal(c.strokes![0].dabs.length, 8)
+})
+
+test('a brush on another lens frame is carried onto the masks’ before a stroke joins it', () => {
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('Brush')
+  // Its plane and strokes on the uncorrected frame (a model's mask found with Optics off).
+  l.components = [brush([paint, erase], { ref: 'a'.repeat(64), lensFrame: null })]
+  r.layers = [l]
+  // A live draft has already put the new stroke in.
+  withStroke(r, l.id, 'b', again, () => brush([]))
+  const carriedPaint = { ...paint, dabs: [0.21, 0.31, 0.041, 1, 0.61, 0.52, 0.051, 0.5] }
+  const carriedErase = { ...erase, dabs: [0.41, 0.42, 0.021, 1] }
+  carryBrush(r, l.id, 'b', { ref: 'c'.repeat(64), strokes: [carriedPaint, carriedErase] })
+  const c = r.layers[0].components[0] as BrushComponent
+  assert.equal(c.lensFrame, undefined, 'on the masks’ frame now')
+  assert.equal(c.ref, 'c'.repeat(64))
+  assert.equal(c.png, '')
+  // Its strokes carried, in order, and the one being painted after them.
+  assert.deepEqual(
+    c.strokes!.map((x) => x.id),
+    ['s1', 's2', 's3']
+  )
+  assert.deepEqual(c.strokes![0], carriedPaint)
+  // Again (the next live draft, or the stroke's end): the same brush.
+  const before = structuredClone(c)
+  carryBrush(r, l.id, 'b', { ref: 'c'.repeat(64), strokes: [carriedPaint, carriedErase] })
+  assert.deepEqual(r.layers[0].components[0], before)
+  // A brush of strokes alone keeps having no plane.
+  const alone = defaultRecipe(false)
+  const la = newLocalLayer('Brush')
+  la.components = [brush([paint], { lensFrame: null })]
+  alone.layers = [la]
+  carryBrush(alone, la.id, 'b', { strokes: [carriedPaint] })
+  const a = alone.layers[0].components[0] as BrushComponent
+  assert.equal(a.ref, undefined)
+  assert.deepEqual(a.strokes, [carriedPaint])
+  assert.equal(a.lensFrame, undefined)
 })
