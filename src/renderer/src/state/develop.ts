@@ -15,6 +15,15 @@ import type {
 import { amendLog, appendToLog, canRedo, replay } from '../../../shared/history'
 import { normaliseRecipe, sameValue, type HslBand, type Recipe } from '../../../shared/recipe'
 import { FIT, maskPlacementKey, type ZoomView } from '../../../shared/view'
+import { renderedLens } from '../../../shared/edits'
+import {
+  lensFrameKey,
+  lensFrameOf,
+  rebaseNeed,
+  retagMasks,
+  sameLensFrame,
+  type LensGrid
+} from '../../../shared/lensframe'
 import { nextGeometryRev, planeFits } from './maskplanes'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
@@ -107,6 +116,13 @@ interface DevelopState {
    * from before it is of another picture and is not shown (`planeFits`).
    */
   geometryRev: number
+  /**
+   * The masks drawn under another lens than the one rendered (Optics
+   * switched off, a lens slider moving): the loupe's map between the two,
+   * so handles and new strokes stay on what they were drawn on. Null when
+   * they agree.
+   */
+  maskGrid: LensGrid | null
   /** The selected qualifier's key plane, while its key view is on (`keyView`). */
   keyMask: RenderEvent | null
   report: RenderReport | null
@@ -348,6 +364,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   before: null,
   mask: null,
   geometryRev: 0,
+  maskGrid: null,
   report: null,
   stats: null,
   hdrStats: null,
@@ -495,8 +512,16 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   },
 
   commit(label) {
-    const { session, recipe } = get()
+    const { session } = get()
+    let { recipe } = get()
     if (!session || !recipe) return Promise.resolve(null)
+    // A lens edit settling: the masks move onto the new lens with it
+    // (shared/lensframe.ts). With no point to move, only the record does.
+    const need = rebaseNeed(recipe)
+    if (need === 'retag') {
+      recipe = retagMasks(recipe)
+      set({ recipe })
+    }
     // An edit sent settled just before (edit, then commit) is not sent again.
     if (settled?.key !== session.key || settled.recipe !== recipe || queued || frame) {
       set({ rendering: true })
@@ -504,11 +529,27 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     }
     const item = useLibrary.getState().items.find((i) => i.key === session.key)
     if (item && !item.edited) useLibrary.getState().patchItems([{ ...item, edited: true }])
+    // Points to carry take the correction's maps, in main. The picture meanwhile
+    // is the same (compile maps them); the step records them moved.
+    const sent = recipe
+    const recorded: Promise<Recipe> =
+      need !== 'remap'
+        ? Promise.resolve(sent)
+        : api.develop
+            .rebaseMasks(session.key, sent)
+            .then((moved) => {
+              const now = get()
+              if (now.session?.key !== session.key || now.recipe !== sent) return sent
+              set({ recipe: moved })
+              sendNow(session.key, moved, (m) => get().onError(m))
+              return moved
+            })
+            .catch(() => sent)
     // In line with Undo and Redo: one pressed straight after waits for this step.
     return new Promise<number | null>((resolve) => {
       queueHistoryOp(async () => {
         try {
-          const change = await api.develop.historyAppend(session.key, label, recipe)
+          const change = await api.develop.historyAppend(session.key, label, await recorded)
           if (get().session?.key === session.key)
             set({ history: appendToLog(get().history, change) })
           resolve(change.step?.seq ?? null)
@@ -869,6 +910,42 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     }
   }
 }))
+
+/** How long a lens change rests before the loupe's lens grid is asked for (a slider moving). */
+const GRID_SETTLE_MS = 200
+/** The photo and the pair of lens frames the loupe's grid was last asked for ('' for none). */
+let gridFor = ''
+let gridTimer: ReturnType<typeof setTimeout> | undefined
+
+// The masks on another lens than the one rendered: the loupe maps its
+// pointer and handles through a grid of the map between them (view.ts).
+useDevelop.subscribe((s, prev) => {
+  if (s.recipe === prev.recipe && s.session === prev.session) return
+  const session = s.session
+  const masks = s.recipe?.masks?.lensFrame ?? null
+  const rendered = s.recipe && session ? lensFrameOf(renderedLens(s.recipe, session.isRaw)) : null
+  const key =
+    session && s.recipe && !sameLensFrame(masks, rendered)
+      ? `${session.key}|${lensFrameKey(masks)}>${lensFrameKey(rendered)}`
+      : ''
+  if (key === gridFor) return
+  gridFor = key
+  clearTimeout(gridTimer)
+  if (!key || !session) {
+    if (s.maskGrid) useDevelop.setState({ maskGrid: null })
+    return
+  }
+  // Each frame of a lens slider is a new correction: asked once it rests;
+  // the last grid stands meanwhile.
+  gridTimer = setTimeout(() => {
+    void api.develop
+      .maskGrid(session.key, masks, rendered)
+      .then((maskGrid) => {
+        if (gridFor === key) useDevelop.setState({ maskGrid })
+      })
+      .catch(() => undefined)
+  }, GRID_SETTLE_MS)
+})
 
 /** The masks' placement (`maskPlacementKey`) and the recipe number it last changed at. */
 let placement: { key: string | null; rev: number } = { key: null, rev: 0 }

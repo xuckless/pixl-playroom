@@ -20,6 +20,7 @@ import type {
   RetouchStep,
   SpotShape
 } from './engine-types'
+import type { LensFrame } from './lensframe'
 import { refineFor } from './refine'
 import { transformPoint } from './orientation'
 import { tk } from './i18n'
@@ -65,6 +66,11 @@ export interface RetouchSpot {
    * three choices (2026-10-11).
    */
   refine?: SpotRefine
+  /**
+   * The lens frame it is on, when not the masks' (`Recipe.masks`): a spot
+   * pasted from another photo. Absent: the masks' frame.
+   */
+  lensFrame?: LensFrame
 }
 
 /** A heal's edge: the heal brush's setting, kept for every new spot until changed. */

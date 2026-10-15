@@ -3,7 +3,8 @@ import { readable } from '../../../lib/frames'
 import { maskJoins } from '../../../../../shared/maskpreview'
 import type { LocalLayer } from '../../../../../shared/recipe'
 import { displayToBaseMatrix, glMat3, type ViewGeometry } from '../../../../../shared/view'
-import { planePng } from '../../../lib/planes'
+import { planePng, planePngOn } from '../../../lib/planes'
+import { lensFrameKey, sameLensFrame, type LensFrame } from '../../../../../shared/lensframe'
 import { lastSentRev, useDevelop } from '../../../state/develop'
 import { useUi, type OverlayMode } from '../../../state/ui'
 import { BASE_EDGE, MaskGl, type Join, type ViewMode } from './MaskGl'
@@ -90,8 +91,15 @@ async function bitmapOf(url: string, width?: number): Promise<ImageBitmap> {
 
 /** Painted planes, decoded, by what the component holds (its reference or its PNG). */
 const brushBitmaps = new Map<string, ImageBitmap | Promise<ImageBitmap | null>>()
-function brushKey(c: { ref?: string; png: string }): string {
-  return c.ref ?? `png:${c.png.length}:${c.png.slice(-64)}`
+function brushKey(
+  c: { ref?: string; png: string; lensFrame?: LensFrame },
+  masks: LensFrame
+): string {
+  const own = c.ref ?? `png:${c.png.length}:${c.png.slice(-64)}`
+  // A plane on another lens frame than the masks' is shown re-warped onto theirs.
+  return c.lensFrame === undefined || sameLensFrame(c.lensFrame, masks)
+    ? own
+    : `${own}@${lensFrameKey(c.lensFrame)}>${lensFrameKey(masks)}`
 }
 
 function viewOf(mode: OverlayMode): ViewMode {
@@ -308,13 +316,15 @@ export function MaskCanvas({
         joins.push({ c: comp, mode })
         continue
       }
-      const key = brushKey(comp)
+      const s = useDevelop.getState()
+      const masksFrame = s.recipe?.masks?.lensFrame ?? null
+      const key = brushKey(comp, masksFrame)
       const got = brushBitmaps.get(key)
       if (got instanceof ImageBitmap) joins.push({ c: comp, mode, bitmap: got })
       else {
         waiting = true
         if (!got) {
-          const p = planePng(comp)
+          const p = (s.session ? planePngOn(s.session.key, comp, masksFrame) : planePng(comp))
             .then((b64) => {
               const bytes = Uint8Array.from(atob(b64), (x) => x.charCodeAt(0))
               return createImageBitmap(new Blob([bytes], { type: 'image/png' }), decodeOpts)

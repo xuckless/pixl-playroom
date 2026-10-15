@@ -203,19 +203,24 @@ export function Loupe(): React.JSX.Element {
   // picture as rendered: what `compile` reads, not the raw geometry.
   const geometry = useDevelop((s) => s.recipe?.geometry)
   const off = useDevelop((s) => s.recipe?.off)
+  // Masks on another lens than the one rendered: points go through its grid.
+  const maskGrid = useDevelop((s) => s.maskGrid)
   const g = useMemo(() => {
     const recipe = useDevelop.getState().recipe
     return session && geometry && off && recipe
-      ? loupeGeometry(
-          recipe,
-          session.isRaw,
-          session.frameWidth,
-          session.frameHeight,
-          tool === 'crop',
-          tool === 'upright-guide'
-        )
+      ? {
+          ...loupeGeometry(
+            recipe,
+            session.isRaw,
+            session.frameWidth,
+            session.frameHeight,
+            tool === 'crop',
+            tool === 'upright-guide'
+          ),
+          lens: maskGrid
+        }
       : null
-  }, [session, geometry, off, tool])
+  }, [session, geometry, off, tool, maskGrid])
 
   // Where the picture sits in the loupe. In the crop tool the frame comes
   // from the geometry, which a render cannot change, so the crop box and the

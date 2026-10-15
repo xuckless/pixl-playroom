@@ -42,6 +42,7 @@ import { exportDirFor } from './project/locate'
 import { LOCATION_SETTING, locationOf, type SaveLocation } from '../shared/locations'
 import { cacheUrl } from './protocol'
 import { brushPlanes } from './brushes'
+import { maskFramesFor } from './maskframe'
 import { embedMetadata } from './exiftool'
 import { exists, sameFile } from './exists'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
@@ -303,6 +304,17 @@ export class Exporter {
     // SDR picture and writes the map between them. An SDR source has nothing
     // above white to map, and is written as plain SDR.
     const gainMapOut = !pixl && info.is_hdr && s.hdr.mode === 'gainmap' && supportsGainMap(s.format)
+    // Masks drawn under another lens than the one rendered are carried to it.
+    const maskFrames = await maskFramesFor(
+      pixelDeps(this.engine, this.library.index, row),
+      recipe,
+      row.is_raw === 1,
+      frameW,
+      frameH
+    ).catch((err) => {
+      log.warn('export: masks on another lens not mapped', err)
+      return null
+    })
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
@@ -311,7 +323,11 @@ export class Exporter {
       frameHeight: frameH,
       scale: 1,
       seed: seedOf(row),
-      brushPaths: await brushPlanes(row.id, recipe, user, { isRaw: row.is_raw === 1 }),
+      brushPaths: await brushPlanes(row.id, recipe, user, {
+        isRaw: row.is_raw === 1,
+        frames: maskFrames
+      }),
+      maskFrames,
       applyCrop: true,
       // HDR only where the pipeline keeps room above white: PQ/HLG out, or
       // the gain map's HDR master. Tone mapped to SDR, the grade runs after

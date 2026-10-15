@@ -6,8 +6,9 @@
  * edges, or dropped. A lasso's Find object goes the same way in one step.
  */
 import { conceptOf } from '../../../shared/concepts'
-import { lassoPrompt, type SelectPlane } from '../../../shared/prompt'
-import { newId, type BrushComponent } from '../../../shared/recipe'
+import { sameLensFrame, type LensFrame } from '../../../shared/lensframe'
+import { lassoPrompt, type SelectCommit, type SelectPlane } from '../../../shared/prompt'
+import { newId, type BrushComponent, type Recipe } from '../../../shared/recipe'
 import { modelRefine } from '../../../shared/refine'
 import { layerOf, madeComponent, modeForNew } from '../panels/masks/model'
 import { useDevelop } from '../state/develop'
@@ -24,6 +25,17 @@ function base64(bytes: Uint8Array): string {
   for (let i = 0; i < bytes.length; i += 0x8000)
     s += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
   return btoa(s)
+}
+
+/**
+ * The lens frame a selection was found on, when not the masks' (Optics
+ * switched off since they were drawn): the component says so, and is
+ * carried over (shared/lensframe.ts).
+ */
+function foundOn(made: SelectCommit, r: Recipe | null): { lensFrame?: LensFrame } {
+  return !r || sameLensFrame(made.lensFrame, r.masks?.lensFrame)
+    ? {}
+    : { lensFrame: made.lensFrame }
 }
 
 /** A plane from SAM shown in the selected mask as it would join it; null takes it away. */
@@ -74,6 +86,7 @@ export async function commitObjects(): Promise<void> {
     if (!layer) return
     const comp: BrushComponent = {
       id: newId(),
+      ...foundOn(made, d.recipe),
       kind: 'brush',
       name: label ? t(label) : t('Object'),
       // Every one of several is added: what one click takes, the next does not take away.
@@ -148,6 +161,7 @@ export async function findObject(compId: string): Promise<void> {
         const was = l.components[i]
         l.components[i] = {
           id,
+          ...foundOn(made, r),
           kind: 'brush',
           name: t('Object'),
           mode: was.mode,

@@ -12,6 +12,7 @@
  */
 import type { ConceptId, ConceptSize } from './concepts'
 import type { Prompt } from './engine-types'
+import type { LensFrame } from './lensframe'
 import type { BrushSource } from './recipe'
 
 export interface PromptPoint {
@@ -353,4 +354,6 @@ export interface SelectCommit {
   width: number
   height: number
   source: BrushSource
+  /** The lens frame it was found on (the lens the photo rendered with): shared/lensframe.ts. */
+  lensFrame: LensFrame
 }

@@ -20,6 +20,8 @@ import { gradientKey, rasterGradient } from '../shared/gradients'
 import { edgeKey } from '../shared/maskedge'
 import type { LensCorrection } from '../shared/engine-types'
 import { renderedLens } from '../shared/edits'
+import { frameMap, frameOf, remapComponent, type MaskFrames } from '../shared/lensframe'
+import { planeWarpFor } from './maskframe'
 import { planeEdge, snapsToObject } from '../shared/refine'
 import type { Recipe } from '../shared/recipe'
 import log from 'electron-log/main'
@@ -99,7 +101,7 @@ function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Pr
       if (job.op === 'gradient') {
         writeGradientPlane(file, job.c, job.user)
         pruneGradientsSometimes(job.dir)
-      } else writeBrushPlane(file, job.png, job.user, job.edge, job.object)
+      } else writeBrushPlane(file, job.png, job.user, job.edge, job.object, job.warp)
     })
     .finally(() => writing.delete(file))
   writing.set(file, p)
@@ -110,6 +112,12 @@ function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Pr
 export interface PlaneOptions {
   /** The photo is a RAW: what its recipe's switched-off sections render as (`edits.ts` `effective`). */
   isRaw?: boolean
+  /**
+   * The masks drawn under another lens than the one rendered
+   * (main/maskframe.ts `maskFramesFor`): such a plane is re-warped onto the
+   * frame rendered, once, into a file of its own (`<plane>-<lens>-<turn>.png`).
+   */
+  frames?: MaskFrames | null
 }
 
 /** Each brush (or edged gradient) component's plane file, by component id. */
@@ -129,20 +137,32 @@ export async function brushPlanes(
   let snapKey: Promise<string | null> | null = null
   const snapKeyOf = (): Promise<string | null> =>
     (snapKey ??= snapper ? snapper.key(photoKey, lens).catch(() => null) : Promise.resolve(null))
+  const frames = opts.frames ?? null
+  const masks = recipe.masks?.lensFrame ?? null
   for (const layer of recipe.layers) {
-    for (const c of layer.components) {
-      if (c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional') {
-        if (!rasterGradient(c)) continue
+    for (const drawn of layer.components) {
+      // A plane drawn under another lens: re-warped onto the one rendered.
+      const warped = frames ? planeWarpFor(frames, frameOf(drawn, masks)) : null
+      const lensKey = warped ? `-${warped.key}` : ''
+      const warp = warped ? { warp: warped.warp } : {}
+      if (drawn.kind === 'linear' || drawn.kind === 'radial' || drawn.kind === 'bidirectional') {
+        if (!rasterGradient(drawn)) continue
+        // Drawn from its points: they move to the frame rendered, as compile moves them.
+        const c =
+          frames && warped
+            ? remapComponent(drawn, frameMap(frames.maps, frameOf(drawn, masks), frames.to))
+            : drawn
         const file = join(dir, `grad-${gradientKey(c)}${edgeKey(c.edge)}-${user}.png`)
         work.push(ensure(file, { op: 'gradient', file, dir, c, user }))
         out[c.id] = file
         continue
       }
+      const c = drawn
       if (c.kind === 'depth') {
         // A depth map: turned as a painted plane is; the band is keyed by the engine.
         if (!c.png) continue
-        const file = join(dir, `depth-${c.ref ?? planeRef(c.png)}-${user}.png`)
-        work.push(ensure(file, { op: 'brush', file, png: c.png, user }))
+        const file = join(dir, `depth-${c.ref ?? planeRef(c.png)}${lensKey}-${user}.png`)
+        work.push(ensure(file, { op: 'brush', file, png: c.png, user, ...warp }))
         out[c.id] = file
         continue
       }
@@ -151,9 +171,16 @@ export async function brushPlanes(
       // one: hashing megabytes of PNG on every compile is what it saves. A
       // snapped plane's shift is the engine's (refine), not the plane's.
       const edge = planeEdge(c)
-      const name = `brush-${c.ref ?? planeRef(c.png)}${edgeKey(edge)}`
+      const name = `brush-${c.ref ?? planeRef(c.png)}${edgeKey(edge)}${lensKey}`
       const file = join(dir, `${name}-${user}.png`)
-      const job = { op: 'brush' as const, file, png: c.png, user, ...(edge ? { edge } : {}) }
+      const job = {
+        op: 'brush' as const,
+        file,
+        png: c.png,
+        user,
+        ...(edge ? { edge } : {}),
+        ...warp
+      }
       if (snapsToObject(c) && snapper) {
         const id = c.id
         work.push(

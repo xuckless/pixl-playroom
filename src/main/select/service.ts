@@ -33,6 +33,7 @@ import type {
 } from '../../shared/engine-types'
 import type { ConceptSize } from '../../shared/concepts'
 import { renderedLens } from '../../shared/edits'
+import { lensFrameOf, type LensFrame } from '../../shared/lensframe'
 import { guidedKeeps, SAM_GRID } from './size'
 import {
   addPart,
@@ -129,6 +130,8 @@ interface Selection {
   last: SelectPlane | null
   /** A class's clicks keep SAM's answer of this size (shared/concepts.ts). */
   size?: ConceptSize
+  /** The lens frame the embedding sees the photo through (the one it renders with). */
+  lensFrame: LensFrame
 }
 
 /** The decode the engine could not run because the host is new: catch up and try again. */
@@ -376,7 +379,8 @@ export class SelectService {
     this.awake()
     const { embKey } = await this.embedding(key)
     const id = `sel-${nextId++}`
-    this.selections.set(id, { id, key, embKey, prompt: null, probe: null, last: null })
+    const lensFrame = lensFrameOf(await this.lensFor(key))
+    this.selections.set(id, { id, key, embKey, prompt: null, probe: null, last: null, lensFrame })
     return { selId: id }
   }
 
@@ -470,10 +474,15 @@ export class SelectService {
   async commit(selId: string, source: PromptSourceAsk): Promise<SelectCommit> {
     const sel = this.selections.get(selId)
     if (!sel?.last || !sel.prompt) throw new Error(t('nothing is selected yet'))
-    return this.keep(sel.last.png, sel.prompt, source)
+    return this.keep(sel.last.png, sel.prompt, source, sel.lensFrame)
   }
 
-  private keep(png16: Uint8Array, prompt: PromptGeometry, source: PromptSourceAsk): SelectCommit {
+  private keep(
+    png16: Uint8Array,
+    prompt: PromptGeometry,
+    source: PromptSourceAsk,
+    lensFrame: LensFrame
+  ): SelectCommit {
     const d = grey8(Buffer.from(png16))
     const png = encodeGreyPng(d.data, d.width, d.height).toString('base64')
     const ref = planeRef(png)
@@ -482,6 +491,7 @@ export class SelectService {
       ref,
       width: d.width,
       height: d.height,
+      lensFrame,
       source: {
         kind: 'prompt',
         ...(source.label ? { label: source.label } : {}),
@@ -522,7 +532,7 @@ export class SelectService {
       const r = await this.replay(lane, embKey, prompt, 'guided', FRAME_SIZE, signal)
       const plane = r.planes[0]
       if (!plane) throw new Error(t('the model found nothing there'))
-      return this.keep(plane.png, prompt, source)
+      return this.keep(plane.png, prompt, source, lensFrameOf(await this.lensFor(key)))
     } finally {
       this.busy--
       void this.engine.sam({ op: 'release', lanes: [lane] }).catch(() => undefined)

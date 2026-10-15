@@ -100,6 +100,8 @@ import {
   rendersDir
 } from './autowb'
 import { brushPlanes } from './brushes'
+import { maskFramesFor, maskGrid, planeOnFrame, rebaseMasks } from './maskframe'
+import type { LensFrame, LensGrid, MaskFrames } from '../shared/lensframe'
 import { paths } from './paths'
 import { sweepPhoto } from './sweep'
 import type { PhotoRow } from './db'
@@ -564,6 +566,9 @@ class Session {
     // The working pixels' frame: the photo's, or an upscale step's.
     const px = baked ? this.lensed!.px : this.basePx()
     const { user } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
+    // Masks drawn under another lens than the one rendered; a draft takes the
+    // maps only once they are made (see `maskFramesFor`).
+    const maskFrames = await this.maskFrames(recipe, smoothing)
     const compiled = compile(recipe, {
       isRaw: this.isRaw,
       asShot: this.info.as_shot_white,
@@ -572,7 +577,11 @@ class Session {
       frameHeight: px.frameHeight,
       scale: source.width / px.frameWidth,
       seed: seedOf(this.row),
-      brushPaths: await brushPlanes(this.row.id, recipe, user, { isRaw: this.isRaw }),
+      brushPaths: await brushPlanes(this.row.id, recipe, user, {
+        isRaw: this.isRaw,
+        frames: maskFrames
+      }),
+      maskFrames,
       applyCrop,
       // HDR only where the request's pipeline has room above white (Preserve
       // with the HDR working space: masks, the headroom plane, HDR stats). A
@@ -588,6 +597,49 @@ class Session {
       gpuDrag: drag === 'gpu'
     })
     return baked ? { ...compiled, lens: null, retouch: null } : compiled
+  }
+
+  /**
+   * What carries a recipe's masks to the lens it renders with
+   * (main/maskframe.ts); null when they are on it, or when the maps could
+   * not be made (the masks then show where they were drawn, as before).
+   */
+  async maskFrames(recipe: Recipe, wait = true): Promise<MaskFrames | null> {
+    const base = this.basePx()
+    return maskFramesFor(
+      this.frameDeps(),
+      recipe,
+      this.isRaw,
+      base.frameWidth,
+      base.frameHeight,
+      wait
+    ).catch((err) => {
+      log.warn('masks on another lens: not mapped', err)
+      return null
+    })
+  }
+
+  /** What the masks' lens maps are made with: the background engine, the photo's cache. */
+  private frameDeps(): ReturnType<typeof pixelDeps> {
+    return pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row)
+  }
+
+  /** A recipe with its masks rewritten onto its own lens (a lens edit settling). */
+  rebaseMasks(recipe: Recipe): Promise<Recipe> {
+    const base = this.basePx()
+    return rebaseMasks(this.frameDeps(), recipe, base.frameWidth, base.frameHeight)
+  }
+
+  /** The loupe's grid between the masks' lens frame and the one rendered. */
+  maskGrid(masks: LensFrame, rendered: LensFrame): Promise<LensGrid | null> {
+    const base = this.basePx()
+    return maskGrid(this.frameDeps(), masks, rendered, base.frameWidth, base.frameHeight)
+  }
+
+  /** A plane drawn on one lens frame, re-warped onto another (painted into again). */
+  planeOnFrame(png: string, from: LensFrame, to: LensFrame): Promise<string> {
+    const base = this.basePx()
+    return planeOnFrame(this.frameDeps(), png, from, to, base.frameWidth, base.frameHeight)
   }
 
   /** Whether a source is one of the prepared set's (lens and spots baked in). */
@@ -2481,6 +2533,7 @@ class Session {
     // Framed as the picture on screen is (straightened, cropped, warped, the
     // crop tool's whole frame): since engine 0.16 a region of it is the full
     // render's own pixels there, so 1:1 is sharp on any photo.
+    const maskFrames = await this.maskFrames(this.recipe)
     const compiled = compile(this.recipe, {
       isRaw: raw,
       asShot: this.info.as_shot_white,
@@ -2490,7 +2543,11 @@ class Session {
       frameHeight: src.height,
       scale: zoom,
       seed: seedOf(this.row),
-      brushPaths: await brushPlanes(this.row.id, this.recipe, user, { isRaw: raw }),
+      brushPaths: await brushPlanes(this.row.id, this.recipe, user, {
+        isRaw: raw,
+        frames: maskFrames
+      }),
+      maskFrames,
       applyCrop: !this.view.cropMode,
       showTransform: !this.view.guides,
       // Tone mapped to SDR for the screen, as the picture is (see compileFor);
@@ -3409,6 +3466,21 @@ export class DevelopSessions {
 
   measureCa(key: string): Promise<CaMeasurement> {
     return this.get(key).measureCa()
+  }
+
+  /** An open photo's recipe with its masks on its own lens (shared/lensframe.ts `rebaseNeed`). */
+  rebaseMasks(key: string, recipe: Recipe): Promise<Recipe> {
+    return this.get(key).rebaseMasks(recipe)
+  }
+
+  /** The loupe's grid between an open photo's masks' lens frame and the one rendered. */
+  maskGrid(key: string, masks: LensFrame, rendered: LensFrame): Promise<LensGrid | null> {
+    return this.get(key).maskGrid(masks, rendered)
+  }
+
+  /** A plane of an open photo re-warped from one lens frame onto another. */
+  planeOnFrame(key: string, png: string, from: LensFrame, to: LensFrame): Promise<string> {
+    return this.get(key).planeOnFrame(png, from, to)
   }
 
   /** What lens matching needs of an open photo: its lens, its camera and its frame. */

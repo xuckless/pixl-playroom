@@ -14,7 +14,7 @@ import {
 import { api, errorText } from '../../lib/api'
 import { isFrame, pictureBitmap as framePixels, readable } from '../../lib/frames'
 import { touchInteracting } from '../../lib/interacting'
-import { planePng, rememberPlane } from '../../lib/planes'
+import { planePngOn, rememberPlane } from '../../lib/planes'
 import type { Dab } from '../../workers/brush.worker'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { useDevelop } from '../../state/develop'
@@ -192,7 +192,9 @@ export const BrushLayer = memo(function BrushLayer({
     paint(p, pressure)
     let png: string | null = null
     try {
-      if (existing && (existing.png || existing.ref)) png = await planePng(existing)
+      // On the masks' lens frame, where the pointer's dabs land (view.ts).
+      if (existing && (existing.png || existing.ref) && d.session)
+        png = await planePngOn(d.session.key, existing, recipe.masks?.lensFrame ?? null)
     } catch (err) {
       stroke.current = null
       return useLibrary.getState().say(errorText(err), 'error')
@@ -246,6 +248,8 @@ export const BrushLayer = memo(function BrushLayer({
         if (c && c.kind === 'brush') {
           c.png = ''
           c.ref = ref
+          // Painted on the masks' lens frame (re-warped onto it if it was on another).
+          delete c.lensFrame
         } else
           l.components.push({
             id: s.compId,

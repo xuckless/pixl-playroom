@@ -20,6 +20,16 @@ import { makeOnce, type PixelDeps } from './working'
 /** The map's long edge: the correction is smooth, and the map is read bilinearly. */
 const MAP_EDGE = 1024
 
+/**
+ * The ramp a map of a `width × height` photo is made from: its values say
+ * where in the photo, as `rampFraction` of these (the map itself is smaller
+ * when the correction crops).
+ */
+export function rampSize(width: number, height: number): { w: number; h: number } {
+  const k = Math.min(1, MAP_EDGE / Math.max(width, height))
+  return { w: Math.max(2, Math.round(width * k)), h: Math.max(2, Math.round(height * k)) }
+}
+
 /** Whether a correction moves pixels at all (else a mask is already on the photo's pixels). */
 export function moves(lens: LensCorrection | null): boolean {
   return !!lens?.distortion
@@ -31,7 +41,7 @@ export function moves(lens: LensCorrection | null): boolean {
  * down) it comes from. Made once per correction and photo size.
  */
 export async function lensMap(
-  deps: PixelDeps,
+  deps: Pick<PixelDeps, 'engine' | 'cacheDir' | 'work'>,
   lens: LensCorrection,
   width: number,
   height: number
@@ -48,9 +58,7 @@ export async function lensMap(
   const out = join(dir, `map-${key}.png`)
   if (await exists(out)) return out
   await mkdir(dir, { recursive: true })
-  const k = Math.min(1, MAP_EDGE / Math.max(width, height))
-  const w = Math.max(2, Math.round(width * k))
-  const h = Math.max(2, Math.round(height * k))
+  const { w, h } = rampSize(width, height)
   const ramp = join(dir, `ramp-${w}x${h}.png`)
   // Each written whole, once: a map read half made would misplace the mask.
   await makeOnce(ramp, (tmp) => deps.work({ op: 'ramp', file: tmp, w, h }))

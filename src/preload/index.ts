@@ -11,6 +11,7 @@ import type { RawColour } from '../shared/rawcolour'
 import type { InvariantPlace } from '../shared/invariant'
 import type { DisplayHdr, DisplayHdrSetting } from '../shared/hdrdisplay'
 import type { LensProfile } from '../shared/lens'
+import type { LensFrame, LensGrid } from '../shared/lensframe'
 import {
   IPC,
   type AppError,
@@ -268,6 +269,12 @@ const api = {
     uprightFromLines: (key: string, lines: GuideLine[], focal: number) =>
       call<Transform>(IPC.develop.uprightFromLines, key, lines, focal),
     putPlane: (png: string) => call<string>(IPC.develop.putPlane, png),
+    rebaseMasks: (key: string, recipe: Recipe) =>
+      call<Recipe>(IPC.develop.rebaseMasks, key, recipe),
+    maskGrid: (key: string, masks: LensFrame, rendered: LensFrame) =>
+      call<LensGrid | null>(IPC.develop.maskGrid, key, masks, rendered),
+    planeOnFrame: (key: string, ref: string, from: LensFrame, to: LensFrame) =>
+      call<string>(IPC.develop.planeOnFrame, key, ref, from, to),
     getPlane: (ref: string) => call<string>(IPC.develop.getPlane, ref),
     /** The photo's versions as stored now (main makes automatic ones as it goes). */
     versionList: (key: string) => call<Snapshot[]>(IPC.develop.versionList, key),

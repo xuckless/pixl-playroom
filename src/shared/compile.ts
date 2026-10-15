@@ -39,6 +39,7 @@ import type {
 } from './engine-types'
 import { addColorOp } from './addcolor'
 import { defringeOp, lensCorrection } from './lens'
+import { placeMasks, type MaskFrames } from './lensframe'
 import { compileRetouch } from './retouch'
 import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
@@ -167,9 +168,16 @@ export interface CompileContext {
   /**
    * The raster planes (painted brushes and drawn gradients), by component id,
    * as grey PNG paths already turned into the user-oriented frame (the main
-   * process writes them).
+   * process writes them), and re-warped onto the frame rendered when drawn
+   * under another lens (main/brushes.ts).
    */
   brushPaths: Record<string, string>
+  /**
+   * Masks or spots drawn under another lens geometry than the one rendered
+   * (a lens edit, Optics switched off): what carries their points to the
+   * frame rendered (shared/lensframe.ts). Absent or null: they are on it.
+   */
+  maskFrames?: MaskFrames | null
   /** False while the crop tool is open: show the whole, unrotated frame. */
   applyCrop: boolean
   /**
@@ -1587,8 +1595,12 @@ function qualifierLayer(
 }
 
 export function compile(recipe: Recipe, given: CompileContext): Compiled {
-  // What is rendered: sections switched off at the photo's defaults, steps switched off left out.
-  const r = effective(recipe, given.isRaw)
+  // What is rendered: sections switched off at the photo's defaults, steps
+  // switched off left out, and every mask and spot on the lens rendered.
+  // (Engine request E85: the engine placing masks drawn on the source frame
+  // itself would make this mapping its own.)
+  const shown = effective(recipe, given.isRaw)
+  const r = given.maskFrames ? placeMasks(shown, given.maskFrames, 'render') : shown
   // The photo's Tone base reaches its masks' Tone too.
   const ctx: CompileContext = { ...given, toneBase: r.toneBase ?? 'none' }
   const notes: string[] = []

@@ -1,3 +1,4 @@
+import { sameLensFrame, type LensFrame } from '../../../shared/lensframe'
 import type { PlaneComponent } from '../../../shared/recipe'
 import { api } from './api'
 
@@ -24,4 +25,15 @@ export async function planePng(c: PlaneComponent): Promise<string> {
   const png = await api.develop.getPlane(c.ref)
   rememberPlane(c.ref, png)
   return png
+}
+
+/**
+ * A plane component's PNG on lens frame `to` (the masks'): as it is, or,
+ * for one kept as drawn across a lens edit, re-warped onto it by the main
+ * process, so what is painted into it lands on the same picture.
+ */
+export async function planePngOn(key: string, c: PlaneComponent, to: LensFrame): Promise<string> {
+  if (c.lensFrame === undefined || sameLensFrame(c.lensFrame, to)) return planePng(c)
+  const ref = c.ref ?? (await api.develop.putPlane(await planePng(c)))
+  return api.develop.planeOnFrame(key, ref, c.lensFrame, to)
 }

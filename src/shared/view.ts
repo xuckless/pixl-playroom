@@ -17,6 +17,7 @@ import { effective } from './edits'
 import { lensCorrection } from './lens'
 import { inverse, matrixOf, swapsAxes, transformPoint } from './orientation'
 import { applyProjective, glMat3, type Projective } from './projective'
+import { gridPoint, lensFrameKey, type LensGrid } from './lensframe'
 import type { Recipe } from './recipe'
 import {
   canvasToFrame,
@@ -38,6 +39,13 @@ export interface ViewGeometry {
   transform: Transform | null
   /** The display is the whole canvas (crop tool open), or the whole unwarped frame (guides). */
   whole: boolean
+  /**
+   * The masks drawn under another lens than the one rendered (Optics
+   * switched off, a lens slider moving): the map between the two, on the
+   * base frame (shared/lensframe.ts). Absent or null: they are on it.
+   * Points go through it; the matrices below leave it out.
+   */
+  lens?: LensGrid | null
 }
 
 export function viewGeometry(
@@ -100,7 +108,9 @@ export function maskPlacementKey(
     g.crop && [g.crop.x, g.crop.y, g.crop.width, g.crop.height].map(round4),
     round4(g.straighten),
     g.transform,
-    lensCorrection(e.lens)?.distortion ?? null
+    lensCorrection(e.lens)?.distortion ?? null,
+    // The lens the masks are drawn on: a lens edit settling moves them onto the new one.
+    lensFrameKey(r.masks?.lensFrame ?? null)
   ])
 }
 
@@ -152,11 +162,13 @@ export function baseToOriented(g: ViewGeometry, p: P): P {
 }
 
 export function displayToBase(g: ViewGeometry, p: P): P {
-  return orientedToBase(g, displayToOriented(g, p))
+  const b = orientedToBase(g, displayToOriented(g, p))
+  return g.lens ? gridPoint(g.lens.toMasks, g.lens.n, b) : b
 }
 
 export function baseToDisplay(g: ViewGeometry, p: P): P {
-  return orientedToDisplay(g, baseToOriented(g, p))
+  const b = g.lens ? gridPoint(g.lens.toRendered, g.lens.n, p) : p
+  return orientedToDisplay(g, baseToOriented(g, b))
 }
 
 // ── The map as a matrix ──────────────────────────────────────────────────────
@@ -184,7 +196,10 @@ function positiveAt(m: Projective, p: P): Projective {
   return m[6] * p.x + m[7] * p.y + m[8] < 0 ? (m.map((v) => -v) as Projective) : m
 }
 
-/** Display → base, normalised (see `Projective`): the matrix of `displayToBase`. */
+/**
+ * Display → base, normalised (see `Projective`): the matrix of `displayToBase`
+ * on the frame rendered (a lens grid, which is no projective map, left out).
+ */
 export function displayToBaseMatrix(g: ViewGeometry): Projective {
   const { width: W, height: H } = g
   // Display → canvas (normalised): the crop, then the straighten undone about the centre.
