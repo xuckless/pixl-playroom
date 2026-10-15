@@ -72,15 +72,8 @@ import {
   type QualifierSetting,
   scaleCurvesVs,
   scaleLogWheels,
-  scalePrimaries,
-  type VsCurve
+  scalePrimaries
 } from './resolve'
-
-/** What a waiting vs curve says in the render's notes. */
-const VS_WAITING_NOTE: Partial<Record<VsCurve, string>> = {
-  hueLum: tk('Hue vs Lum waits for the engine (E71): kept, not applied yet'),
-  satSat: tk('Sat vs Sat waits for the engine (E72): kept, not applied yet')
-}
 
 // ── Spaces ───────────────────────────────────────────────────────────────────
 
@@ -1436,10 +1429,11 @@ function settingsStages(
   const prim = primariesOp(r.primaries)
   if (prim) tail.push(prim)
   tail.push(...logWheelsOps(r.logWheels))
-  // Resolve's vs curves; the two the engine lacks wait, said in the notes.
+  // Resolve's vs curves need colour: a black-and-white photo's are kept, not
+  // applied (its Curves card says so and points to the B&W mix). A mask's
+  // run before the mono conversion, so they feed the mix.
   const vs = curvesVsOp(r.curvesVs)
-  if (vs.op && !bw) tail.push(vs.op)
-  for (const w of vs.waiting) notes.push(VS_WAITING_NOTE[w] ?? '')
+  if (vs && !bw) tail.push(vs)
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)
     tail.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })

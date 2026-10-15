@@ -121,17 +121,21 @@ test('a hue curve wraps across red with no seam; the others hold level past thei
   assert.ok(vsPoints([{ x: 0, y: 0.8 }], true).every((p) => p.y === 0.8))
 })
 
-test('the vs curves compile to one Curves op; the two the engine lacks wait in the notes', async () => {
+test('the vs curves compile to one Curves op, all five (engine 0.21: E71, E72)', async () => {
   const { curvesVsOp } = await import('../src/shared/resolve')
   const r = defaultRecipe(false)
-  assert.equal(curvesVsOp(r.curvesVs).op, null)
+  assert.equal(curvesVsOp(r.curvesVs), null)
   r.curvesVs.hueHue = [{ x: 0.5, y: 0.75 }]
   r.curvesVs.lumSat = [
     { x: 0.2, y: 0.25 },
     { x: 0.8, y: 0.5 }
   ]
-  r.curvesVs.hueLum = [{ x: 0.3, y: 0.6 }]
-  const { op, waiting } = curvesVsOp(r.curvesVs)
+  r.curvesVs.hueLum = [
+    { x: 0.3, y: 0.75 },
+    { x: 0.6, y: 0.4 }
+  ]
+  r.curvesVs.satSat = [{ x: 0.5, y: 0.5 }]
+  const op = curvesVsOp(r.curvesVs)
   const c = (op as { Curves: import('../src/shared/engine-types').Curves }).Curves
   assert.ok(
     c.hue_vs_hue!.points.every((p) => p.y === 90),
@@ -139,13 +143,64 @@ test('the vs curves compile to one Curves op; the two the engine lacks wait in t
   )
   assert.equal(c.luma_vs_saturation!.points[0].y, 0.5, 'a quarter down halves saturation')
   assert.equal(c.hue_vs_saturation, null)
-  assert.deepEqual(waiting, ['hueLum'])
-  const notes = compile(r, ctx).notes
-  assert.ok(
-    notes.some((n) => n.includes('E71')),
-    notes.join(' | ')
-  )
-  assert.ok(ops(r).some((o) => 'Curves' in o && o.Curves.hue_vs_hue))
+  // Hue vs Lum in stops, ±1 at the top and bottom: a quarter up is half a
+  // stop; the curve wraps across red with its ends equal.
+  const lum = c.hue_vs_luma!.points
+  assert.equal(lum.find((p) => p.x === 0.3)!.y, 0.5)
+  assert.equal(lum.find((p) => p.x === 0.6)!.y, -0.2)
+  assert.equal(lum[0].x, 0)
+  assert.equal(lum.at(-1)!.x, 1)
+  assert.equal(lum[0].y, lum.at(-1)!.y)
+  // A flat Sat vs Sat sends none.
+  assert.equal(c.saturation_vs_saturation, null)
+  assert.deepEqual(compile(r, ctx).notes, [])
+  assert.ok(ops(r).some((o) => 'Curves' in o && o.Curves.hue_vs_hue && o.Curves.hue_vs_luma))
+})
+
+test('Sat vs Sat is a multiplier, its ends held level; Hue vs Lum alone makes the op', async () => {
+  const { curvesVsOp, VS_PRESETS, defaultCurvesVs } = await import('../src/shared/resolve')
+  const c = defaultCurvesVs()
+  c.satSat = VS_PRESETS.satSat.find((p) => p.name === 'Tame strong colour')!.points
+  const sat = (curvesVsOp(c) as { Curves: import('../src/shared/engine-types').Curves }).Curves
+    .saturation_vs_saturation!.points
+  assert.equal(sat.at(-1)!.y, 0.76, 'the richest colours at 0.76×')
+  assert.equal(sat[0].y, 1)
+  assert.deepEqual([sat[0].x, sat.at(-1)!.x], [0, 1])
+  const lumOnly = defaultCurvesVs()
+  lumOnly.hueLum = [{ x: 0.6, y: 0.25 }]
+  const op = curvesVsOp(lumOnly) as { Curves: import('../src/shared/engine-types').Curves }
+  assert.ok(op.Curves.hue_vs_luma!.points.every((p) => p.y === -0.5))
+  assert.equal(op.Curves.hue_vs_hue, null)
+})
+
+test('a black-and-white photo keeps its vs curves but does not apply them; a mask’s feed the mix', () => {
+  const r = defaultRecipe(false)
+  r.treatment = 'bw'
+  r.curvesVs.hueSat = [{ x: 0.6, y: 0.8 }]
+  r.curvesVs.hueLum = [{ x: 0.6, y: 0.2 }]
+  assert.ok(!ops(r).some((o) => 'Curves' in o && (o.Curves.hue_vs_saturation || o.Curves.hue_vs_luma)))
+  assert.equal(normaliseRecipe(r, false).curvesVs.hueLum.length, 1)
+  const l = newLocalLayer('Sky')
+  l.components = [
+    {
+      id: 'c1',
+      kind: 'linear',
+      mode: 'add',
+      opacity: 100,
+      invert: false,
+      start: { x: 0.5, y: 0 },
+      end: { x: 0.5, y: 0.4 },
+      width: 512,
+      height: 512
+    } as never
+  ]
+  l.settings.curvesVs.hueLum = [{ x: 0.6, y: 0.2 }]
+  r.layers = [l]
+  const c = compile(normaliseRecipe(r, false), ctx)
+  const mask = c.grade!.layers[c.layerIndex[l.id]].stages.flatMap((s) => s.ops)
+  assert.ok(mask.some((o) => 'Curves' in o && o.Curves.hue_vs_luma))
+  // …and run before the mono conversion, the last layer.
+  assert.equal(c.grade!.layers.at(-1)!.name, 'black & white')
 })
 
 test('log wheels key their own part of the tones, and add rather than scale', async () => {
@@ -262,8 +317,11 @@ test('the vs curves’ presets: each a curve the recipe keeps as written, Flat f
       )
     }
   }
-  // A built-in compiles into the engine's Curves op.
-  const c = defaultCurvesVs()
-  c.hueSat = VS_PRESETS.hueSat[1].points
-  assert.ok(curvesVsOp(c).op)
+  // Every built-in compiles into the engine's Curves op.
+  for (const vs of VS_CURVES)
+    for (const p of VS_PRESETS[vs].slice(1)) {
+      const c = defaultCurvesVs()
+      c[vs] = p.points
+      assert.ok(curvesVsOp(c), `${vs} ${p.name}`)
+    }
 })

@@ -16,8 +16,8 @@ import { AddColourSection, RS, ToneCurveCustom } from './global'
 import { TIPS } from './tips'
 import { InfoTip } from '../components/InfoTip'
 import {
+  DEFAULT_PIVOT,
   MAX_QUALIFIERS,
-  VS_WAITING,
   vsPeriodic,
   type KeyBandSetting,
   type PrimariesSetting,
@@ -94,7 +94,7 @@ export function PrimariesBody(): React.JSX.Element | null {
         min={0}
         max={1}
         step={0.005}
-        def={0.435}
+        def={DEFAULT_PIVOT}
         format={(v) => v.toFixed(3)}
       />
       <RS
@@ -177,19 +177,29 @@ const SWATCHES = [
 ]
 
 export function ResolveCurvesBody(): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
-  const [tab, setTab] = useState<CurvesTab>('custom')
+  const { recipe, layer, edit, commit } = useScope()
+  const [chosen, setTab] = useState<CurvesTab>('custom')
   if (!recipe) return null
+  // The vs curves need colour: on a black-and-white photo they would change
+  // nothing (a mask's still can, before the mono conversion).
+  const mono = !layer && (recipe.treatment === 'bw' || recipe.profile.kind === 'monochrome')
+  const tab = mono ? 'custom' : chosen
   const label = CURVE_TABS.find((x) => x.value === tab)!.label
   if (tab === 'custom')
     return (
       <ToolPanel>
-        <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf()} />
+        <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf(mono)} />
+        {mono && (
+          <p className="muted small">
+            {t(
+              'Black and white: the vs curves need colour. To set how bright each colour turns, use the B&W mix in HSL.'
+            )}
+          </p>
+        )}
         <ToneCurveCustom />
       </ToolPanel>
     )
   const vs = tab
-  const waiting = VS_WAITING[vs]
   const periodic = vsPeriodic(vs)
   const pts = recipe.curvesVs[vs]
   const addAt = (h: number): void => {
@@ -209,12 +219,6 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
         <InfoTip tip={TIPS[`rcurves.${vs}`]} label={t(label)} />
       </div>
       <VsPresets key={vs} vs={vs} label={label} />
-      {waiting && (
-        <p className="rc-waiting">
-          {t('Waiting for the engine')} ({waiting}):{' '}
-          {t('the curve is kept with the photo and applies once the engine has it.')}
-        </p>
-      )}
       <CurveEditor
         vs
         periodic={periodic}
@@ -252,8 +256,17 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
   )
 }
 
-function tabsOf(): { value: CurvesTab; label: string }[] {
-  return CURVE_TABS.map((x) => ({ ...x, label: t(x.label) }))
+/** The tabs, the vs curves greyed out on a black-and-white photo (`mono`). */
+function tabsOf(
+  mono = false
+): { value: CurvesTab; label: string; disabled?: boolean; title?: string }[] {
+  return CURVE_TABS.map((x) => ({
+    ...x,
+    label: t(x.label),
+    ...(mono && x.value !== 'custom'
+      ? { disabled: true, title: t('Black and white: use the B&W mix in HSL') }
+      : {})
+  }))
 }
 
 // ── Log wheels ───────────────────────────────────────────────────────────────

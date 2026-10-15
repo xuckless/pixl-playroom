@@ -214,9 +214,6 @@ export type VsCurve = (typeof VS_CURVES)[number]
 /** Each a list of points, `y` 0.5 untouched; an empty list is a flat curve. */
 export type CurvesVsSetting = Record<VsCurve, { x: number; y: number }[]>
 
-/** The vs curves the engine has no op for yet: kept, shown as waiting, not compiled (E71, E72). */
-export const VS_WAITING: Partial<Record<VsCurve, string>> = { hueLum: 'E71', satSat: 'E72' }
-
 /** Whether a vs curve's x is a hue (it wraps at red). */
 export const vsPeriodic = (c: VsCurve): boolean => c.startsWith('hue')
 
@@ -290,12 +287,18 @@ export function vsPoints(
   return [{ x: 0, y }, ...inner, { x: 1, y }]
 }
 
+/** How far Hue vs Lum reaches at the top and bottom of its graph: a stop either way. */
+export const HUE_LUM_STOPS = 1
+
 /**
- * The vs curves as one engine `Curves` op (Hue vs Hue in degrees, ±180;
- * the saturation curves as multipliers, 0 to 2), and the ones that wait.
+ * The vs curves as one engine `Curves` op, or null when every one is flat:
+ * Hue vs Hue in degrees (±180); Hue vs Sat, Lum vs Sat and Sat vs Sat as
+ * multipliers (0 to 2, as Resolve's); Hue vs Lum in stops (±1, a gain of ½
+ * to 2 on a full colour, greys untouched). The engine keys the four hue and
+ * saturation curves on the colour as it comes, so Hue vs Lum follows the hue
+ * a colour had before Hue vs Hue turned it.
  */
-export function curvesVsOp(c: CurvesVsSetting): { op: GradeOp | null; waiting: VsCurve[] } {
-  const waiting = VS_CURVES.filter((k) => VS_WAITING[k] && !vsFlat(c[k]))
+export function curvesVsOp(c: CurvesVsSetting): GradeOp | null {
   const curve = (
     k: VsCurve,
     y: (v: number) => number
@@ -305,24 +308,23 @@ export function curvesVsOp(c: CurvesVsSetting): { op: GradeOp | null; waiting: V
       : { points: vsPoints(c[k], vsPeriodic(k)).map((p) => ({ x: r4(p.x), y: r4(y(p.y)) })) }
   const hueHue = curve('hueHue', (v) => (v - 0.5) * 360)
   const hueSat = curve('hueSat', (v) => v * 2)
+  const hueLum = curve('hueLum', (v) => (v - 0.5) * 2 * HUE_LUM_STOPS)
   const lumSat = curve('lumSat', (v) => v * 2)
-  if (!hueHue && !hueSat && !lumSat) return { op: null, waiting }
+  const satSat = curve('satSat', (v) => v * 2)
+  if (!hueHue && !hueSat && !hueLum && !lumSat && !satSat) return null
   return {
-    op: {
-      Curves: {
-        master: null,
-        red: null,
-        green: null,
-        blue: null,
-        luma_vs_saturation: lumSat,
-        hue_vs_saturation: hueSat,
-        hue_vs_hue: hueHue,
-        hue_vs_luma: null,
-        saturation_vs_saturation: null,
-        refine_saturation: null
-      }
-    },
-    waiting
+    Curves: {
+      master: null,
+      red: null,
+      green: null,
+      blue: null,
+      luma_vs_saturation: lumSat,
+      hue_vs_saturation: hueSat,
+      hue_vs_hue: hueHue,
+      hue_vs_luma: hueLum,
+      saturation_vs_saturation: satSat,
+      refine_saturation: null
+    }
   }
 }
 
@@ -341,7 +343,7 @@ const turn = (x: number, deg: number): { x: number; y: number } => ({
   x: r4(x),
   y: r4(0.5 + deg / 360)
 })
-/** A Hue vs Lum point: `d` brighter (or darker) on the curve's own scale, 0.5 untouched. */
+/** A Hue vs Lum point: `d` brighter (or darker) on the curve's own scale (0.5 a stop), 0.5 untouched. */
 const lift = (x: number, d: number): { x: number; y: number } => ({ x: r4(x), y: r4(0.5 + d) })
 /** A saturation curve's point: `k` times as strong. */
 const times = (x: number, k: number): { x: number; y: number } => ({ x: r4(x), y: r4(k / 2) })
@@ -349,8 +351,7 @@ const times = (x: number, k: number): { x: number; y: number } => ({ x: r4(x), y
 /**
  * The built-in starting points of each vs curve, gentle as a colourist's
  * first moves, each a few points to drag from: Flat first (the curve put
- * back). Hue vs Lum and Sat vs Sat are kept and wait for the engine
- * (`VS_WAITING`) as drawn ones do.
+ * back).
  */
 export const VS_PRESETS: Record<VsCurve, VsPreset[]> = {
   hueHue: [

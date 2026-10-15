@@ -378,7 +378,7 @@ export const TIPS = {
   },
   curve: {
     what: tk(
-      'DaVinci Resolve’s curves. Custom is the tone curve (Y, R, G, B); the others change one thing by another: Hue vs Hue turns a colour, Hue vs Sat and Lum vs Sat make colours richer or quieter by hue or by brightness.'
+      'DaVinci Resolve’s curves. Custom is the tone curve (Y, R, G, B); the others change one thing by another: Hue vs Hue turns a colour, Hue vs Lum brightens or darkens it, and Hue vs Sat, Lum vs Sat and Sat vs Sat make colours richer or quieter by hue, brightness or saturation.'
     ),
     expect: tk('The line in the middle changes nothing. Click it to add a point, then drag.'),
     tip: tk(
@@ -496,8 +496,10 @@ export const TIPS = {
     expect: tk('Quiet a loud green, deepen a sky.')
   },
   'rcurves.hueLum': {
-    what: tk('Makes one colour brighter or darker.'),
-    expect: tk('Waiting for the engine: the curve is kept and applies once it can.')
+    what: tk('Makes one colour brighter or darker: up to a stop either way at the top and bottom.'),
+    expect: tk(
+      'Darken a sky or brighten skin without touching greys. It finds a colour by the hue it had before Hue vs Hue turned it.'
+    )
   },
   'rcurves.lumSat': {
     what: tk('Saturation by brightness: shadows along the left, highlights along the right.'),
@@ -507,7 +509,9 @@ export const TIPS = {
     what: tk(
       'Saturation by saturation: lift the dull colours without pushing the already rich ones.'
     ),
-    expect: tk('Waiting for the engine: the curve is kept and applies once it can.')
+    expect: tk(
+      'Greys along the left, the richest colours along the right; up for more, down for less. Pull the right end down to tame colours that are already loud.'
+    )
   },
 
   // ── Resolve: Qualifier ─────────────────────────────────────────────
