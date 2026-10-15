@@ -136,10 +136,11 @@ export function customFiles(v: unknown, luts: Record<string, string>): unknown |
         return { ...(x as Record<string, unknown>), lut: { Path: file ?? '' } }
       }
     }
-    if (key === 'source' || key === 'Raster' || key === 'plane') {
-      for (const k of ['Png', 'Tiff', 'Jxl'])
-        if (typeof (x as Record<string, unknown>)[k] === 'string') refused = true
-    }
+    // A raster read from a file (`RasterRef`'s `Png`, `Tiff`, `Jxl`), wherever
+    // it sits: a mask's source, a depth map, an overlay, a flat field, or
+    // any op a later engine adds.
+    for (const k of ['Png', 'Tiff', 'Jxl'])
+      if (typeof (x as Record<string, unknown>)[k] === 'string') refused = true
     const out: Record<string, unknown> = {}
     for (const [k, e] of Object.entries(x)) out[k] = walk(e, k)
     return out

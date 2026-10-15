@@ -419,6 +419,13 @@ test('an Advanced layer that reads a raster from a file is left out', () => {
   })
   assert.equal(customFiles(layer({ Png: '\\\\attacker.example\\s\\m.png' }), {}), null)
   assert.equal(customFiles(layer({ Tiff: '/etc/x.tif' }), {}), null)
+  // Wherever a raster file sits: an overlay, a flat field, a depth band.
+  assert.equal(customFiles({ overlays: [{ source: { Jxl: '/x.jxl' } }] }, {}), null)
+  assert.equal(customFiles({ ops: [{ FlatField: { plane: { Png: '/f.png' } } }] }, {}), null)
+  assert.equal(
+    customFiles({ mask: { DepthRange: { depth: { Raster: { Tiff: '/d.tif' } } } } }, {}),
+    null
+  )
   assert.deepEqual(customFiles(layer({ PngBytes: [1, 2] }), {}), layer({ PngBytes: [1, 2] }))
   assert.deepEqual(
     customFiles(
