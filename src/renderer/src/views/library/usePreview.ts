@@ -1,15 +1,14 @@
 /**
  * The Library's larger pictures as the views ask for them (main/previews.ts
  * makes and keeps them): a photo's screen preview, its 1:1, and the photos
- * either side made ahead. Each answer is kept here for the session by the
- * photo and its thumbnail's address, which changes with every edit.
+ * either side made ahead. A photo is named by its key and its thumbnail's
+ * address, which changes with every edit. Only an answer on its way is
+ * shared here: main keeps the pictures (and may let one go under its cap),
+ * so each showing asks it, which costs a look at the folder.
  */
 import { useEffect, useState } from 'react'
 import type { FocusPicture, LibraryItem, LibraryPreview } from '../../../../shared/ipc'
 import { api } from '../../lib/api'
-
-/** How many answers are kept (a few hundred photos looked at). */
-const KEPT = 300
 
 type Answer = LibraryPreview | 'failed'
 
@@ -22,10 +21,18 @@ const focuses = new Map<string, Promise<FocusPicture>>()
 /** A photo's picture as it is now: its key and the thumbnail's address (its stamp). */
 const idOf = (item: LibraryItem): string => `${item.key}|${item.thumbUrl ?? ''}|${item.edited}`
 
-function remember<T>(map: Map<string, T>, id: string, v: T): T {
-  if (map.size >= KEPT) map.delete(map.keys().next().value!)
-  map.set(id, v)
-  return v
+/** `ask`'s answer, shared by everyone asking for `id` while it is on its way. */
+function once<T>(map: Map<string, Promise<T>>, id: string, ask: () => Promise<T>): Promise<T> {
+  let p = map.get(id)
+  if (!p) {
+    p = ask()
+    map.set(id, p)
+    const forget = (): void => {
+      if (map.get(id) === p) map.delete(id)
+    }
+    p.then(forget, forget)
+  }
+  return p
 }
 
 /** Whether a photo can have a larger picture at all (an offline or unreadable one cannot). */
@@ -39,23 +46,13 @@ export function usePreview(item: LibraryItem | undefined): Answer | null {
   useEffect(() => {
     if (!id || !item) return
     let live = true
-    let p = previews.get(id)
-    if (!p) {
-      p = api.library
-        .preview(item.key)
-        .catch((err: unknown): Answer | null =>
-          // Dropped (the view moved on before it was made): the thumbnail stays, quietly.
-          String((err as Error)?.message ?? err).includes(DROPPED) ? null : 'failed'
-        )
-        .then((v) => v ?? Promise.reject(new Error(DROPPED)))
-      remember(previews, id, p)
-      // A failure (or a drop) is asked again next time the photo is shown.
-      void p.then(
-        (v) => v === 'failed' && previews.delete(id),
-        () => previews.delete(id)
-      )
-    }
-    p.then(
+    once(previews, id, () =>
+      api.library.preview(item.key).catch((err: unknown): Answer => {
+        // Dropped (the view moved on before it was made): the thumbnail stays, quietly.
+        if (String((err as Error)?.message ?? err).includes(DROPPED)) throw err
+        return 'failed'
+      })
+    ).then(
       (v) => live && setGot({ id, v }),
       () => undefined
     )
@@ -68,16 +65,9 @@ export function usePreview(item: LibraryItem | undefined): Answer | null {
   return got && got.id === id ? got.v : null
 }
 
-/** A photo's 1:1 (asked for once per photo and edit). */
+/** A photo's 1:1. */
 export function focusOf(item: LibraryItem): Promise<FocusPicture> {
-  const id = idOf(item)
-  let p = focuses.get(id)
-  if (!p) {
-    p = api.library.focus(item.key)
-    remember(focuses, id, p)
-    p.catch(() => focuses.delete(id))
-  }
-  return p
+  return once(focuses, idOf(item), () => api.library.focus(item.key))
 }
 
 /**
