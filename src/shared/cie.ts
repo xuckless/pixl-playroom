@@ -126,6 +126,19 @@ export function inLocus(p: Uv): boolean {
   return inside
 }
 
+/** Whether `p` lies within `r` of the closed outline through `pts` (any of its edges). */
+export function nearOutline(p: Uv, pts: Uv[], r: number): boolean {
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[j]
+    const du = pts[i].u - a.u
+    const dv = pts[i].v - a.v
+    const len = du * du + dv * dv
+    const k = len > 0 ? Math.max(0, Math.min(1, ((p.u - a.u) * du + (p.v - a.v) * dv) / len)) : 0
+    if (Math.hypot(p.u - a.u - k * du, p.v - a.v - k * dv) <= r) return true
+  }
+  return false
+}
+
 /** The chart's frame in u'v': PixlRGB's triangle with a margin, so nothing sits on the edge. */
 export function chartBounds(margin = 0.03): { u0: number; u1: number; v0: number; v1: number } {
   const pts = gamutPoints(PIXLRGB)
