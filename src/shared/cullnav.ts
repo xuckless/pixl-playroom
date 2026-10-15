@@ -198,6 +198,14 @@ export function promoted(
   return order.includes(select) ? { select: candidate, candidate: select } : null
 }
 
+/**
+ * The pane a photo's menu (right-click) acts on in Compare: the Candidate's
+ * own, when it is the Candidate; any other photo becomes the Select.
+ */
+export function comparePaneOf(candidate: string | null, key: string): 'select' | 'candidate' {
+  return key === candidate ? 'candidate' : 'select'
+}
+
 /** The most photos Survey shows at once. */
 export const SURVEY_MAX = 12
 
@@ -210,12 +218,13 @@ export function surveyOf(
   selection: readonly string[],
   max = SURVEY_MAX
 ): { keys: string[]; total: number } {
+  // Sets, not lists: ⌘A on a folder of thousands is surveyed at once.
   const chosen = new Set(selection)
   const inOrder = order.filter((k) => chosen.has(k))
+  const shown = new Set(inOrder)
   // Selected but not shown (a filter hides them): after those shown.
-  const rest = selection.filter((k) => !inOrder.includes(k))
-  const all = [...inOrder, ...rest]
-  return { keys: all.slice(0, max), total: all.length }
+  const rest = [...chosen].filter((k) => !shown.has(k))
+  return { keys: [...inOrder, ...rest].slice(0, max), total: inOrder.length + rest.length }
 }
 
 /** A tile dropped from Survey: the photos left, and which has the focus now. */

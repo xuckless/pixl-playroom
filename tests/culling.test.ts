@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   advancing,
+  comparePaneOf,
   compareStart,
   dropFrom,
   metaTargetsFor,
@@ -19,7 +20,8 @@ import {
   evictions,
   focusPlan,
   PREVIEW_CAPS,
-  regionPixels
+  regionPixels,
+  zoomSize
 } from '../src/shared/previews'
 import {
   entrySize,
@@ -32,6 +34,7 @@ import {
   DEFAULT_FILTER,
   isDefaultFilter,
   moreFilters,
+  savableFilter,
   withoutMore,
   type Filter
 } from '../src/shared/filter'
@@ -279,4 +282,43 @@ test('the filter bar’s chips are the More… filters, each cleared on its own'
   assert.equal(isDefaultFilter(DEFAULT_FILTER), true)
   assert.equal(isDefaultFilter({ ...DEFAULT_FILTER, text: 'birch' }), true, 'the search is apart')
   assert.equal(isDefaultFilter(f), false)
+})
+
+test('Survey of a huge selection is quick, each photo counted once', () => {
+  const many = Array.from({ length: 40000 }, (_, i) => `p${i}`)
+  // Half of them hidden by a filter, and one selected twice.
+  const shown = many.filter((_, i) => i % 2 === 0)
+  const t0 = performance.now()
+  const s = surveyOf(shown, [...many, 'p1'])
+  assert.ok(performance.now() - t0 < 500, 'not quadratic')
+  assert.equal(s.total, many.length)
+  assert.deepEqual(s.keys.slice(0, 3), ['p0', 'p2', 'p4'])
+  assert.equal(s.keys.length, SURVEY_MAX)
+  // Every one hidden: in the selection's order.
+  assert.deepEqual(surveyOf([], ['c', 'a', 'c']), { keys: ['c', 'a'], total: 2 })
+})
+
+test('a photo with no larger picture (offline) never zooms; else its 1:1, the last, the preview', () => {
+  const full = { width: 6000, height: 4000 }
+  const last = { width: 5000, height: 3000 }
+  const preview = { width: 2560, height: 1707 }
+  assert.equal(zoomSize(false, full, last, preview), null)
+  assert.equal(zoomSize(true, full, last, preview), full)
+  assert.equal(zoomSize(true, null, last, preview), last)
+  assert.equal(zoomSize(true, null, null, preview), preview)
+  assert.equal(zoomSize(true, null, undefined, null), null)
+})
+
+test('a right-click on Compare’s Candidate acts on it; any other photo becomes the Select', () => {
+  assert.equal(comparePaneOf('b', 'b'), 'candidate')
+  assert.equal(comparePaneOf('b', 'a'), 'select')
+  assert.equal(comparePaneOf(null, 'a'), 'select')
+})
+
+test('suggested rejects are never saved as a smart collection (no rule keeps them)', () => {
+  const f = (p: Partial<Filter>): Filter => ({ ...DEFAULT_FILTER, ...p })
+  assert.equal(savableFilter(DEFAULT_FILTER), false)
+  assert.equal(savableFilter(f({ minRating: 3 })), true)
+  assert.equal(savableFilter(f({ suggested: true })), false)
+  assert.equal(savableFilter(f({ suggested: true, minRating: 3 })), false)
 })

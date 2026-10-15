@@ -136,6 +136,15 @@ export function isDefaultFilter(f: Filter): boolean {
   return extraFilterCount(f) === 0
 }
 
+/**
+ * Whether the filter can be kept as a smart collection: something chosen,
+ * and no suggested rejects (the renderer's suggestions, not a rule a
+ * collection could keep: it would hold every photo but the rejects).
+ */
+export function savableFilter(f: Filter): boolean {
+  return !isDefaultFilter(f) && !f.suggested
+}
+
 /** The popover's filters back at their defaults; the search text is left alone. */
 export function clearedFilters(): Partial<Filter> {
   const rest: Partial<Filter> = { ...DEFAULT_FILTER }

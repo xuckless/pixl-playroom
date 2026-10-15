@@ -5,6 +5,7 @@ import {
   filterRules,
   isDefaultFilter,
   moreFilters,
+  savableFilter,
   withoutMore,
   type MoreFilter
 } from '../../../../shared/filter'
@@ -144,22 +145,24 @@ export function FilterBar(): React.JSX.Element | null {
       <span className="spacer" />
       {!plain && (
         <>
-          <button
-            className="sm ghost"
-            title={t('Save these filters as a smart collection')}
-            onClick={() =>
-              editCollection({
-                name: t('New smart collection'),
-                kind: 'smart',
-                parent: null,
-                rules: filterRules({ ...filter, text: '' }),
-                sort: 0
-              })
-            }
-          >
-            <Icon name="smart" />
-            {t('Save as smart collection')}
-          </button>
+          {savableFilter(filter) && (
+            <button
+              className="sm ghost"
+              title={t('Save these filters as a smart collection')}
+              onClick={() =>
+                editCollection({
+                  name: t('New smart collection'),
+                  kind: 'smart',
+                  parent: null,
+                  rules: filterRules({ ...filter, text: '' }),
+                  sort: 0
+                })
+              }
+            >
+              <Icon name="smart" />
+              {t('Save as smart collection')}
+            </button>
+          )}
           <button
             className="sm ghost"
             title={t('Back to every photo but the rejects')}

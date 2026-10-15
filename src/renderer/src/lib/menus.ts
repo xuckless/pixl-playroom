@@ -29,7 +29,7 @@ import { chordAccelerator } from './keys'
 import { developBatch, metaItem } from './librarycontext'
 import { developToLoupe, goCompare, goGrid, goLoupe, goSurvey, shownKey } from './librarymodes'
 import { useLibZoom } from '../views/library/libzoom'
-import type { LibraryMode } from '../../../shared/cullnav'
+import { comparePaneOf, type LibraryMode } from '../../../shared/cullnav'
 
 /** A menu item with what it does, before it is sent. */
 interface Item extends Omit<MenuNode, 'submenu'> {
@@ -637,13 +637,16 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
   e.preventDefault()
   e.stopPropagation()
   const l = lib()
-  if (!selectionSet(l.selection).has(key)) l.select(key, 'only')
+  const pane = l.view === 'library' && l.mode === 'compare' ? comparePaneOf(l.candidate, key) : null
+  // Compare's Candidate: its pane picked and the menu acting on it, the Select left as it is.
+  if (pane === 'candidate') useLibrary.setState({ active: 'candidate', selection: [key] })
+  else if (!selectionSet(l.selection).has(key)) l.select(key, 'only')
   else if (l.focus !== key) useLibrary.setState({ focus: key })
-  // In Compare the photo clicked is the Select now: the menu acts on it.
-  if (l.mode === 'compare' && l.active !== 'select') useLibrary.setState({ active: 'select' })
+  // In Compare any other photo clicked is the Select now: the menu acts on it.
+  if (pane === 'select' && l.active !== 'select') useLibrary.setState({ active: 'select' })
   const n = lib().targets().length
   const developing = inDevelop()
-  const item = focusedItem()
+  const item = lib().items.find((i) => i.key === key)
   const suggested = !!item && !!suggestedReasons(item, useCull.getState().reasons)
   const chosen = new Set(lib().targets())
   const stacked = lib().items.some((i) => chosen.has(i.key) && i.stack)
