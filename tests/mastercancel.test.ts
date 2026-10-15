@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import { SharedWork, FINISH_FROM } from '../src/main/sharedwork'
 import { progressOf } from '../src/main/engine/progress'
 import { countedFill, timeLeftMs } from '../src/shared/ai'
+import { stageBar } from '../src/main/ai/stagebar'
 import type { CancelToken, EngineProgressMessage, Progress } from '../src/shared/engine-types'
 import type { RawModels } from '../src/main/ai/rawdevelop'
 
@@ -190,4 +191,23 @@ test('a develop stopped by its photo being left is neither the model’s trouble
   assert.equal(runs, 1)
   assert.deepEqual(said, [])
   assert.equal((await scenePlan('Bayer')).demosaic, 'pixl')
+})
+
+test('an Enhance or AI Denoise bar is the engine’s count once it counts, the clock only before', async () => {
+  const seen: [number, boolean][] = []
+  const bar = stageBar((p, estimated = false) => void seen.push([p, estimated]), 1000, 2)
+  await new Promise((r) => setTimeout(r, 15))
+  assert.ok(seen.length > 0 && seen.every(([, e]) => e), 'the clock’s guesses, marked so')
+  const guessed = seen.length
+  bar.onProgress({ done: 0, total: 0 })
+  bar.onProgress({ done: 10, total: 40 })
+  // A retry on the CPU starts a fresh count: the bar holds.
+  bar.onProgress({ done: 2, total: 40 })
+  bar.onProgress({ done: 30, total: 40 })
+  await new Promise((r) => setTimeout(r, 15))
+  bar.stop()
+  assert.deepEqual(seen.slice(guessed), [
+    [0.25, false],
+    [0.75, false]
+  ])
 })

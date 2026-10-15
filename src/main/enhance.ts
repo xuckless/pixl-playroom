@@ -70,8 +70,8 @@ import type { ProxyFile } from './proxy'
 
 const TIFF = { Tiff: { compression: 'None' } } as const
 const ICC_ONLY = { exif: false, icc: true, xmp: false, iptc: false } as const
-import { estimate } from '../shared/ai'
 import { ENHANCE_RATE_KEY } from './ai/rates'
+import { stageBar } from './ai/stagebar'
 
 export interface EnhanceAvailability {
   available: boolean
@@ -273,7 +273,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
             ...common,
             framing: uprightFraming(orientation, info)
           },
-          { signal: ctx.signal }
+          { signal: ctx.signal, onProgress: counted.onProgress }
         )
       }
       // A RAW's float frame is read clipped to 0..1 (laid back under its headroom guard).
@@ -283,15 +283,16 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
       const input = await modelInput(this.engine, dir, master, heavyThreads())
       return this.engine.convert(
         { ...blankRequest(input.path, out, input.input), ...common },
-        { signal: ctx.signal }
+        { signal: ctx.signal, onProgress: counted.onProgress }
       )
     }
-    // The engine says nothing until it is done: the bar follows the clock.
+    // The bar follows what the engine counts (E68: the chain's windows, all
+    // laid out before the first runs); the clock only until it counts.
     const rates = await enhanceRates(this.settings)
     const expected = Math.max(1000, estimateMs(steps, master.width, master.height, rates))
     const t0 = Date.now()
     ctx.stage('enhance', 0, `${chainSubject(steps)} · ${row.name}`)
-    const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
+    const counted = stageBar(ctx.progress, expected)
     try {
       let report: ConvertReport
       try {
@@ -300,7 +301,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         if (ctx.signal.aborted) throw new Cancelled()
         throw err
       } finally {
-        clearInterval(tick)
+        counted.stop()
       }
       if (ctx.signal.aborted) throw new Cancelled()
       void this.settings
