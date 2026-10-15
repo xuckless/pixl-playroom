@@ -82,17 +82,23 @@ export function floatCanvasKnown(): boolean | null {
   return known
 }
 
-/**
- * Draw `frame` on `canvas` (sized to it). False when WebGPU is not there or
- * the canvas would not take it: the caller draws the SDR companion.
- */
-export async function drawFloat(canvas: HTMLCanvasElement, frame: FloatFrame): Promise<boolean> {
-  const g = await gpuOnce()
-  if (!g) return false
-  const ctx = canvas.getContext('webgpu')
-  if (!ctx) return false
-  canvas.width = frame.width
-  canvas.height = frame.height
+/** What a canvas keeps between frames: its context, configured once, and the texture it uploads into. */
+interface CanvasGpu {
+  /** The device it was configured for: a lost device's successor configures it again. */
+  device: GPUDevice
+  ctx: GPUCanvasContext
+  tex: GPUTexture | null
+  bind: GPUBindGroup | null
+}
+
+const canvases = new WeakMap<HTMLCanvasElement, CanvasGpu>()
+
+/** `canvas`'s WebGPU context, configured on first use; null when it will not take one. */
+function canvasGpu(g: Gpu, canvas: HTMLCanvasElement): CanvasGpu | null {
+  const kept = canvases.get(canvas)
+  if (kept && kept.device === g.device) return kept
+  const ctx = kept?.ctx ?? canvas.getContext('webgpu')
+  if (!ctx) return null
   try {
     ctx.configure({
       device: g.device,
@@ -102,31 +108,63 @@ export async function drawFloat(canvas: HTMLCanvasElement, frame: FloatFrame): P
       alphaMode: 'premultiplied'
     })
   } catch {
-    return false
+    return null
   }
-  const tex = g.device.createTexture({
-    size: [frame.width, frame.height],
-    format: 'rgba16float',
-    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
-  })
+  const made: CanvasGpu = { device: g.device, ctx, tex: null, bind: null }
+  canvases.set(canvas, made)
+  return made
+}
+
+/** A canvas leaving the page: its texture goes now, not when the collector gets to it. */
+export function releaseFloat(canvas: HTMLCanvasElement): void {
+  const c = canvases.get(canvas)
+  canvases.delete(canvas)
+  const tex = c?.tex
+  if (tex) void c.device.queue.onSubmittedWorkDone().then(() => tex.destroy())
+}
+
+/**
+ * Draw `frame` on `canvas` (sized to it). False when WebGPU is not there or
+ * the canvas would not take it: the caller draws the SDR companion. A canvas
+ * keeps its context and its texture from frame to frame (a drag draws
+ * dozens a second into one canvas); a texture is made only for a new size.
+ */
+export async function drawFloat(canvas: HTMLCanvasElement, frame: FloatFrame): Promise<boolean> {
+  const g = await gpuOnce()
+  if (!g) return false
+  const c = canvasGpu(g, canvas)
+  if (!c) return false
+  if (canvas.width !== frame.width) canvas.width = frame.width
+  if (canvas.height !== frame.height) canvas.height = frame.height
+  if (!c.tex || c.tex.width !== frame.width || c.tex.height !== frame.height) {
+    // The last size's goes once the GPU is done with what it drew.
+    const old = c.tex
+    if (old) void g.device.queue.onSubmittedWorkDone().then(() => old.destroy())
+    c.tex = g.device.createTexture({
+      size: [frame.width, frame.height],
+      format: 'rgba16float',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+    })
+    c.bind = g.device.createBindGroup({
+      layout: g.pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: c.tex.createView() },
+        { binding: 1, resource: g.sampler }
+      ]
+    })
+  }
+  // In the queue after the last frame's draw: that one reads what it was given.
   g.device.queue.writeTexture(
-    { texture: tex },
+    { texture: c.tex },
     frame.data,
     { bytesPerRow: frame.width * 8 },
     { width: frame.width, height: frame.height }
   )
-  const bind = g.device.createBindGroup({
-    layout: g.pipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: tex.createView() },
-      { binding: 1, resource: g.sampler }
-    ]
-  })
   const enc = g.device.createCommandEncoder()
   const pass = enc.beginRenderPass({
     colorAttachments: [
       {
-        view: ctx.getCurrentTexture().createView(),
+        view: c.ctx.getCurrentTexture().createView(),
         loadOp: 'clear',
         clearValue: { r: 0, g: 0, b: 0, a: 0 },
         storeOp: 'store'
@@ -134,11 +172,9 @@ export async function drawFloat(canvas: HTMLCanvasElement, frame: FloatFrame): P
     ]
   })
   pass.setPipeline(g.pipeline)
-  pass.setBindGroup(0, bind)
+  pass.setBindGroup(0, c.bind)
   pass.draw(3)
   pass.end()
   g.device.queue.submit([enc.finish()])
-  // The canvas keeps what it was given; the texture is not needed after.
-  void g.device.queue.onSubmittedWorkDone().then(() => tex.destroy())
   return true
 }

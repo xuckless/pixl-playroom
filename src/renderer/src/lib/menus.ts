@@ -23,6 +23,8 @@ import { api, errorText } from './api'
 import { t, tp, useLanguage } from './i18n'
 import { COMMANDS, currentBindings, IS_MAC, layoutKey, listening } from './commands'
 import { chordAccelerator } from './keys'
+import { isInteracting } from './interacting'
+import { changedBeyond } from './storechange'
 
 /** A menu item with what it does, before it is sent. */
 interface Item extends Omit<MenuNode, 'submenu'> {
@@ -674,6 +676,23 @@ function editingType(type: string): boolean {
   return !['range', 'checkbox', 'radio', 'button', 'color', 'file'].includes(type)
 }
 
+/** What Develop's renders change, many times a second, and no menu item reads. */
+const RENDERS: ReadonlySet<keyof ReturnType<typeof useDevelop.getState>> = new Set([
+  'picture',
+  'pictures',
+  'before',
+  'mask',
+  'maskThumbs',
+  'keyMask',
+  'stats',
+  'hdrStats',
+  'report',
+  'rendering',
+  'headroomPlane',
+  'gamutPlane',
+  'noise'
+] as const)
+
 /**
  * Keep the bar in step with the app, answer the menus' choices, and give
  * the rest of the window its fallback right-click menu. Call once, after the
@@ -683,6 +702,12 @@ export function startMenuUpkeep(): () => void {
   let last = ''
   let timer: ReturnType<typeof setTimeout> | null = null
   const send = (): void => {
+    // A drag changes the recipe on every frame and no item with it: the bar
+    // is built once the hand is off the slider.
+    if (isInteracting()) {
+      timer = setTimeout(send, 200)
+      return
+    }
     timer = null
     const spec = menuBar()
     const json = JSON.stringify(spec)
@@ -698,7 +723,7 @@ export function startMenuUpkeep(): () => void {
   }
   const offs = [
     useLibrary.subscribe(soon),
-    useDevelop.subscribe(soon),
+    useDevelop.subscribe((s, p) => changedBeyond(s, p, RENDERS) && soon()),
     useUi.subscribe(soon),
     useCull.subscribe(soon),
     useDisplay.subscribe(soon),

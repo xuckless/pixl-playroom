@@ -164,3 +164,24 @@ export function renderDisplay(
   const h = Math.min(BOOTSTRAP_HEADROOM, display.potential ?? BOOTSTRAP_HEADROOM)
   return { whiteNits: display.whiteNits, peakNits: Math.round(display.whiteNits * h) }
 }
+
+/**
+ * Whether a settled SDR picture (or a 1:1 tile) goes to the window as an F16
+ * frame rather than 8 bits: the window draws float frames, the photo has no
+ * light above white to tone map (that keeps its 8-bit path), and the display
+ * shows more than 8 bits a channel. On an 8-bit display the float picture
+ * shows the same 256 steps, for twice the bytes and a slower settle
+ * (measured 2026-10-15: 240 ms against 175 ms at 1280 px).
+ */
+export function floatSettled(o: {
+  settled: boolean
+  /** Full HDR's display, or null for SDR. */
+  display: unknown
+  /** The window draws F16 frames (`ViewState.float`). */
+  float: boolean
+  isHdr: boolean
+  /** Bits a channel the window's display shows; null when it is not known. */
+  depth: number | null
+}): boolean {
+  return o.settled && !o.display && o.float && !o.isHdr && (o.depth === null || o.depth > 8)
+}

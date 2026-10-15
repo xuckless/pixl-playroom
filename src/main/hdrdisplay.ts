@@ -60,10 +60,24 @@ let setting: DisplayHdrSetting = normaliseDisplaySetting(null)
 let detected = false
 let last: DisplayHdr | null = null
 let win: BrowserWindow | null = null
+/** Bits a channel the window's display shows, read with its headroom; null until read. */
+let depth: number | null = null
+
+/** Bits a channel the window's display shows (10 on a Mac's XDR or P3 panel), or null when not known. */
+export function displayDepth(): number | null {
+  return depth
+}
 
 function read(): DisplayHdr {
   const r = nativeReader()
   let measured: { current: number; potential: number } | null = null
+  if (win && !win.isDestroyed()) {
+    try {
+      depth = screen.getDisplayMatching(win.getBounds()).depthPerComponent || null
+    } catch {
+      depth = null
+    }
+  }
   if (r && win && !win.isDestroyed()) {
     try {
       const id = screen.getDisplayMatching(win.getBounds()).id

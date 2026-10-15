@@ -8,7 +8,7 @@ import {
 import type { ToneCurveSetting } from '../../../shared/recipe'
 import { Select } from '../components/ui'
 import { api } from '../lib/api'
-import { scoped, useScope } from '../state/scope'
+import { scoped, useScoped } from '../state/scope'
 import { useLibrary } from '../state/library'
 import { t } from '../lib/i18n'
 
@@ -28,8 +28,8 @@ const CURVE_PRESETS_KEY = 'curve.presets'
  * of the same shape), or that it is a curve of its own.
  */
 export function CurvePresets(): React.JSX.Element {
-  const { replace, recipe: shown } = useScope()
-  const toneCurve = shown?.toneCurve
+  const { replace } = scoped
+  const toneCurve = useScoped((r) => r.toneCurve) ?? undefined
   const [saved, setSaved] = useState<SavedCurve[]>([])
   const [naming, setNaming] = useState<string | null>(null)
   useEffect(() => {

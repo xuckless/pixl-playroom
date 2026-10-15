@@ -353,7 +353,8 @@ export function FloatingToolbar(): React.JSX.Element | null {
   const setTool = useDevelop((s) => s.setTool)
   const hasPhoto = useDevelop((s) => s.session !== null)
   const addPick = useDevelop((s) => s.addPick)
-  const recipe = useDevelop((s) => s.recipe)
+  // Only the colour picker's title reads it: other tools' bars ride out a slider's ticks.
+  const recipe = useDevelop((s) => (s.tool === 'add-pick' ? s.recipe : null))
   if (tool === 'none' || !hasPhoto) return null
   const hint =
     tool === 'add-pick' && addPick

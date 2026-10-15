@@ -11,7 +11,7 @@ import { Tabs, Toggle, ToolPanel } from '../components/ui'
 import { Icon } from '../components/icons'
 import { useDevelop } from '../state/develop'
 import { t, tk } from '../lib/i18n'
-import { useScope } from '../state/scope'
+import { scoped, useInMask, useScoped } from '../state/scope'
 import { AddColourSection, RS, ToneCurveCustom } from './global'
 import { TIPS } from './tips'
 import { InfoTip } from '../components/InfoTip'
@@ -26,7 +26,6 @@ import {
   qualifierRest,
   vsPeriodic,
   type KeyBandSetting,
-  type PrimariesSetting,
   type QualifierSetting,
   type VsCurve,
   type Yrgb
@@ -63,22 +62,28 @@ const pct = (v: number): string => v.toFixed(2)
 const TEMP_TRACK = 'linear-gradient(90deg,#5b8cff,#fff,#ffb44d)'
 const TINT_TRACK = 'linear-gradient(90deg,#4dff6a,#fff,#ff4de1)'
 
-export function PrimariesBody(): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
-  if (!recipe) return null
-  const p: PrimariesSetting = recipe.primaries
-  const wheel = (key: WheelKey): React.JSX.Element => (
+/** One of the primaries' wheels, drawn again only when its own value moves. */
+function PrimaryWheel({ wheel: key }: { wheel: WheelKey }): React.JSX.Element | null {
+  const value = useScoped((r) => r.primaries[key])
+  if (!value) return null
+  return (
     <GradeWheel
-      key={key}
       label={t(NAMES[key])}
-      value={p[key]}
+      value={value}
       scale={SCALES[key]}
       size={96}
       tip={TIPS[`primaries.${key}`]}
-      onChange={(v: Yrgb, live) => edit((r) => (r.primaries[key] = v), live)}
-      onCommit={() => commit(`Primaries: ${NAMES[key]}`)}
+      onChange={(v: Yrgb, live) => scoped.edit((r) => (r.primaries[key] = v), live)}
+      onCommit={() => scoped.commit(`Primaries: ${NAMES[key]}`)}
     />
   )
+}
+
+export function PrimariesBody(): React.JSX.Element | null {
+  // Each slider and wheel reads its own value: the body reads none.
+  const hasRecipe = useDevelop((s) => s.recipe !== null)
+  if (!hasRecipe) return null
+  const wheel = (key: WheelKey): React.JSX.Element => <PrimaryWheel key={key} wheel={key} />
   return (
     <ToolPanel>
       <RS
@@ -193,12 +198,17 @@ const SWATCHES = [
 ]
 
 export function ResolveCurvesBody(): React.JSX.Element | null {
-  const { recipe, layer, edit, commit } = useScope()
+  const inMask = useInMask()
+  const { edit, commit } = scoped
   const [chosen, setTab] = useState<CurvesTab>('custom')
-  if (!recipe) return null
   // The vs curves need colour: on a black-and-white photo they would change
   // nothing (a mask's still can, before the mono conversion).
-  const mono = !layer && (recipe.treatment === 'bw' || recipe.profile.kind === 'monochrome')
+  const bw = useScoped((r) => r.treatment === 'bw' || r.profile.kind === 'monochrome')
+  const vsShown: VsCurve | null =
+    bw === null || (!inMask && bw) || chosen === 'custom' ? null : chosen
+  const vsPoints = useScoped((r) => (vsShown ? r.curvesVs[vsShown] : null))
+  if (bw === null) return null
+  const mono = !inMask && bw
   const tab = mono ? 'custom' : chosen
   const label = CURVE_TABS.find((x) => x.value === tab)!.label
   if (tab === 'custom')
@@ -217,7 +227,7 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
     )
   const vs = tab
   const periodic = vsPeriodic(vs)
-  const pts = recipe.curvesVs[vs]
+  const pts = vsPoints ?? []
   const addAt = (h: number): void => {
     // Three points on the line, the middle one at the hue: drag it to move that hue alone.
     const wrap = (x: number): number => ((x % 1) + 1) % 1
@@ -303,22 +313,27 @@ const LOG_NAMES: Record<LogKey, string> = {
  */
 const LOG_SCALE: WheelScale = { neutral: 0, reach: 0.055, ringStep: 0.001, min: -1, max: 1 }
 
-export function LogWheelsBody(): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
-  if (!recipe) return null
-  const l = recipe.logWheels
-  const wheel = (key: LogKey): React.JSX.Element => (
+/** One of the log wheels, drawn again only when its own value moves. */
+function LogWheel({ wheel: key }: { wheel: LogKey }): React.JSX.Element | null {
+  const value = useScoped((r) => r.logWheels[key])
+  if (!value) return null
+  return (
     <GradeWheel
-      key={key}
       label={t(LOG_NAMES[key])}
-      value={l[key]}
+      value={value}
       scale={LOG_SCALE}
       size={96}
       tip={TIPS[`log.${key}`]}
-      onChange={(v: Yrgb, live) => edit((r) => (r.logWheels[key] = v), live)}
-      onCommit={() => commit(`Log wheels: ${LOG_NAMES[key]}`)}
+      onChange={(v: Yrgb, live) => scoped.edit((r) => (r.logWheels[key] = v), live)}
+      onCommit={() => scoped.commit(`Log wheels: ${LOG_NAMES[key]}`)}
     />
   )
+}
+
+export function LogWheelsBody(): React.JSX.Element | null {
+  const hasRecipe = useDevelop((s) => s.recipe !== null)
+  if (!hasRecipe) return null
+  const wheel = (key: LogKey): React.JSX.Element => <LogWheel key={key} wheel={key} />
   return (
     <ToolPanel>
       <div className="gwheels">
@@ -448,7 +463,9 @@ function swatchOf(q: QualifierSetting): string {
 }
 
 export function QualifierBody(): React.JSX.Element | null {
-  const { recipe, edit, commit, replace } = useScope()
+  const { edit, commit, replace } = scoped
+  // The qualifiers alone: another card's slider leaves the keys be.
+  const qs = useScoped((r) => r.qualifiers)
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const selectedId = useDevelop((s) => s.qualifierId)
@@ -464,14 +481,15 @@ export function QualifierBody(): React.JSX.Element | null {
     },
     []
   )
-  if (!recipe) return null
-  const qs = recipe.qualifiers
+  if (!qs) return null
   const q = qs.find((x) => x.id === selectedId) ?? qs[qs.length - 1]
   const at = (r: Recipe): QualifierSetting | undefined => r.qualifiers.find((x) => x.id === q?.id)
   const full = qs.length >= MAX_QUALIFIERS
   // Each band's sliders reset to where the pick keyed it, never to where they are.
   const rest = q ? qualifierRest(q) : null
   const remove = (id: string): void => {
+    const recipe = scoped.recipe()
+    if (!recipe) return
     const next = structuredClone(recipe)
     next.qualifiers = next.qualifiers.filter((x) => x.id !== id)
     void replace(next, tk('Qualifier: remove'))

@@ -206,7 +206,8 @@ const api = {
     onHdr: (cb: (p: { photoId: number; hdr: HdrKind | null }) => void) => on(IPC.library.hdr, cb),
     /** A photo's search words from Gemma's names (every copy shares them). */
     onNames: (cb: (p: { photoId: number; words: string[] }) => void) => on(IPC.library.names, cb),
-    onChanged: (cb: (p: { folder: string }) => void) => on(IPC.library.changed, cb),
+    onChanged: (cb: (p: { folder: string; items?: LibraryItem[] }) => void) =>
+      on(IPC.library.changed, cb),
     openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
     resolvePaths: (paths: string[]) =>
       call<{ folder: string | null; keys: string[] }>(IPC.library.resolvePaths, paths),

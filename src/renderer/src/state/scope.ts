@@ -4,12 +4,13 @@
  * Calibration edit that mask's own settings, which apply where it selects;
  * otherwise they edit the whole photo. Lens and Crop always edit the photo.
  *
- * A panel reads `recipe` and writes through `edit` / `commit` / `replace`
- * exactly as it would the store's: in a mask the recipe it sees carries the
- * mask's settings in place of the photo's, and what it changes there lands
- * in the mask.
+ * A panel reads what it shows through `useScoped` (each value its own, so a
+ * slider's tick draws only what reads it) and writes through `scoped`'s
+ * `edit` / `commit` / `replace` exactly as it would the store's: in a mask
+ * the recipe it sees carries the mask's settings in place of the photo's,
+ * and what it changes there lands in the mask.
  */
-import { useMemo } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { SETTINGS_KEYS, type LocalLayer, type Recipe } from '../../../shared/recipe'
 import { useDevelop } from './develop'
 import { useUi } from './ui'
@@ -43,30 +44,20 @@ export function changeIn(r: Recipe, layerId: string | null, change: (r: Recipe) 
   for (const k of SETTINGS_KEYS) s[k] = view[k]
 }
 
-export interface Scope {
-  /** The mask being edited, or null for the whole photo. */
-  layer: LocalLayer | null
-  /** The recipe as the panel sees it (the mask's settings in a mask). */
-  recipe: Recipe | null
-  edit(change: (r: Recipe) => void, interactive?: boolean): void
-  /** Record a step; in a mask its name leads the label ("Mask 1: Exposure"). */
-  commit(label: string): void
-  /** Take `next` (a changed copy of `recipe`) as the scope's settings, and record a step. */
-  replace(next: Recipe, label: string): void
-}
-
 function scopeNow(): { layerId: string | null } {
   const dev = useDevelop.getState()
   const layer = scopeLayer(dev.recipe, dev.layerId, useUi.getState().masksWin.open)
   return { layerId: layer?.id ?? null }
 }
 
-/** The scope's actions outside React (the loupe's tools): the same as `useScope`'s. */
+/** The scope's mask and recipe as they are now, and its actions: for panels and the loupe's tools. */
 export const scoped = {
+  /** The mask being edited, or null for the whole photo. */
   layer(): LocalLayer | null {
     const dev = useDevelop.getState()
     return scopeLayer(dev.recipe, dev.layerId, useUi.getState().masksWin.open)
   },
+  /** The recipe as the panel sees it (the mask's settings in a mask). */
   recipe(): Recipe | null {
     const r = useDevelop.getState().recipe
     return r ? scopedView(r, scoped.layer()) : null
@@ -95,17 +86,34 @@ export const scoped = {
   }
 }
 
-export function useScope(): Scope {
-  const recipe = useDevelop((s) => s.recipe)
-  const layerId = useDevelop((s) => s.layerId)
+/** Whether the panels edit a mask now: a tick of any slider leaves it be. */
+export function useInMask(): boolean {
   const open = useUi((s) => s.masksWin.open)
-  const layer = scopeLayer(recipe, layerId, open)
-  const view = useMemo(() => (recipe ? scopedView(recipe, layer) : null), [recipe, layer])
-  return {
-    layer,
-    recipe: view,
-    edit: scoped.edit,
-    commit: scoped.commit,
-    replace: scoped.replace
-  }
+  return useDevelop((s) => scopeLayer(s.recipe, s.layerId, open) !== null)
+}
+
+/** The mask the panels edit as its chip shows it (its id, name and own overlay hue), or null. */
+export function useScopeMask(): { id: string; name: string; hue: number | undefined } | null {
+  const open = useUi((s) => s.masksWin.open)
+  return useDevelop(
+    useShallow((s) => {
+      const layer = scopeLayer(s.recipe, s.layerId, open)
+      return layer ? { id: layer.id, name: layer.name, hue: layer.overlayHue } : null
+    })
+  )
+}
+
+/**
+ * What `pick` reads of the recipe as the scope sees it (null without one):
+ * a value, or a few as an array or an object, compared shallowly, so a
+ * tick of a slider elsewhere does not draw what reads it again. `pick`
+ * returns what the recipe holds, never a copy made for the call.
+ */
+export function useScoped<T>(pick: (r: Recipe) => T): T | null {
+  const open = useUi((s) => s.masksWin.open)
+  return useDevelop(
+    useShallow((s) =>
+      s.recipe ? pick(scopedView(s.recipe, scopeLayer(s.recipe, s.layerId, open))) : null
+    )
+  )
 }

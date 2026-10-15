@@ -64,7 +64,8 @@ function openLooks(query = ''): void {
 }
 
 export function PresetsPane(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
+  // Whether a photo is open: a slider's tick leaves the list be.
+  const hasRecipe = useDevelop((s) => s.recipe !== null)
   const mine = useLooks((s) => s.mine)
   const user = useLooks((s) => s.user)
   const applied = useApplied()
@@ -75,7 +76,7 @@ export function PresetsPane(): React.JSX.Element | null {
   useLookHoverCleanup()
   const myLooks = (mine ?? []).flatMap((id) => LOOK_BY_ID.get(id) ?? [])
   const reorder = useReorder((from, to) => useLooks.getState().move(myLooks[from].id, to))
-  if (!recipe) return <p className="rail-empty">{t('Open a photo to use presets.')}</p>
+  if (!hasRecipe) return <p className="rail-empty">{t('Open a photo to use presets.')}</p>
   // Alt (Option) puts a look on top of the applied one instead of in its place.
   const apply = (p: Preset, stack: boolean): void => {
     leaveLook(true)

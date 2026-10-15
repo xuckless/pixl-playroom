@@ -70,6 +70,8 @@ import { lutsFor } from './lutfile'
 import { cacheFile } from './contain'
 import { maskFramesFor } from './maskframe'
 import { keyOf } from './keys'
+import { coalesceByKey, mergeChanged, thumbsAgain } from './coalesce'
+import { rateLimited } from './lograte'
 import { paths } from './paths'
 import { pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
@@ -95,8 +97,22 @@ export { keyOf, parseKey } from './keys'
 export const THUMB_EDGE = 400
 /** The picture Gemma names: the guide's "Playroom's 1024 px JPEG". */
 export const NAMING_EDGE = 1024
+/** A folder's changes gathered for this long before the window is told (at most CHANGED_MAX_MS). */
+const CHANGED_WAIT_MS = 300
+const CHANGED_MAX_MS = 1000
 /** The most photos whose proxies are made ahead at once (see `warm`). */
 const WARM_MAX = 3
+
+/**
+ * A failed thumbnail, logged: a folder of unreadable files logs the first
+ * few and then one count, not a line a photo.
+ */
+const warnThumb = rateLimited(
+  5,
+  10_000,
+  (...args) => log.warn(...args),
+  (n) => `${n} more thumbnails failed`
+)
 
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
@@ -140,6 +156,10 @@ export class Library {
   private running = 0
   /** The duplicate search hashing pictures now, if any. */
   private dupes: AbortController | null = null
+  /** Per folder, the photos whose facts changed since the window was last told; null: the listing. */
+  private changedPhotos = new Map<string, Set<number> | null>()
+  /** The keys the window last listed (a folder or any source): a fill's thumbnails are queued there. */
+  private listed: ReadonlySet<string> = new Set()
 
   /** What edited photos looked like before engine 0.17: the first-open comparison. */
 
@@ -151,9 +171,19 @@ export class Library {
     /** DNG camera profiles kept and found (engine 0.21, E21): what a `dcp:<id>` colour names. */
     readonly profiles: CameraProfiles | null = null
   ) {
+    // A folder's changes gathered (the scan, its sidecars and its EXIF land
+    // close together): the window told once, with the items whose facts
+    // changed where that is all that did, else to list the folder again.
+    const changed = coalesceByKey(
+      (folder) => void this.tellChanged(folder),
+      CHANGED_WAIT_MS,
+      CHANGED_MAX_MS
+    )
     index.on((e) => {
-      if (e.name === 'changed') this.broadcast(IPC.library.changed, { folder: e.folder })
-      else if (e.name === 'sources') this.broadcast(IPC.library.sourcesChanged, null)
+      if (e.name === 'changed') {
+        this.changedPhotos.set(e.folder, mergeChanged(this.changedPhotos.get(e.folder), e.photos))
+        changed(e.folder)
+      } else if (e.name === 'sources') this.broadcast(IPC.library.sourcesChanged, null)
     })
   }
 
@@ -511,9 +541,24 @@ export class Library {
   /** A folder's items as the index has them; its thumbnails are queued. */
   async openFolder(folder: string): Promise<LibraryItem[]> {
     const items = await this.index.listFolder(folder)
+    this.listed = new Set(items.map((it) => it.key))
     for (const it of items) this.queueThumb(it.photoId, it.copyId)
     this.queueHdr(items)
     return items
+  }
+
+  /**
+   * Tell the window a folder changed: the changed photos' items in, when
+   * only their facts did (the thumbnails of those it lists made again if the
+   * sidecar moved the recipe), else a listing to ask for again.
+   */
+  private async tellChanged(folder: string): Promise<void> {
+    const photos = this.changedPhotos.get(folder)
+    this.changedPhotos.delete(folder)
+    const items = photos ? await this.index.itemsOfIds([...photos]).catch(() => null) : null
+    if (!items) return this.broadcast(IPC.library.changed, { folder })
+    for (const it of thumbsAgain(items, this.listed)) this.queueThumb(it.photoId, it.copyId)
+    this.broadcast(IPC.library.changed, { folder, items })
   }
 
   /**
@@ -528,6 +573,7 @@ export class Library {
       src.kind === 'duplicates'
         ? await this.duplicates(src.folder, src.threshold)
         : await this.index.listSource(src)
+    this.listed = new Set(listing.items.map((it) => it.key))
     for (const it of listing.items) if (!it.offline) this.queueThumb(it.photoId, it.copyId)
     this.queueHdr(listing.items)
     return listing
@@ -729,7 +775,7 @@ export class Library {
       this.running++
       this.thumb(job)
         .catch((err) => {
-          log.warn('thumbnail failed', job, err?.message ?? err)
+          warnThumb('thumbnail failed', job, err?.message ?? err)
           // Only the engine failing to read the file says the photo is
           // unreadable (once per version of it: not tried again until it
           // changes). Anything else (the index stopping at quit, a plane not

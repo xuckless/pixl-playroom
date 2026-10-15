@@ -8,7 +8,7 @@ import {
 } from '../../../shared/resolve'
 import { Select } from '../components/ui'
 import { api } from '../lib/api'
-import { scoped, useScope } from '../state/scope'
+import { scoped, useScoped } from '../state/scope'
 import { useLibrary } from '../state/library'
 import { t } from '../lib/i18n'
 
@@ -29,8 +29,8 @@ const pointsOf = (vs: VsCurve, p: VsPreset): VsPreset['points'] =>
  * one of its own.
  */
 export function VsPresets({ vs, label }: { vs: VsCurve; label: string }): React.JSX.Element {
-  const { replace, recipe: shown } = useScope()
-  const pts = shown?.curvesVs[vs]
+  const { replace } = scoped
+  const pts = useScoped((r) => r.curvesVs[vs]) ?? undefined
   const [saved, setSaved] = useState<Saved>({})
   const [naming, setNaming] = useState<string | null>(null)
   useEffect(() => {

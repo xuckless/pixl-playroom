@@ -88,7 +88,8 @@ import type {
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import { CEILING_MAX, CEILING_MIN } from '../shared/export'
-import { DETECTED_PEAK, REFERENCE_WHITE } from '../shared/hdrdisplay'
+import { DETECTED_PEAK, floatSettled, REFERENCE_WHITE } from '../shared/hdrdisplay'
+import { displayDepth } from './hdrdisplay'
 import {
   IPC,
   type BasicSetting,
@@ -120,7 +121,7 @@ import {
   measureAutoWb,
   rendersDir
 } from './autowb'
-import { brushPlanes } from './brushes'
+import { brushPlanes, forgetPlanes } from './brushes'
 import { lutsFor } from './lutfile'
 import { cacheFile } from './contain'
 import { maskFramesFor, maskGrid, planeOnFrame, rebaseMasks } from './maskframe'
@@ -1353,13 +1354,15 @@ class Session {
   /** A level that could not be made (or has no full-size frame yet): not asked again. */
   private screenFailed: string | null = null
 
-  /**
-   * Whether a settled SDR picture (or a 1:1 tile) goes as an F16 frame: the
-   * window draws float frames (`ViewState.float`), and the photo has no light
-   * above white to tone map (that keeps its 8-bit path).
-   */
+  /** Whether a settled SDR picture (or a 1:1 tile) goes as an F16 frame (`floatSettled`). */
   private floatSdr(kind: Kind, display: unknown): boolean {
-    return kind === 'full' && !display && this.view.float === true && !this.info.is_hdr
+    return floatSettled({
+      settled: kind === 'full',
+      display,
+      float: this.view.float === true,
+      isHdr: this.info.is_hdr,
+      depth: displayDepth()
+    })
   }
 
   /** The edge the loupe wants past the proxy's, or null when the proxy serves. */
@@ -3845,7 +3848,9 @@ class Session {
     this.coverageAbort?.abort()
     // Corrected proxies for any other correction are no longer read.
     void pruneLensed(this.row, this.key, this.lensKey(this.recipe))
-    void sweepPhoto(this.dir, paths.photoCache(this.row.id))
+    // Its planes are looked for on disk again once the sweep is done.
+    const cache = paths.photoCache(this.row.id)
+    void sweepPhoto(this.dir, cache).finally(() => forgetPlanes(cache))
     const saved = (this.save ? this.persist() : Promise.resolve()).then(() => {
       // A thumbnail still waiting for a pause is made now.
       if (this.thumbTimer) this.thumbLater(true)

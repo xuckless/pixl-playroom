@@ -164,7 +164,9 @@ interface TatDrag {
 
 export function Loupe(): React.JSX.Element {
   const session = useDevelop((s) => s.session)
-  const recipe = useDevelop((s) => s.recipe)
+  // Whether there is one: the handlers read the recipe as they run, so a
+  // slider's tick does not draw the loupe again (its picture will).
+  const hasRecipe = useDevelop((s) => s.recipe !== null)
   const picture = useDevelop((s) => s.picture)
   const before = useDevelop((s) => s.before)
   const tool = useDevelop((s) => s.tool)
@@ -343,6 +345,7 @@ export function Loupe(): React.JSX.Element {
   // drag moves what controls it from the recipe the press started with.
   const tat = useRef<TatDrag | null>(null)
   const startTat = async (e: React.PointerEvent<HTMLDivElement>): Promise<void> => {
+    const recipe = useDevelop.getState().recipe
     if (e.button !== 0 || !recipe || !picture || !vrect) return
     const box = e.currentTarget.getBoundingClientRect()
     const p = normalisedIn(e.clientX, e.clientY, {
@@ -418,6 +421,7 @@ export function Loupe(): React.JSX.Element {
 
   const pick = useCallback(
     async (e: React.MouseEvent<HTMLDivElement>) => {
+      const recipe = useDevelop.getState().recipe
       if (!session || !recipe || !g || !vrect) return
       const box = e.currentTarget.getBoundingClientRect()
       const p = normalisedIn(e.clientX, e.clientY, {
@@ -583,7 +587,7 @@ export function Loupe(): React.JSX.Element {
         setTool('none')
       }
     },
-    [session, recipe, g, vrect, tool, picture, layerId, replace, setTool]
+    [session, g, vrect, tool, picture, layerId, replace, setTool]
   )
 
   // Opening: the photo's first look (its thumbnail, an unedited RAW's
@@ -594,7 +598,7 @@ export function Loupe(): React.JSX.Element {
         <FirstLook />
       </div>
     )
-  if (!session || !recipe)
+  if (!session || !hasRecipe)
     return (
       <div className="loupe-idle">
         <Ambient intensity={0.8} />
@@ -607,8 +611,8 @@ export function Loupe(): React.JSX.Element {
     )
   const shown = compare === 'before' && before ? before : picture
   const rotate =
-    tool === 'crop' && recipe.geometry.straighten !== 0
-      ? `rotate(${recipe.geometry.straighten}deg)`
+    tool === 'crop' && geometry && geometry.straighten !== 0
+      ? `rotate(${geometry.straighten}deg)`
       : undefined
   const scale = viewport && zoom.scale !== 'fit' ? scaleOf(viewport, zoom) : null
   return (

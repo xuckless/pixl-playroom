@@ -1,5 +1,5 @@
 import { setSectionOff } from '../../../shared/edits'
-import type { ComponentType } from 'react'
+import { memo, useMemo, type ComponentType } from 'react'
 import {
   BASIC_HEAD_FIELDS,
   BASIC_TITLE,
@@ -39,7 +39,7 @@ import { rich, t, tk } from '../lib/i18n'
 import { LensPanel } from '../panels/lens'
 import { TIPS } from '../panels/tips'
 import { useDevelop } from '../state/develop'
-import { scoped, scopedView, scopeLayer, useScope } from '../state/scope'
+import { scoped, scopedView, scopeLayer, useScopeMask } from '../state/scope'
 import { useUi, type Drawer, type Panel } from '../state/ui'
 import { GlassSelect } from '../components/GlassSelect'
 import { useKeyHint } from '../lib/commands'
@@ -70,14 +70,11 @@ const HEADER: Partial<Record<CardId, ComponentType>> = { light: AutoTone }
  * whole photo again): every card the column shows then edits the mask.
  */
 function ScopeChip(): React.JSX.Element | null {
-  const { layer } = useScope()
+  const layer = useScopeMask()
   const overlayHue = useUi((s) => s.maskOverlay.hue)
   if (!layer) return null
   return (
-    <div
-      className="scope-chip"
-      style={{ ['--scope-hue' as string]: layer.overlayHue ?? overlayHue }}
-    >
+    <div className="scope-chip" style={{ ['--scope-hue' as string]: layer.hue ?? overlayHue }}>
       <span className="scope-dot" />
       <span className="scope-text">{rich('Editing {{name}}', { name: <b>{layer.name}</b> })}</span>
       <button
@@ -125,8 +122,12 @@ function useCardState(spec: CardSpec): {
   return { changed, off, inMask, switchOff, reset }
 }
 
-/** One adjustment card, the section shown: its dot and reset from its fields. */
-function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
+/**
+ * One adjustment card, the section shown: its dot and reset from its fields.
+ * Memoised, as are the parts and Basic: a slider's tick draws its own row
+ * again (and a dot that turns), not the column.
+ */
+const AdjustCard = memo(function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
   const { changed, off, inMask, switchOff, reset } = useCardState(spec)
   const Body = BODIES[spec.id]
   const Right = HEADER[spec.id]
@@ -145,10 +146,10 @@ function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
       <Body />
     </Card>
   )
-}
+})
 
 /** One part of Basic corrections: a card's own header (dot, (i), eye, reset) over its sliders. */
-function CardPart({ spec }: { spec: CardSpec }): React.JSX.Element {
+const CardPart = memo(function CardPart({ spec }: { spec: CardSpec }): React.JSX.Element {
   const { changed, off, inMask, switchOff, reset } = useCardState(spec)
   const Body = BODIES[spec.id]
   const Right = HEADER[spec.id]
@@ -170,7 +171,7 @@ function CardPart({ spec }: { spec: CardSpec }): React.JSX.Element {
       </div>
     </section>
   )
-}
+})
 
 const valueAt = (o: unknown, path: string[]): unknown =>
   path.reduce<unknown>(
@@ -187,7 +188,7 @@ const headChanged = (view: Recipe, base: Recipe): boolean =>
  * Presence, each with its own header. Its own eye and reset act on all of
  * it; in a mask, on the three a mask carries.
  */
-function BasicPanel({ parts }: { parts: CardSpec[] }): React.JSX.Element {
+const BasicPanel = memo(function BasicPanel({ parts }: { parts: CardSpec[] }): React.JSX.Element {
   const masksOpen = useUi((s) => s.masksWin.open)
   const changed = useDevelop((s) => {
     if (!s.recipe) return false
@@ -237,7 +238,7 @@ function BasicPanel({ parts }: { parts: CardSpec[] }): React.JSX.Element {
       ))}
     </Card>
   )
-}
+})
 
 const DRAWERS: Record<Exclude<Drawer, 'adjust'>, { title: string; Body: ComponentType }> = {
   crop: { title: tk('Crop & straighten'), Body: CropDrawer },
@@ -318,10 +319,12 @@ function SectionPicker({ panels, shown }: { panels: PanelId[]; shown: Panel }): 
  */
 export function AdjustStack(): React.JSX.Element {
   const drawer = useUi((s) => s.drawer)
-  const layer = useScope().layer
+  const layer = useScopeMask()
   const overlayHue = useUi((s) => s.maskOverlay.hue)
   const focus = useUi((s) => s.focusCard)
   const panels = panelsFor(!!layer, useLegacyHeld())
+  const inMask = !!layer
+  const basicParts = useMemo(() => panelCards('basic').filter((c) => !inMask || c.inMask), [inMask])
   // A section this scope or set does not offer gives way to the first that is.
   const shown: Panel =
     focus === 'enhance' || panels.includes(focus)
@@ -333,7 +336,7 @@ export function AdjustStack(): React.JSX.Element {
   return (
     <div
       className={`panels adjust${layer ? ' scoped' : ''}`}
-      style={layer ? { ['--scope-hue' as string]: layer.overlayHue ?? overlayHue } : undefined}
+      style={layer ? { ['--scope-hue' as string]: layer.hue ?? overlayHue } : undefined}
     >
       <ScopeChip />
       {drawer === 'adjust' ? (
@@ -350,7 +353,7 @@ export function AdjustStack(): React.JSX.Element {
               <EnhancePanel />
             </Card>
           ) : shown === 'basic' ? (
-            <BasicPanel parts={panelCards('basic').filter((c) => !layer || c.inMask)} />
+            <BasicPanel parts={basicParts} />
           ) : (
             <AdjustCard key={shown} spec={cardSpec(shown)} />
           )}

@@ -6,6 +6,7 @@ import { api } from '../../lib/api'
 import { isFrame, whenFrame } from '../../lib/frames'
 import { Picture } from './DecodedImage'
 import { isInteracting } from '../../lib/interacting'
+import { liveTiles } from '../../lib/livetile'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { useUi } from '../../state/ui'
@@ -22,13 +23,18 @@ interface Tile extends RegionResult {
   whole: boolean
   /** The display it was made for (Full HDR), as `hdrKey`. */
   hdr: string
+  /** Made during a drag: shown while the drag runs, though the recipe has moved on a tick. */
+  live: boolean
+  /** Its ask's number: a tile never replaces one asked for after it. */
+  seq: number
 }
 
 /**
  * Past the preview's own resolution, the part of the photo in view rendered
  * by the engine from the full-resolution source, laid over the picture: the
- * zoomed loupe stays sharp. It follows the recipe once an edit rests, and
- * hides while one runs (the preview under it is the live picture). Asked
+ * zoomed loupe stays sharp. It follows the recipe once an edit rests; while
+ * one runs it follows as it goes where tiles come quickly (lib/livetile.ts),
+ * else it hides (the preview under it is the live picture). Asked
  * for and placed as fractions of the picture as shown: since engine 0.16 a
  * region of a straightened, warped, lens-corrected or cropped photo is the
  * full render's own pixels there. Only the crop tool's view of an Upright
@@ -77,6 +83,12 @@ export const SharpTile = memo(function SharpTile({
   const request = useRef(0)
   /** The ask in flight or shown, by what it is of: the same again is not asked (it would cancel it). */
   const asked = useRef<string | null>(null)
+  /** How long the last tile took to make, and whether one is on its way (`liveTiles`). */
+  const lastMs = useRef(Infinity)
+  const inFlight = useRef(false)
+  /** Asks made, numbered; and the view the newest is of. */
+  const asks = useRef(0)
+  const shownView = useRef<string | null>(null)
   const shownWidth = g.crop && !g.whole ? g.crop.width * g.width : g.width
   // The preview is enough while it has a pixel for every device pixel.
   const wanted = scale > (previewWidth / shownWidth) * 1.1 && !(g.whole && g.transform)
@@ -86,8 +98,11 @@ export const SharpTile = memo(function SharpTile({
     const id = ++request.current
     const ask = (): void => {
       if (id !== request.current) return
-      // An edit is running: the next rest asks again.
-      if (isInteracting()) return void (timer = setTimeout(ask, SETTLE_MS))
+      // An edit is running: a tile as it goes when they come quickly, else
+      // the next rest asks again.
+      const live = isInteracting()
+      if (live && !liveTiles(lastMs.current, inFlight.current))
+        return void (timer = setTimeout(ask, SETTLE_MS))
       const vis = visiblePart(box, rect)
       if (vis.w <= 0 || vis.h <= 0) return
       const mx = (vis.w / rect.w) * MARGIN
@@ -104,14 +119,22 @@ export const SharpTile = memo(function SharpTile({
       const what = JSON.stringify([part, g.whole === true, hdr, recipe])
       if (what === asked.current) return
       asked.current = what
+      const view = JSON.stringify([part, g.whole === true, hdr])
+      shownView.current = view
+      const seq = ++asks.current
+      inFlight.current = true
       void api.develop
         .region(part)
         .then(async (r) => {
+          lastMs.current = r.ms
           // A Full HDR tile is a frame: here once its pixels are (their own port).
           if (isFrame(r.url) && !(await whenFrame(r.url))) throw new Error('frame gone')
-          if (id !== request.current) return
+          // A drag's tile is wanted after its ask: the slider has moved on,
+          // the view has not. Any other is wanted only as the newest ask.
+          if (live ? shownView.current !== view : id !== request.current) return
           setTile((was) => {
-            const next = { ...r, recipe, whole: g.whole === true, hdr }
+            if (was && was.seq > seq) return was
+            const next = { ...r, recipe, whole: g.whole === true, hdr, live, seq }
             // The same view made better: the old one stays under it while it fades in.
             setUnder(was && was.recipe === recipe && was.hdr === hdr ? was : null)
             return next
@@ -121,8 +144,15 @@ export const SharpTile = memo(function SharpTile({
           // Cancelled or failed: the next rest may ask again.
           if (asked.current === what) asked.current = null
         })
+        .finally(() => {
+          if (asks.current === seq) inFlight.current = false
+        })
     }
-    let timer = setTimeout(ask, SETTLE_MS)
+    // A drag asks at once while tiles come quickly; a rest after SETTLE_MS.
+    let timer = setTimeout(
+      ask,
+      isInteracting() && liveTiles(lastMs.current, inFlight.current) ? 0 : SETTLE_MS
+    )
     return () => clearTimeout(timer)
     // The rect follows the box and the view; the geometry follows the recipe.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,7 +175,8 @@ export const SharpTile = memo(function SharpTile({
   if (
     !wanted ||
     !tile ||
-    tile.recipe !== recipe ||
+    // A drag's tile while the drag runs; else the tile of the recipe as it is.
+    (tile.recipe !== recipe && !(tile.live && isInteracting())) ||
     tile.whole !== (g.whole === true) ||
     tile.hdr !== hdr
   )

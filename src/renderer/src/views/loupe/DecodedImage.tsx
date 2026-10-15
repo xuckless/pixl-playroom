@@ -1,7 +1,8 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { frameBitmap, frameFloat, isFrame } from '../../lib/frames'
-import { drawFloat, type FloatFrame } from '../../lib/floatcanvas'
+import { drawFloat, releaseFloat, type FloatFrame } from '../../lib/floatcanvas'
 import { isInteracting } from '../../lib/interacting'
+import { fadeDone, slotKey, swapPicture, type PictureSlots } from '../../lib/pictureslots'
 
 /**
  * The longest a loaded picture waits on `decode()`. Chromium settles a
@@ -17,6 +18,11 @@ const DECODE_WAIT_MS = 120
  * fades across (or, during a live edit, swaps at once). A picture already in
  * memory (a Before or Split toggle) swaps on the spot, and so does a preview
  * frame (`frame:` ids, lib/frames.ts): its pixels are here before its event.
+ *
+ * Two slots hold the pictures (lib/pictureslots.ts): a swap at once draws
+ * the next into the same element (a drag's frames go to one canvas, its GPU
+ * set-up kept), and a fade hands the shown one's element to the fading
+ * picture as it is, with the next in the other.
  */
 export const DecodedImage = memo(function DecodedImage({
   src,
@@ -27,18 +33,18 @@ export const DecodedImage = memo(function DecodedImage({
   className?: string
   style?: React.CSSProperties
 }): React.JSX.Element {
-  const [shown, setShown] = useState(src)
-  const [prev, setPrev] = useState<string | null>(null)
+  const [slots, setSlots] = useState<PictureSlots>({ shown: src, prev: null, slot: 0 })
+  const { shown, prev, slot } = slots
   useEffect(() => {
     if (src === shown) return
     let live = true
+    // Mid-drag the next picture is already on its way: swap, don't fade.
+    const swap = (): void => {
+      if (live) setSlots((s) => swapPicture(s, src, !isInteracting()))
+    }
     if (isFrame(src)) {
       // Already drawn pixels: swapped on the next tick, nothing to load.
-      void Promise.resolve().then(() => {
-        if (!live) return
-        setPrev(isInteracting() ? null : shown)
-        setShown(src)
-      })
+      void Promise.resolve().then(swap)
       return () => {
         live = false
       }
@@ -57,12 +63,7 @@ export const DecodedImage = memo(function DecodedImage({
               new Promise((done) => setTimeout(done, DECODE_WAIT_MS))
             ])
           )
-    void ready.then(() => {
-      if (!live) return
-      // Mid-drag the next picture is already on its way: swap, don't fade.
-      setPrev(isInteracting() ? null : shown)
-      setShown(src)
-    })
+    void ready.then(swap)
     return () => {
       live = false
     }
@@ -71,14 +72,19 @@ export const DecodedImage = memo(function DecodedImage({
     <>
       {prev && prev !== shown && (
         <Picture
-          key={prev}
+          key={slotKey(slot === 0 ? 1 : 0)}
           src={prev}
           className={`${className ?? ''} decoded-prev`}
           style={style}
-          onAnimationEnd={() => setPrev(null)}
+          onAnimationEnd={() => setSlots(fadeDone)}
         />
       )}
-      <Picture key={shown} src={shown} className={`${className ?? ''} decoded-now`} style={style} />
+      <Picture
+        key={slotKey(slot)}
+        src={shown}
+        className={`${className ?? ''} decoded-now`}
+        style={style}
+      />
     </>
   )
 })
@@ -129,9 +135,7 @@ function FrameCanvas({
     const c = ref.current
     const bmp = frameBitmap(src)
     if (!c || !bmp || float) return
-    c.width = bmp.width
-    c.height = bmp.height
-    c.getContext('2d', { colorSpace: 'display-p3' })?.drawImage(bmp, 0, 0)
+    drawBitmap(c, bmp)
   }, [src, float])
   if (float)
     return (
@@ -177,17 +181,20 @@ function FloatFrameCanvas({
     if (!c) return
     if (fallback) {
       const bmp = frameBitmap(src)
-      if (!bmp) return
-      c.width = bmp.width
-      c.height = bmp.height
-      c.getContext('2d', { colorSpace: 'display-p3' })?.drawImage(bmp, 0, 0)
+      if (bmp) drawBitmap(c, bmp)
       return
     }
     // Sized at once, so the layout never sees a blank 300 × 150 canvas.
-    c.width = frame.width
-    c.height = frame.height
+    sizeCanvas(c, frame.width, frame.height)
     void drawFloat(c, frame).then((ok) => !ok && setFallback(true))
   }, [src, frame, fallback])
+  // The canvas's texture goes with it.
+  useEffect(() => {
+    const c = ref.current
+    return () => {
+      if (c) releaseFloat(c)
+    }
+  }, [fallback])
   return (
     <canvas
       key={fallback ? 'sdr' : 'hdr'}
@@ -197,4 +204,21 @@ function FloatFrameCanvas({
       onAnimationEnd={onAnimationEnd}
     />
   )
+}
+
+/** A canvas at `w` × `h`; left as it is when it already is (a new size clears and reallocates it). */
+function sizeCanvas(c: HTMLCanvasElement, w: number, h: number): void {
+  if (c.width !== w) c.width = w
+  if (c.height !== h) c.height = h
+}
+
+/** A frame's bitmap on a 2D canvas, over whatever the canvas showed before. */
+function drawBitmap(c: HTMLCanvasElement, bmp: ImageBitmap): void {
+  const same = c.width === bmp.width && c.height === bmp.height
+  sizeCanvas(c, bmp.width, bmp.height)
+  const ctx = c.getContext('2d', { colorSpace: 'display-p3' })
+  if (!ctx) return
+  // A frame can have empty corners (the crop tool's warp): nothing of the last shows through.
+  if (same) ctx.clearRect(0, 0, c.width, c.height)
+  ctx.drawImage(bmp, 0, 0)
 }
