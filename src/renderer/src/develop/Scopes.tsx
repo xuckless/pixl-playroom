@@ -4,12 +4,13 @@ import { InfoTip } from '../components/InfoTip'
 import { t, tk } from '../lib/i18n'
 import type { Tip } from '../components/InfoTip'
 import { withKey } from '../lib/commands'
-import { cycleScope, type ScopeKind } from '../../../shared/scopes'
+import { cycleScope, SCOPE_KINDS, type ScopeKind } from '../../../shared/scopes'
 import { useUi } from '../state/ui'
 import { useDevelop } from '../state/develop'
 import { useScopesView } from '../state/scopesView'
 import { ScopeOptions, ScopeView } from './scopes/ScopeView'
 import { SCOPE_LABEL } from './scopes/labels'
+import { ScopeName } from './scopes/ScopeName'
 
 /** From the picture on screen: said in every binned scope's note. */
 const BINNED_NOTE = tk(
@@ -80,7 +81,7 @@ export function Scopes(): React.JSX.Element {
         >
           <Icon name="chevronLeft" />
         </button>
-        <span className="scope-name">{t(SCOPE_LABEL[kind])}</span>
+        <ScopeName kind={kind} kinds={SCOPE_KINDS} />
         <button
           className="icon sm"
           aria-label={withKey(t('Next scope'), 'scopes.next')}

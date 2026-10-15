@@ -7,12 +7,12 @@
 import { t } from '../lib/i18n'
 import { Modal, Segmented } from '../components/ui'
 import { Icon } from '../components/icons'
-import { cycleExpanded, type ExpandedScope } from '../../../shared/scopes'
+import { cycleExpanded, EXPANDED_SCOPES, type ExpandedScope } from '../../../shared/scopes'
 import { useLibrary } from '../state/library'
 import { useUi } from '../state/ui'
 import { ScopeOptions, ScopeView } from './scopes/ScopeView'
 import { ProofTag } from './Scopes'
-import { SCOPE_LABEL } from './scopes/labels'
+import { ScopeName } from './scopes/ScopeName'
 
 function Place({ index }: { index: number }): React.JSX.Element {
   const kind = useUi((s) => s.scopes.slots[index])
@@ -29,7 +29,7 @@ function Place({ index }: { index: number }): React.JSX.Element {
         <button className="icon sm" aria-label={t('Previous scope')} onClick={() => step(-1)}>
           <Icon name="chevronLeft" />
         </button>
-        <span className="scope-name">{t(SCOPE_LABEL[kind as ExpandedScope])}</span>
+        <ScopeName kind={kind as ExpandedScope} kinds={EXPANDED_SCOPES} />
         <button className="icon sm" aria-label={t('Next scope')} onClick={() => step(1)}>
           <Icon name="chevronRight" />
         </button>
