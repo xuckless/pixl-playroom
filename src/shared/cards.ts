@@ -80,7 +80,12 @@ export const CARDS: CardSpec[] = [
     fields: [['toneCurve'], ['curvesVs']],
     inMask: true
   },
-  { id: 'mixer', title: tk('HSL'), fields: [['hsl'], ['bwMix'], ['pointColors']], inMask: true },
+  {
+    id: 'mixer',
+    title: tk('HSL'),
+    fields: [['hsl'], ['bwMix'], ['pointColors'], ['density']],
+    inMask: true
+  },
   {
     id: 'primaries',
     title: tk('Primaries'),

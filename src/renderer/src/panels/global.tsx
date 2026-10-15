@@ -2,10 +2,14 @@ import { useEffect, useState } from 'react'
 import { absoluteWb, isIdentityCurve, LEFT_OUT } from '../../../shared/compile'
 import type { LutProfile } from '../../../shared/ipc'
 import {
+  BLOOM_STYLES,
+  GRAIN_RESPONSES,
   HSL_BANDS,
   HSL_BAND_CENTRES,
   MAX_POINT_COLORS,
+  type BloomStyle,
   type CurvePointSetting,
+  type GrainResponseKind,
   type HslBand,
   type PointColorSetting,
   type ProfileRef,
@@ -900,12 +904,16 @@ export function MixerBody(): React.JSX.Element | null {
     )
   }
   const axes: ('hue' | 'saturation' | 'luminance')[] =
-    tab === 'point' ? [] : tab === 'all' ? ['hue', 'saturation', 'luminance'] : [tab]
+    tab === 'point' || tab === 'density'
+      ? []
+      : tab === 'all'
+        ? ['hue', 'saturation', 'luminance']
+        : [tab]
   return (
     <ToolPanel
       actions={
         <>
-          {tab !== 'point' && <TatToggle target="hsl" />}
+          {tab !== 'point' && tab !== 'density' && <TatToggle target="hsl" />}
           <Tabs
             value={tab}
             onChange={setTab}
@@ -914,6 +922,7 @@ export function MixerBody(): React.JSX.Element | null {
               { value: 'saturation', label: 'S' },
               { value: 'luminance', label: 'L' },
               { value: 'all', label: t('All') },
+              { value: 'density', label: t('Density') },
               { value: 'point', label: t('Point') }
             ]}
           />
@@ -921,6 +930,7 @@ export function MixerBody(): React.JSX.Element | null {
       }
     >
       {tab === 'point' && <PointColorSection />}
+      {tab === 'density' && <DensitySection />}
       {axes.map((axis) => (
         <Section
           key={axis}
@@ -950,6 +960,36 @@ export function MixerBody(): React.JSX.Element | null {
         </Section>
       ))}
     </ToolPanel>
+  )
+}
+
+/**
+ * HSL's Density tab (engine 0.21): saturated colour darkened as a slide
+ * film's dyes make it, its hue kept. The overall Amount, then how much of
+ * it each hue takes (all of it, 100, by default).
+ */
+function DensitySection(): React.JSX.Element {
+  return (
+    <Section id="hsl.density" title={t('Density')} tip={TIPS['hsl.density']}>
+      <RS
+        label={tk('Amount')}
+        read={(r) => r.density.amount}
+        write={(r, v) => (r.density.amount = v)}
+      />
+      {HSL_BANDS.map((b) => {
+        const c = HSL_BAND_CENTRES[b]
+        return (
+          <RS
+            key={b}
+            label={BAND_LABEL(b)}
+            read={(r) => r.density.bands[b]}
+            write={(r, v) => (r.density.bands[b] = v)}
+            def={100}
+            track={`linear-gradient(90deg,hsl(${c} 70% 75%),hsl(${c} 80% 50%),hsl(${c} 80% 25%))`}
+          />
+        )
+      })}
+    </Section>
   )
 }
 
@@ -1403,6 +1443,7 @@ export function EffectsBody(): React.JSX.Element | null {
   const isHdr = useDevelop((s) => s.session?.isHdr === true)
   if (!recipe) return null
   const paint = recipe.effects.vignetteStyle === 'paint'
+  const bw = recipe.treatment === 'bw' || recipe.profile.kind === 'monochrome'
   return (
     <ToolPanel>
       <Section id="effects.vignette" title={t('Post-crop vignette')} tip={TIPS['effects.vignette']}>
@@ -1470,6 +1511,8 @@ export function EffectsBody(): React.JSX.Element | null {
           hint={TIPS['effects.wash']}
         />
       </Section>
+      {!layer && <HalationSection bw={bw} />}
+      {!layer && <BloomSection bw={bw} />}
       <Section id="effects.grain" title={t('Grain')} tip={TIPS['effects.grain']}>
         <RS
           label={tk('Amount')}
@@ -1494,8 +1537,173 @@ export function EffectsBody(): React.JSX.Element | null {
           max={100}
           def={50}
         />
+        {/* A colour grain would colour a black-and-white photo: it has none. */}
+        {!bw && (
+          <RS
+            label={tk('Colour')}
+            read={(r) => r.effects.grainColour}
+            write={(r, v) => (r.effects.grainColour = v)}
+            min={0}
+            max={100}
+            tip={TIPS['effects.grain.colour']}
+          />
+        )}
+        <ChoiceRow
+          label={tk('Response')}
+          value={recipe.effects.grainResponse}
+          choices={GRAIN_RESPONSES.map((v) => ({ value: v, label: GRAIN_RESPONSE_LABEL[v] }))}
+          tip={TIPS['effects.grain.response']}
+          onChange={(v) => {
+            edit((r) => (r.effects.grainResponse = v))
+            commit(tk('Grain response'))
+          }}
+        />
       </Section>
     </ToolPanel>
+  )
+}
+
+const GRAIN_RESPONSE_LABEL: Record<GrainResponseKind, string> = {
+  film: tk('Film'),
+  flat: tk('Even'),
+  negative: tk('Scanned negative')
+}
+
+const BLOOM_STYLE_LABEL: Record<BloomStyle, string> = {
+  diffusion: tk('Diffusion'),
+  glow: tk('Glow')
+}
+
+/** A few choices side by side after a label (English, shown translated). */
+function ChoiceRow<T extends string>({
+  label,
+  value,
+  choices,
+  onChange,
+  tip
+}: {
+  label: string
+  value: T
+  choices: { value: T; label: string }[]
+  onChange: (v: T) => void
+  tip?: Tip
+}): React.JSX.Element {
+  return (
+    <div className="row tone-base">
+      <span className="adjust-head-label">{t(label)}</span>
+      <Tabs
+        value={value}
+        tabs={choices.map((c) => ({ value: c.value, label: t(c.label) }))}
+        onChange={onChange}
+      />
+      {tip && <InfoTip tip={tip} label={t(label)} />}
+    </div>
+  )
+}
+
+/**
+ * Halation (engine 0.21): a red glow around the highlights, as light
+ * scattered back through a colour film's base. The photo's own (a mask has
+ * none). On a black-and-white photo the glow is grey, so it has no hue.
+ */
+function HalationSection({ bw }: { bw: boolean }): React.JSX.Element {
+  return (
+    <Section id="effects.halation" title={t('Halation')} tip={TIPS['effects.halation']}>
+      <RS
+        label={tk('Amount')}
+        read={(r) => r.effects.halation.amount}
+        write={(r, v) => (r.effects.halation.amount = v)}
+        min={0}
+        max={100}
+      />
+      <RS
+        label={tk('Threshold')}
+        read={(r) => r.effects.halation.threshold}
+        write={(r, v) => (r.effects.halation.threshold = v)}
+        min={0}
+        max={100}
+        def={80}
+        tip={TIPS['effects.glow.threshold']}
+      />
+      <RS
+        label={tk('Size')}
+        read={(r) => r.effects.halation.size}
+        write={(r, v) => (r.effects.halation.size = v)}
+        min={0}
+        max={100}
+        def={50}
+      />
+      {!bw && (
+        <RS
+          label={tk('Hue')}
+          read={(r) => r.effects.halation.hue}
+          write={(r, v) => (r.effects.halation.hue = v)}
+          min={0}
+          max={45}
+          def={12}
+          format={(v) => `${Math.round(v)}°`}
+          track="linear-gradient(90deg,hsl(0 90% 50%),hsl(45 90% 50%))"
+        />
+      )}
+    </Section>
+  )
+}
+
+/**
+ * Bloom (engine 0.21): Diffusion veils the whole picture as a diffusion
+ * filter does; Glow spreads only the highlights, from its Threshold. The
+ * photo's own (a mask has none).
+ */
+function BloomSection({ bw }: { bw: boolean }): React.JSX.Element | null {
+  const { recipe, edit, commit } = useScope()
+  if (!recipe) return null
+  const glow = recipe.effects.bloom.style === 'glow'
+  return (
+    <Section id="effects.bloom" title={t('Bloom')} tip={TIPS['effects.bloom']}>
+      <ChoiceRow
+        label={tk('Style')}
+        value={recipe.effects.bloom.style}
+        choices={BLOOM_STYLES.map((v) => ({ value: v, label: BLOOM_STYLE_LABEL[v] }))}
+        onChange={(v) => {
+          edit((r) => (r.effects.bloom.style = v))
+          commit(tk('Bloom style'))
+        }}
+      />
+      <RS
+        label={tk('Amount')}
+        read={(r) => r.effects.bloom.amount}
+        write={(r, v) => (r.effects.bloom.amount = v)}
+        min={0}
+        max={100}
+      />
+      <RS
+        label={tk('Size')}
+        read={(r) => r.effects.bloom.size}
+        write={(r, v) => (r.effects.bloom.size = v)}
+        min={0}
+        max={100}
+        def={65}
+      />
+      {glow && (
+        <RS
+          label={tk('Threshold')}
+          read={(r) => r.effects.bloom.threshold}
+          write={(r, v) => (r.effects.bloom.threshold = v)}
+          min={0}
+          max={100}
+          def={75}
+          tip={TIPS['effects.glow.threshold']}
+        />
+      )}
+      {!bw && (
+        <RS
+          label={tk('Warmth')}
+          read={(r) => r.effects.bloom.warmth}
+          write={(r, v) => (r.effects.bloom.warmth = v)}
+          track="linear-gradient(90deg,#c6dcff,#fff,#ffd9a8)"
+        />
+      )}
+    </Section>
   )
 }
 

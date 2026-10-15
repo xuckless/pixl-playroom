@@ -1,12 +1,12 @@
 /** Colour negative, slide and instant stocks, written from their character. */
 import {
-  approximates,
   calib,
   collection,
+  density,
   gain,
   gamma,
   grain,
-  halationApprox,
+  halation,
   hsl,
   hueCurve,
   lift,
@@ -30,7 +30,7 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['film', 'portrait', 'skin', 'soft', 'kodak', 'portra', '160'],
       inspiredBy: 'Kodak Portra 160',
       description: tk('Low contrast, gentle saturation and creamy skin; fine grain.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.94 }),
     tone({ highlights: -15 }),
@@ -49,7 +49,7 @@ export const FILM_COLOUR = collection('film/colour', [
       [60, 0.91]
     ]),
     hsl({ orange: [0, 0, 5] }),
-    grain(8, 18, 35)
+    grain(8, 18, 35, { colour: 20, response: 'negative' })
   ),
   look(
     'warm-portrait-400',
@@ -58,7 +58,7 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['film', 'portrait', 'warm', 'wedding', 'kodak', 'portra', '400'],
       inspiredBy: 'Kodak Portra 400',
       description: tk('The classic portrait negative: warm skin, soft greens, long highlights.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.97 }),
     tone({ highlights: -15 }),
@@ -78,7 +78,7 @@ export const FILM_COLOUR = collection('film/colour', [
       [60, 0.91]
     ]),
     hsl({ orange: [0, 0, 6] }),
-    grain(15, 22, 40)
+    grain(15, 22, 40, { colour: 30, response: 'negative' })
   ),
   look(
     'warm-portrait-800',
@@ -87,7 +87,7 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['film', 'portrait', 'warm', 'low light', 'kodak', 'portra', '800'],
       inspiredBy: 'Kodak Portra 800',
       description: tk('Richer, warmer and grainier, with a green lean in the shadows.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.05 }),
     tone({ highlights: -12 }),
@@ -105,7 +105,7 @@ export const FILM_COLOUR = collection('film/colour', [
       [120, 0.9]
     ]),
     hsl({ orange: [0, 0, 4] }),
-    grain(28, 30, 55)
+    grain(28, 30, 55, { colour: 40, response: 'negative' })
   ),
   look(
     'vivid-landscape-100',
@@ -184,14 +184,15 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['slide', 'film', 'clean', 'cool', 'kodak', 'ektachrome', 'e100'],
       inspiredBy: 'Kodak Ektachrome E100',
       description: tk('Clean, slightly cool slide film with crisp blues.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.12 }),
     tone({ blacks: -5 }),
     presence({ saturation: 10 }),
     offset(210, 6),
     hueCurve('hueSat', [[240, 1.15]]),
-    grain(5, 15, 30)
+    grain(5, 15, 30),
+    density(25)
   ),
   look(
     'classic-slide-64',
@@ -200,7 +201,7 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['slide', 'film', 'vintage', 'rich', 'kodak', 'kodachrome', '64'],
       inspiredBy: 'Kodak Kodachrome 64',
       description: tk('Rich reds and yellows, deep blue skies and dense blacks.'),
-      version: 2
+      version: 3
     },
     sCurve(40),
     tone({ blacks: -5 }),
@@ -218,7 +219,8 @@ export const FILM_COLOUR = collection('film/colour', [
       [240, 1.1]
     ]),
     hsl({ red: [0, 0, -5], blue: [0, 0, -15] }),
-    grain(8, 18, 35)
+    grain(8, 18, 35),
+    density(50)
   ),
   look(
     'saturated-slide-50',
@@ -227,7 +229,7 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['slide', 'film', 'saturated', 'landscape', 'fuji', 'velvia', '50'],
       inspiredBy: 'Fujifilm Velvia 50 (film)',
       description: tk('Maximum saturation, magenta shadows and dark skies.'),
-      version: 2
+      version: 3
     },
     sCurve(40),
     prim({ contrast: 1.06 }),
@@ -240,7 +242,8 @@ export const FILM_COLOUR = collection('film/colour', [
       [60, 1.18]
     ]),
     hsl({ blue: [0, 0, -20] }),
-    grain(4, 12, 25)
+    grain(4, 12, 25),
+    density(50)
   ),
   look(
     'neutral-slide-100',
@@ -366,7 +369,7 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['film', 'low light', 'soft', 'grain', 'fuji', 'natura', '1600'],
       inspiredBy: 'Fujifilm Natura 1600',
       description: tk('Soft, natural low-light colour with generous grain.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.94 }),
     tone({ shadows: 12 }),
@@ -374,7 +377,7 @@ export const FILM_COLOUR = collection('film/colour', [
     presence({ saturation: -8 }),
     lift(150, 12),
     gain(40, 10),
-    grain(35, 35, 60)
+    grain(35, 35, 60, { colour: 45, response: 'negative' })
   ),
   look(
     'red-bias-consumer-200',
@@ -402,7 +405,7 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['film', 'night', 'tungsten', 'neon', 'halation', 'cinestill', '800t'],
       inspiredBy: 'CineStill 800T',
       description: tk('Tungsten night film: cool light, teal shadows and red-glowing highlights.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.07 }),
     presence({ saturation: -5 }),
@@ -410,8 +413,8 @@ export const FILM_COLOUR = collection('film/colour', [
     gain(30, 10),
     offset(215, 14),
     hueCurve('hueSat', [[0, 1.12]]),
-    halationApprox(60),
-    grain(30, 30, 55)
+    halation(60, { threshold: 75 }),
+    grain(30, 30, 55, { colour: 40, response: 'negative' })
   ),
   look(
     'clean-daylight-50',
@@ -420,7 +423,7 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['film', 'daylight', 'clean', 'fine grain', 'cinestill', '50d'],
       inspiredBy: 'CineStill 50D',
       description: tk('Clean, saturated, very fine-grained daylight film.'),
-      version: 2
+      version: 3
     },
     sCurve(28),
     presence({ saturation: 15 }),
@@ -431,8 +434,8 @@ export const FILM_COLOUR = collection('film/colour', [
       [180, 1.1]
     ]),
     hsl({ blue: [0, 0, -8] }),
-    halationApprox(25),
-    grain(6, 15, 30)
+    halation(25),
+    grain(6, 15, 30, { colour: 15, response: 'negative' })
   ),
   look(
     'warm-daylight-400',
@@ -441,15 +444,15 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['film', 'daylight', 'warm', 'cinestill', '400d'],
       inspiredBy: 'CineStill 400D',
       description: tk('Warm daylight film with a soft glow.'),
-      version: 2
+      version: 3
     },
     sCurve(20),
     presence({ saturation: 6 }),
     lift(195, 8),
     gain(40, 18),
     hueCurve('hueSat', [[30, 1.08]]),
-    halationApprox(35),
-    grain(22, 28, 50)
+    halation(35),
+    grain(22, 28, 50, { colour: 30, response: 'negative' })
   ),
   look(
     'toy-colour-800',
@@ -458,13 +461,13 @@ export const FILM_COLOUR = collection('film/colour', [
       tags: ['film', 'lomo', 'saturated', 'vignette', 'lomography', '800'],
       inspiredBy: 'Lomography Color Negative 800',
       description: tk('Loud, warm colour, dark corners and plenty of grain.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.12 }),
     presence({ saturation: 20 }),
     offset(20, 8),
     vignette(-20),
-    grain(30, 32, 60)
+    grain(30, 32, 60, { colour: 40, response: 'negative' })
   ),
   look(
     'purple-swap',
@@ -472,20 +475,25 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'creative', 'purple', 'false colour', 'lomochrome'],
       inspiredBy: 'LomoChrome Purple',
-      description: tk(
-        'Greens pushed toward purple and blues toward green: an approximation of the full swap.'
-      ),
-      version: 2
+      description: tk('Greens turned purple, blues turned green and yellows turned pink.'),
+      version: 3
     },
     matte(0.03),
-    calib({ greenHue: 100, blueHue: -80 }),
-    hueCurve('hueHue', [
-      [120, 30],
-      [180, 18],
-      [240, -24]
-    ]),
+    // The whole swap, as the stock makes it, on Hue vs Hue (it turns a hue
+    // any distance): yellow-green and green foliage half way round to purple
+    // and magenta, cyan and blue to green, yellow to pink.
+    hueCurve(
+      'hueHue',
+      [
+        [45, -45],
+        [90, -180],
+        [135, -180],
+        [180, -60],
+        [225, -110]
+      ],
+      45
+    ),
     hueCurve('hueSat', [[120, 1.1]]),
-    approximates('hueSwap'),
     grain(20, 28, 50)
   ),
   look(
@@ -510,22 +518,29 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'infrared', 'false colour', 'creative', 'kodak', 'aerochrome'],
       inspiredBy: 'Kodak Aerochrome infrared film',
-      description: tk('Foliage turned red-magenta: an approximation of infrared colour.'),
-      version: 2
+      description: tk(
+        'Foliage turned red-magenta and reds turned yellow, as on infrared colour film.'
+      ),
+      version: 3
     },
-    calib({ redHue: -60, greenHue: -100, greenSaturation: 40 }),
-    hueCurve('hueHue', [
-      [120, -30],
-      [60, -30],
-      [240, -9]
-    ]),
+    calib({ greenSaturation: 40 }),
+    // Infrared colour's layers, one hue for another: foliage red, red yellow, cyan blue.
+    hueCurve(
+      'hueHue',
+      [
+        [0, 50],
+        [60, -70],
+        [120, -130],
+        [180, 40]
+      ],
+      30
+    ),
     hueCurve('hueSat', [
       [120, 1.5],
       [60, 1.3],
       [240, 1.1]
     ]),
-    hsl({ green: [0, 0, 10] }),
-    approximates('hueSwap')
+    hsl({ green: [0, 0, 10] })
   ),
   look(
     'cross-processed-slide',

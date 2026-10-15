@@ -18,11 +18,14 @@ import type {
   CropRect,
   Curve,
   Curves,
+  Density,
   Framing,
   Grade,
   GradeLayer,
   GradeOp,
   GradeSpace,
+  GradeStage,
+  GrainResponse,
   HslBands,
   HslKey,
   LensCorrection,
@@ -37,7 +40,9 @@ import type {
   Transform,
   WhitePoint
 } from './engine-types'
-import { addColorOp } from './addcolor'
+import { addColorOp, hsvToRgb } from './addcolor'
+import { pq } from './export'
+import { REFERENCE_WHITE } from './hdrdisplay'
 import { canvasOf, defringeOp, lensCorrection } from './lens'
 import { compileRetouch } from './retouch'
 import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
@@ -49,6 +54,8 @@ import { engineEdge, engineRefine, engineShift } from './refine'
 import {
   HSL_BANDS,
   type CurvePointSetting,
+  type DensitySetting,
+  type GrainResponseKind,
   type LayerSettings,
   type LocalLayer,
   type MaskComponentSetting,
@@ -985,6 +992,8 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
     logWheels: scaleLogWheels(s.logWheels, k),
     // Scaled where they compile, as their own layers (`qualifierLayer`).
     qualifiers: s.qualifiers,
+    // How much, not which colours: the bands' weights stay.
+    density: { ...s.density, amount: m(s.density.amount) },
     colorGrade: {
       ...cg,
       shadows: wheel(cg.shadows),
@@ -1003,6 +1012,8 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
       ...s.effects,
       vignetteAmount: m(s.effects.vignetteAmount),
       grainAmount: m(s.effects.grainAmount),
+      grainColour: m(s.effects.grainColour),
+      // Halation and bloom are the photo's own: a mask's are never compiled.
       wash: { ...s.effects.wash, amount: m(s.effects.wash.amount) }
     },
     calibration: Object.fromEntries(
@@ -1379,8 +1390,8 @@ function settingsStages(
    * (toning, sharpening, effects) go here, to run after the masks, so a
    * mask's colour changes feed the mix rather than colour the grey.
    */
-  finish?: GradeOp[]
-): { space: GradeSpace; ops: GradeOp[] }[] {
+  finish?: GradeStage[]
+): GradeStage[] {
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
   const hdr = ctx.hdr === true
@@ -1538,9 +1549,13 @@ function settingsStages(
     pc.refine_saturation = round4(clamp(tc.refineSaturation / 100, 0, 1))
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
-  const tail = bw && finish ? finish : look
+  const tail: GradeOp[] = bw && finish ? [] : look
   const hsl = hslOp(r.hsl, bw ? base.bwMix : null, v0 ? null : smoothing)
   if (hsl) tail.push(hsl)
+  // Density with the bands, before saturation: denser colour, then how much
+  // of it. A black-and-white photo has no colour to make dense.
+  const density = bw ? null : densityOp(r.density)
+  if (density) tail.push(density)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
     tail.push(...pointColorOps(r.pointColors, keyScale, smoothing))
@@ -1586,6 +1601,8 @@ function settingsStages(
   )
   if (sharpen) tail.push(sharpen)
   const e = r.effects
+  // Vignette, wash and grain lie over the glows (`effectStages`).
+  const fx: GradeOp[] = []
   if (e.vignetteAmount !== 0) {
     const v = vignettePlacement(
       crop,
@@ -1595,7 +1612,7 @@ function settingsStages(
       uprightTransform(geometry.upright, oriented.width, oriented.height)
     )
     const turned = within45(v.half, v.rotation, oriented.width, oriented.height)
-    tail.push({
+    fx.push({
       Vignette: {
         amount: clamp(e.vignetteAmount / 100, -1, 1),
         midpoint: clamp(e.vignetteMidpoint / 100, 0, 1),
@@ -1613,21 +1630,177 @@ function settingsStages(
   }
   // The wash sits on the finished look; only grain goes over it.
   const wash = addColorOp(e.wash, 'wash')
-  if (wash) tail.push(wash)
-  if (e.grainAmount > 0) {
-    tail.push({
+  if (wash) fx.push(wash)
+  // A colour grain on a black-and-white photo would colour it.
+  const colour = bw ? 0 : round4(clamp(e.grainColour / 100, 0, 1))
+  if (e.grainAmount > 0 || colour > 0) {
+    fx.push({
       Grain: {
         amount: clamp(e.grainAmount / 100, 0, 1),
         size: round4(0.0004 + (clamp(e.grainSize, 0, 100) / 100) * 0.004),
         roughness: clamp(e.grainRoughness / 100, 0, 1),
         seed: ctx.seed,
-        // Engine 0.21's required pair, as 0.20's grain was byte for byte.
-        response: 'Midtones',
-        chroma: { amount: 0, size: 1 }
+        response: GRAIN_RESPONSE[e.grainResponse] ?? 'Midtones',
+        // No colour is 0.20's grain, byte for byte.
+        chroma: colour > 0 ? { amount: colour, size: GRAIN_COLOUR_SIZE } : { amount: 0, size: 1 }
       }
     })
   }
-  return [...stage('LinearWorking', linear), ...lookStages(look)]
+  const glow = base ? glowOps(e, bw, hdr) : []
+  const finished = effectStages(tail, glow, fx)
+  if (bw && finish) {
+    finish.push(...finished)
+    return [...stage('LinearWorking', linear), ...lookStages(look)]
+  }
+  return [...stage('LinearWorking', linear), ...finished]
+}
+
+/**
+ * The look's last stages: its ops, then halation and bloom in linear light
+ * (a glow is light, so a highlight twice as bright glows twice as much, and
+ * one above white in Full HDR glows from all of it), then the vignette, wash
+ * and grain over them, as on a print. Without a glow, one stage, as before.
+ */
+function effectStages(look: GradeOp[], glow: GradeOp[], fx: GradeOp[]): GradeStage[] {
+  if (glow.length === 0) return lookStages([...look, ...fx])
+  return [...lookStages(look), ...stage('LinearWorking', glow), ...lookStages(fx)]
+}
+
+// ── Film effects (engine 0.21: E41–E44) ──────────────────────────────────────
+
+/** What Halation's Amount 100 sends: in linear light a full-strength glow already reddens a bright sky. */
+export const HALATION_MAX = 0.5
+/** What Bloom's Amount 100 sends: half the picture mixed with its blur is a heavy diffusion filter. */
+export const BLOOM_MAX = 0.5
+/** Halation's knee above its threshold, as shown. */
+export const HALATION_SOFTNESS = 0.1
+/** Glow's knee above its threshold, as shown. */
+export const BLOOM_SOFTNESS = 0.15
+/** A colour grain's cells, times the grey grain's: dye clouds are coarser than silver. */
+export const GRAIN_COLOUR_SIZE = 2
+
+/** The grain's tone responses as the engine's (`GrainResponse`). */
+export const GRAIN_RESPONSE: Record<GrainResponseKind, GrainResponse> = {
+  film: 'Midtones',
+  flat: {
+    Curve: {
+      points: [
+        { x: 0, y: 1 },
+        { x: 1, y: 1 }
+      ]
+    }
+  },
+  negative: {
+    Curve: {
+      points: [
+        { x: 0, y: 1.6 },
+        { x: 0.5, y: 1 },
+        { x: 1, y: 0.3 }
+      ]
+    }
+  }
+}
+
+/**
+ * A glow's Size (0…100) as the engine's radius, a fraction of the shorter
+ * side, on a log scale: 0.001 · 100^(size/100), so 50 is 1% and 100 is 10%.
+ */
+export function glowRadius(size: number): number {
+  return round4(0.001 * Math.pow(100, clamp(size, 0, 100) / 100))
+}
+
+/** sRGB's (and Display P3's) transfer, decoded and carried on above 1. */
+function decodeShown(v: number): number {
+  return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+}
+
+/** The master's peak on the effects' tone scale (the engine's `EFFECTS_PEAK_NITS`). */
+const EFFECTS_PEAK_NITS = 1000
+
+/**
+ * A brightness as shown (a code value, 0…1, 1 is white) on the scale a
+ * linear stage's effects read their tone on: linear luminance in SDR; with
+ * headroom, PQ's scale up to the master's 1000 cd/m² with white at 203 (the
+ * engine's `ToneScale`). So a threshold means the same brightness in both.
+ */
+export function effectsTone(shown: number, hdr: boolean): number {
+  const y = decodeShown(Math.max(0, shown))
+  return hdr ? clamp(pq(y * REFERENCE_WHITE) / pq(EFFECTS_PEAK_NITS), 0, 1) : clamp(y, 0, 1)
+}
+
+/** A knee from a threshold as shown, `soft` above it, on the effects' tone. */
+function knee(
+  threshold: number,
+  soft: number,
+  hdr: boolean
+): { threshold: number; softness: number } {
+  const t = clamp(threshold, 0, 1)
+  const lo = effectsTone(t, hdr)
+  return {
+    threshold: round4(lo),
+    softness: round4(clamp(Math.max(0.005, effectsTone(t + soft, hdr) - lo), 0, 1))
+  }
+}
+
+const rgb = (c: [number, number, number]): Rgb => ({
+  r: round4(c[0]),
+  g: round4(c[1]),
+  b: round4(c[2])
+})
+
+/** Bloom's warmth (−100…100) as its colour, white at 0, in linear sRGB. */
+export function bloomColour(warmth: number): Rgb {
+  const w = clamp(warmth, -100, 100) / 100
+  const to: [number, number, number] = w >= 0 ? [1, 0.88, 0.7] : [0.8, 0.9, 1]
+  const k = Math.abs(w)
+  return rgb([1 + (to[0] - 1) * k, 1 + (to[1] - 1) * k, 1 + (to[2] - 1) * k])
+}
+
+/**
+ * Halation and bloom, the photo's own, in a linear stage: none at Amount 0.
+ * On a black-and-white photo their colour is a grey of the same brightness
+ * (a coloured glow would tint it).
+ */
+function glowOps(e: Recipe['effects'], bw: boolean, hdr: boolean): GradeOp[] {
+  const ops: GradeOp[] = []
+  const h = e.halation
+  if (h.amount > 0) {
+    const c = hsvToRgb(clamp(h.hue, 0, 45), 1)
+    const grey = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    ops.push({
+      Halation: {
+        amount: round4((clamp(h.amount, 0, 100) / 100) * HALATION_MAX),
+        ...knee(h.threshold / 100, HALATION_SOFTNESS, hdr),
+        radius: glowRadius(h.size),
+        color: rgb(bw ? [grey, grey, grey] : c),
+        space: 'LinearSrgb'
+      }
+    })
+  }
+  const b = e.bloom
+  if (b.amount > 0) {
+    ops.push({
+      Bloom: {
+        amount: round4((clamp(b.amount, 0, 100) / 100) * BLOOM_MAX),
+        radius: glowRadius(b.size),
+        source:
+          b.style === 'glow' ? { Highlights: knee(b.threshold / 100, BLOOM_SOFTNESS, hdr) } : 'All',
+        color: bw ? rgb([1, 1, 1]) : bloomColour(b.warmth),
+        space: 'LinearSrgb'
+      }
+    })
+  }
+  return ops
+}
+
+/** HSL's Density tab as the engine's op, or none when it does nothing. */
+export function densityOp(d: DensitySetting): GradeOp | null {
+  const amount = round4(clamp(d.amount / 100, -1, 1))
+  if (amount === 0 || HSL_BANDS.every((b) => d.bands[b] === 0)) return null
+  const bands = Object.fromEntries(
+    HSL_BANDS.map((b) => [b, round4(clamp(d.bands[b] / 100, -1, 1))])
+  ) as unknown as Density['bands']
+  return { Density: { amount, bands } }
 }
 
 /**
@@ -1704,7 +1877,7 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
   const masked = r.layers.some(
     (l) => layerMask(l, oriented.user, ctx.brushPaths, oriented) !== null
   )
-  const finish: GradeOp[] | undefined = bw && masked ? [] : undefined
+  const finish: GradeStage[] | undefined = bw && masked ? [] : undefined
   const base = settingsStages(r, r, r.geometry, ctx, crop, oriented, notes, finish)
   if (base.length > 0) {
     layers.push({
@@ -1765,7 +1938,7 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
       opacity: 1,
       mask: null,
       blend: { mode: 'Normal', space: 'LinearWorking' },
-      stages: lookStages(finish)
+      stages: finish
     })
   }
   for (const c of r.custom) {

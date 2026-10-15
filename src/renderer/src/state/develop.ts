@@ -137,7 +137,7 @@ interface DevelopState {
   /** How the loupe looks at the picture: fitted, or zoomed about a point. */
   zoom: ZoomView
   hslFocus: HslBand | null
-  hslTab: 'hue' | 'saturation' | 'luminance' | 'all' | 'point'
+  hslTab: 'hue' | 'saturation' | 'luminance' | 'all' | 'density' | 'point'
   /** The selected swatch of the colour mixer's Point tab. */
   pointId: string | null
   /** The qualifier the Qualifier card has selected, and whether its key shows white on black. */

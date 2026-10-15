@@ -6,7 +6,7 @@
  * the B&W mix.
  */
 import {
-  bloomApprox,
+  bloom,
   collection,
   curve,
   gain,
@@ -109,11 +109,11 @@ export const BW = collection('bw', [
     {
       tags: ['bw', 'mono', 'infrared', 'surreal', 'landscape'],
       description: tk('White foliage, black skies and a faint glow.'),
-      version: 2
+      version: 3
     },
     mono({ green: 90, yellow: 70, aqua: -40, blue: -80 }),
     prim({ contrast: 1.22 }),
-    bloomApprox(25),
+    bloom(35),
     grain(15, 22, 45)
   ),
   look(

@@ -3,15 +3,16 @@
  * spirit of the cameras and stocks films are made on.
  */
 import {
-  approximates,
   collection,
+  density,
   gain,
   grain,
-  halationApprox,
+  halation,
   hsl,
   hueCurve,
   lift,
   look,
+  lumSat,
   matte,
   mono,
   offset,
@@ -19,8 +20,7 @@ import {
   prim,
   sCurve,
   tone,
-  vignette,
-  lumSat
+  vignette
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -253,7 +253,7 @@ export const CINEMA = collection('cinema', [
       tags: ['technicolor', 'dye transfer', 'saturated', 'classic hollywood'],
       inspiredBy: 'Three-strip Technicolor dye-transfer prints',
       description: tk('Rich primaries and inky blacks of classic dye-transfer prints.'),
-      version: 2
+      version: 3
     },
     sCurve(30),
     tone({ blacks: -8 }),
@@ -264,7 +264,8 @@ export const CINEMA = collection('cinema', [
       [240, 1.2],
       [120, 1.1]
     ]),
-    hsl({ red: [0, 0, -5], blue: [0, 0, -10], green: [0, 0, -5] })
+    hsl({ red: [0, 0, -5], blue: [0, 0, -10], green: [0, 0, -5] }),
+    density(45)
   ),
   look(
     'two-strip-colour',
@@ -273,24 +274,30 @@ export const CINEMA = collection('cinema', [
       tags: ['technicolor', 'two strip', 'vintage', 'red cyan'],
       inspiredBy: 'Two-colour Technicolor (1920s)',
       description: tk('Only reds and cyans: greens and blues fold into teal, yellows into peach.'),
-      version: 2
+      version: 3
     },
     prim({ sat: -10 }),
-    hueCurve('hueHue', [
-      [60, -18],
-      [120, 18],
-      [240, -18],
-      [275, -18],
-      [315, 18]
-    ]),
+    // Two dyes make every colour: greens and blues fold into cyan, yellows
+    // into peach, purples into blue-cyan and magentas into red.
+    hueCurve(
+      'hueHue',
+      [
+        [45, -20],
+        [90, 80],
+        [135, 45],
+        [225, -35],
+        [270, -80],
+        [315, 40]
+      ],
+      45
+    ),
     hueCurve('hueSat', [
       [60, 0.6],
       [120, 0.7],
       [240, 0.8],
       [275, 0.6],
       [315, 0.7]
-    ]),
-    approximates('hueSwap')
+    ])
   ),
   look(
     'day-for-night',
@@ -314,7 +321,7 @@ export const CINEMA = collection('cinema', [
       tags: ['cinema', 'negative', 'tungsten', 'night', 'grain', 'kodak', 'vision3', '500t'],
       inspiredBy: 'Kodak Vision3 500T 5219, printed',
       description: tk('Fast tungsten negative: soft blacks, teal shadows, visible grain.'),
-      version: 2
+      version: 3
     },
     sCurve(18),
     matte(0.03),
@@ -322,8 +329,8 @@ export const CINEMA = collection('cinema', [
     presence({ saturation: -8 }),
     lift(175, 18),
     gain(35, 12),
-    halationApprox(40),
-    grain(32, 30, 55)
+    halation(40),
+    grain(32, 30, 55, { colour: 40 })
   ),
   look(
     'tungsten-cine-neg-200',
@@ -332,7 +339,7 @@ export const CINEMA = collection('cinema', [
       tags: ['cinema', 'negative', 'tungsten', 'kodak', 'vision3', '200t'],
       inspiredBy: 'Kodak Vision3 200T 5213, printed',
       description: tk('Tungsten negative with finer grain and the same teal-warm split.'),
-      version: 2
+      version: 3
     },
     sCurve(28),
     matte(0.015),
@@ -342,7 +349,7 @@ export const CINEMA = collection('cinema', [
     gain(40, 12),
     hueCurve('hueHue', [[120, 2.4]]),
     hueCurve('hueSat', [[120, 0.9]]),
-    grain(18, 25, 45)
+    grain(18, 25, 45, { colour: 25 })
   ),
   look(
     'daylight-cine-neg-250',
@@ -351,7 +358,7 @@ export const CINEMA = collection('cinema', [
       tags: ['cinema', 'negative', 'daylight', 'kodak', 'vision3', '250d'],
       inspiredBy: 'Kodak Vision3 250D 5207, printed',
       description: tk('Daylight negative with a very long highlight range.'),
-      version: 2
+      version: 3
     },
     sCurve(20),
     matte(0, 0.03),
@@ -361,7 +368,7 @@ export const CINEMA = collection('cinema', [
     gain(45, 12),
     hueCurve('hueHue', [[120, 1.5]]),
     hueCurve('hueSat', [[120, 0.9]]),
-    grain(18, 25, 45)
+    grain(18, 25, 45, { colour: 25 })
   ),
   look(
     'fine-daylight-cine-neg',
@@ -370,12 +377,12 @@ export const CINEMA = collection('cinema', [
       tags: ['cinema', 'negative', 'daylight', 'fine grain', 'kodak', 'vision3', '50d'],
       inspiredBy: 'Kodak Vision3 50D 5203, printed',
       description: tk('Crisp, clean, fine-grained daylight negative.'),
-      version: 2
+      version: 3
     },
     sCurve(30),
     presence({ saturation: 10 }),
     lift(190, 6),
-    grain(6, 15, 30)
+    grain(6, 15, 30, { colour: 15 })
   ),
   look(
     'cine-bw-neg',

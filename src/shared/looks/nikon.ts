@@ -3,7 +3,7 @@
  * Nikon's in-camera styles.
  */
 import {
-  bloomApprox,
+  bloom,
   collection,
   curve,
   gamma,
@@ -11,14 +11,14 @@ import {
   hsl,
   hueCurve,
   look,
+  lumSat,
   matte,
   mono,
   offset,
   presence,
   prim,
   tone,
-  vignette,
-  lumSat
+  vignette
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -201,12 +201,12 @@ export const NIKON = collection('camera/nikon', [
       tags: ['dreamy', 'soft', 'pastel', 'creative', 'nikon'],
       inspiredBy: cpc('Dream'),
       description: tk('Pale orange haze and softened detail.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.91 }),
-    tone({ shadows: 15 }),
+    tone({ shadows: 24 }),
     offset(35, 15),
-    bloomApprox(60)
+    bloom(45, { warmth: 30 })
   ),
   look(
     'morning',
@@ -329,12 +329,12 @@ export const NIKON = collection('camera/nikon', [
       tags: ['pure', 'bright', 'airy', 'soft', 'creative', 'nikon'],
       inspiredBy: cpc('Pure'),
       description: tk('Bright, airy and veiled.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.85, sat: -10 }),
-    tone({ shadows: 20, whites: 15 }),
+    tone({ shadows: 26, whites: 15 }),
     matte(0.05),
-    bloomApprox(40)
+    bloom(35)
   ),
   look(
     'denim',

@@ -365,6 +365,7 @@ const ADJUST_ROOTS = [
   'presence',
   'toneCurve',
   'hsl',
+  'density',
   'colorGrade',
   'primaries',
   'logWheels'

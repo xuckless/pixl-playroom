@@ -1,6 +1,6 @@
 /** Instant colour and mono, fresh and faded. */
 import {
-  bloomApprox,
+  bloom,
   collection,
   gain,
   hsl,
@@ -24,7 +24,7 @@ export const FILM_INSTANT = collection('film/instant', [
       tags: ['instant', 'polaroid', 'faded', 'square'],
       inspiredBy: 'Polaroid 600 film',
       description: tk('Milky blacks, cyan shadows and soft, warm highlights.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.91 }),
     matte(0.08),
@@ -32,7 +32,8 @@ export const FILM_INSTANT = collection('film/instant', [
     lift(190, 12),
     gain(60, 15),
     vignette(-15),
-    bloomApprox(20)
+    tone({ shadows: 3 }),
+    bloom(20, { warmth: 20 })
   ),
   look(
     'faded-instant',

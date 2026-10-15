@@ -1,11 +1,13 @@
 /** Street looks in the spirit of Ricoh GR's image controls. */
 import {
   collection,
+  density,
   gain,
   gamma,
   grain,
   lift,
   look,
+  lumSat,
   matte,
   mono,
   offset,
@@ -13,8 +15,7 @@ import {
   prim,
   rgb,
   tone,
-  vignette,
-  lumSat
+  vignette
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -28,11 +29,12 @@ export const RICOH = collection('camera/ricoh', [
       tags: ['positive', 'slide', 'street', 'ricoh'],
       inspiredBy: gr('Positive Film'),
       description: tk('Contrasty slide colour with a faint yellow-green.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.09 }),
     presence({ saturation: 20 }),
-    offset(75, 6)
+    offset(75, 6),
+    density(35)
   ),
   look(
     'negative-film',

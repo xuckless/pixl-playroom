@@ -1,19 +1,20 @@
 /** OM, Pentax and phone photographic styles. */
 import {
   collection,
+  density,
   gain,
   grain,
   hsl,
   hueCurve,
   lift,
   look,
+  lumSat,
   matte,
   mono,
   offset,
   presence,
   prim,
-  tone,
-  lumSat
+  tone
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -112,7 +113,7 @@ export const OTHER_CAMERAS = collection('camera/other', [
       tags: ['slide', 'reversal', 'saturated', 'pentax'],
       inspiredBy: px('Reversal Film'),
       description: tk('Saturated slide colour with deep blues.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.15 }),
     tone({ blacks: -10 }),
@@ -124,7 +125,8 @@ export const OTHER_CAMERAS = collection('camera/other', [
       [180, 1.15],
       [0, 1.1]
     ]),
-    hsl({ blue: [0, 0, -20], aqua: [0, 0, -10], red: [0, 0, -5] })
+    hsl({ blue: [0, 0, -20], aqua: [0, 0, -10], red: [0, 0, -5] }),
+    density(35)
   ),
   look(
     'silver-bleach',

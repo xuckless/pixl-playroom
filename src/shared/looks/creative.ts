@@ -5,7 +5,7 @@
  * turned gold, a sky turned teal), HSL for brightness by colour.
  */
 import {
-  bloomApprox,
+  bloom,
   collection,
   gain,
   gamma,
@@ -137,7 +137,7 @@ export const CREATIVE = collection('creative', [
     {
       tags: ['cyberpunk', 'neon', 'night', 'magenta', 'teal'],
       description: tk('Electric magenta and teal, deep blacks.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 1.2 }),
     tone({ blacks: -10 }),
@@ -150,7 +150,7 @@ export const CREATIVE = collection('creative', [
       [180, 1.3],
       [60, 0.65]
     ]),
-    bloomApprox(15)
+    bloom(30, { style: 'glow', threshold: 65, size: 55 })
   ),
   look(
     'mint-fresh',
@@ -288,13 +288,14 @@ export const CREATIVE = collection('creative', [
     {
       tags: ['honey', 'warm', 'haze', 'dreamy'],
       description: tk('Hazy, honeyed backlight.'),
-      version: 2
+      version: 3
     },
     prim({ contrast: 0.92 }),
     matte(0.04),
     presence({ dehaze: -15 }),
     offset(42, 15),
-    bloomApprox(20)
+    tone({ shadows: 3 }),
+    bloom(25, { warmth: 40 })
   ),
   look(
     'bleach-pop',

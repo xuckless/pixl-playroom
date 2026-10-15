@@ -118,6 +118,15 @@ export const TIPS = {
       'Even in feel across the range: all the way down halves a colour’s brightness, so a sky deepens without going black.'
     )
   },
+  'hsl.density': {
+    what: tk(
+      'Makes colour denser, as slide film’s dyes do: saturated colours darken (or lighten, left) while their hue stays, and greys are untouched.'
+    ),
+    expect: tk(
+      'Amount sets how much; each colour below takes that much of it (100 is all). Aqua and cyan respond about a third as strongly.'
+    ),
+    tip: tk('Pair it with a little Saturation: colour richer and deeper, not just louder.')
+  },
   'presence.smoothing': {
     what: tk(
       'Keeps colour and tone changes smooth across flat areas such as sea, sky and skin, so they don’t go blotchy or show the file’s compression blocks.'
@@ -268,7 +277,7 @@ export const TIPS = {
 
   // ── Effects ────────────────────────────────────────────────────────
   effects: {
-    what: tk('Finishing touches: a vignette, film grain and a colour wash.'),
+    what: tk('Finishing touches: a vignette, a colour wash, halation, bloom and film grain.'),
     expect: tk('These run after the crop, on the finished picture.')
   },
   'effects.vignette': {
@@ -280,6 +289,39 @@ export const TIPS = {
     what: tk('Adds film-like grain.'),
     expect: tk('Hides banding and noise and adds texture; Size and Roughness shape its character.'),
     tip: tk('Judge it at 100%: grain that looks right fitted is usually too strong.')
+  },
+  'effects.grain.colour': {
+    what: tk('Adds colour grain beside the grey: the coarser dye clouds of a colour film.'),
+    expect: tk('Leaves brightness alone; with Amount at 0 it is colour grain only.'),
+    tip: tk('A little goes a long way: 20 to 40 reads as colour negative.')
+  },
+  'effects.grain.response': {
+    what: tk('Where in the tones the grain is strongest.'),
+    expect: tk(
+      'Film: in the midtones, as grain always was. Even: the same everywhere. Scanned negative: strongest in the shadows, fading in the highlights.'
+    )
+  },
+  'effects.halation': {
+    what: tk(
+      'A red glow around bright highlights, as light scattered back through a colour film’s base.'
+    ),
+    expect: tk(
+      'Lamps, neon and bright windows pick up a warm fringe. It acts on light, so brighter highlights glow more.'
+    ),
+    tip: tk('Most at home in night scenes under tungsten and neon.')
+  },
+  'effects.bloom': {
+    what: tk(
+      'Diffusion veils the whole picture as a diffusion filter does; Glow spreads only the highlights.'
+    ),
+    expect: tk(
+      'Diffusion softens contrast and lifts the shadows next to bright areas; Glow haloes lights and keeps the blacks.'
+    ),
+    tip: tk('Warmth tints the glow: warm for a dreamy haze, cool for a smoggy city.')
+  },
+  'effects.glow.threshold': {
+    what: tk('How bright, as shown, a part of the picture must be before it glows.'),
+    expect: tk('Lower it to let more of the picture glow.')
   },
   'grading.add': {
     what: tk('Adds coloured light to the whole scene, as a gel on a lamp would, after exposure.'),

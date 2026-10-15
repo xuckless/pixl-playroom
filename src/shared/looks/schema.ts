@@ -18,7 +18,7 @@ import type { Preset } from '../ipc'
 import { defaultRecipe, RECIPE_VERSION, type Recipe } from '../recipe'
 import { COLLECTION_BY_ID } from './collections'
 import { groupsOf } from './dsl'
-import { allowedPath, CURVE_PATHS, rangeOf } from './ranges'
+import { allowedPath, CURVE_PATHS, LOOK_CHOICES, rangeOf } from './ranges'
 import { readSmart, type SmartPart } from './smart'
 import { LOOK_SCHEMA, type LookApproximation, type LookAuthor, type LookMeta } from './types'
 import { t } from '../i18n'
@@ -181,8 +181,8 @@ export function lookFromFile(
         v = Math.min(range[1], Math.max(range[0], v))
         clamped.push(dotted)
       }
-    } else if (dotted === 'treatment') {
-      if (v !== 'color' && v !== 'bw') {
+    } else if (LOOK_CHOICES[dotted]) {
+      if (!LOOK_CHOICES[dotted].includes(v as string)) {
         dropped.push(dotted)
         continue
       }
