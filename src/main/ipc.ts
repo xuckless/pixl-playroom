@@ -1005,6 +1005,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.export.check, (keys: string[], settings: ExportSettings) =>
     s.exporter.preflight(keys, settings)
   )
+  handle(IPC.export.facts, (keys: string[]) => s.exporter.facts(keys))
   handle(IPC.export.presets, () => s.index.exportPresets())
   handle(IPC.export.savePreset, async (p: Omit<ExportPreset, 'id'> & { id?: string }) => {
     const preset: ExportPreset = { ...p, id: p.id ?? newId() }

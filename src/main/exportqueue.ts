@@ -85,7 +85,11 @@ export function quitQuestion(jobs: ExportProgress[]): { message: string; detail:
 }
 
 /** `fn` over `items`, `limit` at a time, the results in order. */
-async function mapLimit<T, U>(items: T[], limit: number, fn: (x: T) => Promise<U>): Promise<U[]> {
+export async function mapLimit<T, U>(
+  items: T[],
+  limit: number,
+  fn: (x: T) => Promise<U>
+): Promise<U[]> {
   const out = new Array<U>(items.length)
   let next = 0
   const worker = async (): Promise<void> => {

@@ -3,8 +3,8 @@
  * lose, or do beside what the person meant, said before anything is written.
  * Pure, so the dialog shows them as settings change and tests pin them.
  *
- * A guard never fixes anything: a `block` stops the export (the dialog names
- * the setting and its step), a `warn` is shown and the export may go ahead.
+ * A guard never fixes anything: a `block` stops the export (the sheet names
+ * the setting and its card), a `warn` is shown and the export may go ahead.
  * The checks that need the disk or a photo's pixel size (a folder that
  * cannot be written, space, files that would be replaced, a size past the
  * engine's limits) are the main process's (`Exporter.preflight`) and come
@@ -21,9 +21,6 @@ import {
 } from './export'
 import { t, tk } from './i18n'
 
-/** The wizard's steps; a guard says which one holds the setting to change. */
-export type ExportStep = 'format' | 'size' | 'delivery' | 'review'
-
 /** The export's cards, each a group of settings; a guard names the one that holds its setting. */
 export type ExportCard =
   'format' | 'size' | 'colour' | 'sharpen' | 'hdr' | 'metadata' | 'location' | 'watermark'
@@ -32,7 +29,6 @@ export interface Guard {
   id: string
   /** `minor`: worth saying, not worth a warning's weight. */
   severity: 'block' | 'warn' | 'minor'
-  step: ExportStep
   /** The card that holds the setting to change; null when no setting does (a photo offline). */
   card: ExportCard | null
   message: string
@@ -65,9 +61,16 @@ const wide = (p: ExportSource): boolean => p.isRaw || p.isHdr || p.hasGainMap
 /**
  * Every guard these settings raise for these photos, blocks first. `beside`:
  * exports are saved beside each original (`export.location`), where a file
- * of the original's own name and kind would be written over it.
+ * of the original's own name and kind would be written over it. `unread`:
+ * photos not probed yet, left out of `sources`: nothing is said of their
+ * HDR that would need them to be SDR.
  */
-export function exportGuards(s: ExportSettings, sources: ExportSource[], beside = true): Guard[] {
+export function exportGuards(
+  s: ExportSettings,
+  sources: ExportSource[],
+  beside = true,
+  unread = 0
+): Guard[] {
   const out: Guard[] = []
   const add = (g: Guard): void => void out.push(g)
   const name = FORMAT_NAME[s.format]
@@ -79,7 +82,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'avif-speed',
       severity: 'block',
-      step: 'format',
       card: 'format',
       message: t('AVIF speed 10 is not available: use 9 or lower.')
     })
@@ -87,7 +89,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'hdr-format',
       severity: 'block',
-      step: 'delivery',
       card: 'hdr',
       message: t('{{format}} cannot hold HDR. Choose AVIF, JPEG XL or PNG, or set HDR to SDR.', {
         format: name
@@ -97,7 +98,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'gainmap-format',
       severity: 'block',
-      step: 'delivery',
       card: 'hdr',
       message: t(
         '{{format}} has no place for a gain map. Choose JPEG or AVIF, or set HDR to SDR.',
@@ -108,7 +108,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'avif-lossless-chroma',
       severity: 'block',
-      step: 'format',
       card: 'format',
       message: t('Lossless AVIF keeps full colour: set Chroma to 4:4:4 or turn Lossless off.')
     })
@@ -123,7 +122,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'icc-needed',
       severity: 'block',
-      step: 'delivery',
       card: 'metadata',
       message: t('This HDR output describes its colour with the ICC profile: turn ICC on.')
     })
@@ -133,7 +131,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       add({
         id: 'size-empty',
         severity: 'block',
-        step: 'size',
         card: 'size',
         message: t('Enter a size above zero.')
       })
@@ -141,7 +138,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
       add({
         id: 'size-percent',
         severity: 'block',
-        step: 'size',
         card: 'size',
         message: t('A scale past 1000% is not allowed.')
       })
@@ -150,7 +146,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'name-empty',
       severity: 'block',
-      step: 'review',
       card: 'location',
       message: t('The file name is empty.')
     })
@@ -164,7 +159,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'overwrite-original',
       severity: 'block',
-      step: 'review',
       card: 'location',
       message: t(
         'This name, beside the original and in its format, would write over the original: change the name or the folder.'
@@ -176,15 +170,23 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'hdr-to-sdr',
       severity: 'warn',
-      step: 'delivery',
       card: 'hdr',
       message: t('HDR photos are tone mapped to SDR: the highlights above white are compressed.')
+    })
+  // HDR kept, of photos none of which is HDR: plain SDR files (Expand makes them HDR).
+  if (mode === 'keep' && sources.length > 0 && unread === 0 && !any((p) => p.isHdr || p.hasGainMap))
+    add({
+      id: 'no-hdr',
+      severity: 'warn',
+      card: 'hdr',
+      message: t(
+        'None of these photos is HDR: they are written as SDR. Expand SDR to HDR makes them HDR.'
+      )
     })
   if (s.colorSpace === 'Srgb' && any(wide))
     add({
       id: 'gamut-narrow',
       severity: 'warn',
-      step: 'size',
       card: 'colour',
       message: t(
         'Colours beyond sRGB (RAW files and HDR photos have them) are compressed into sRGB. Display P3 or Adobe RGB keep more.'
@@ -194,7 +196,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'banding',
       severity: 'warn',
-      step: 'format',
       card: 'format',
       message: t('8-bit output of a RAW or HDR photo can band in smooth skies: turn Dither on.')
     })
@@ -202,7 +203,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'iptc',
       severity: 'warn',
-      step: 'delivery',
       card: 'metadata',
       message: t('{{format}} has no place for IPTC: it will not be written.', { format: name })
     })
@@ -210,7 +210,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'alpha',
       severity: 'minor',
-      step: 'format',
       card: 'format',
       message: t(
         '{{format}} is written without transparency; a photo that has some is flattened.',
@@ -221,7 +220,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'chroma-jpeg',
       severity: 'minor',
-      step: 'format',
       card: 'format',
       message:
         s.jpegSubsampling === 'Half'
@@ -232,7 +230,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'chroma-avif',
       severity: 'minor',
-      step: 'format',
       card: 'format',
       message:
         s.chroma === 'Wide'
@@ -243,7 +240,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'enlarge',
       severity: 'minor',
-      step: 'size',
       card: 'size',
       message: t('Enlarging makes a bigger picture, not a sharper one.')
     })
@@ -251,7 +247,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[], beside 
     add({
       id: 'rec2020-8bit',
       severity: 'warn',
-      step: 'size',
       card: 'colour',
       message: t(
         'Rec.2020 in an 8-bit {{format}} is a very wide space for 256 steps: many viewers will show it dull.',

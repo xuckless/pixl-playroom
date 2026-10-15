@@ -319,6 +319,7 @@ export const IPC = {
     preview: 'export:preview',
     cancelPreview: 'export:cancel-preview',
     check: 'export:check',
+    facts: 'export:facts',
     /** The queue: every export queued, running, or lately finished; retry one's failures; show its files. */
     jobs: 'export:jobs',
     retry: 'export:retry',
@@ -1046,6 +1047,18 @@ export interface ExportPreview {
   format: string
   /** Where the preview differs from the export, and what the engine said. */
   notes: string[]
+}
+
+/**
+ * What the export sheet knows of the photos it would export, read once for
+ * a selection (main/exporter.ts `facts`): how many, which are offline, and a
+ * sample's size and HDR as probed, for the size estimate and the HDR guards.
+ */
+export interface ExportFacts {
+  photos: number
+  offline: number
+  /** The first photos (up to a hundred), as probed: their size upright, before any crop. */
+  sample: { key: string; width: number; height: number; isHdr: boolean; hasGainMap: boolean }[]
 }
 
 /**

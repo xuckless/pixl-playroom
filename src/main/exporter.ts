@@ -20,6 +20,7 @@ import {
   buildEncode,
   buildResize,
   displayPeak,
+  estimateBytes,
   expandTemplate,
   FORMAT_EXT,
   gainMapEncode,
@@ -37,8 +38,15 @@ import {
   type ExportSettings
 } from '../shared/export'
 import { FORMAT_NAME, receiptNotes, type Guard } from '../shared/exportGuards'
-import { IPC, type ExportPreview, type ExportProgress, type LibraryItem } from '../shared/ipc'
-import { ExportQueue, type PhotoSnapshot, type QueuedExport } from './exportqueue'
+import { formatBytes } from '../shared/exportSummary'
+import {
+  IPC,
+  type ExportFacts,
+  type ExportPreview,
+  type ExportProgress,
+  type LibraryItem
+} from '../shared/ipc'
+import { ExportQueue, mapLimit, type PhotoSnapshot, type QueuedExport } from './exportqueue'
 import { READ_LIMITS } from '../shared/limits'
 import { paths, scriptedHome } from './paths'
 import { exportDirFor } from './project/locate'
@@ -81,6 +89,26 @@ import { exposureOffsetOf } from '../shared/rawcolour'
 /** Photos probed for their size in a preflight: a probe is cached, but a thousand are still a wait. */
 const PROBE_LIMIT = 100
 
+/** How long what a selection's photos are stays known to the sheet's checks. */
+const FACTS_FRESH_MS = 60_000
+/** Photos read at once for the sheet's checks. */
+const FACTS_AT_ONCE = 8
+
+/** One photo as the sheet's checks know it. */
+interface Fact {
+  key: string
+  item: LibraryItem | undefined
+  /** Null when offline, or gone. */
+  row: PhotoRow | null
+  offline: boolean
+}
+
+interface Gathered {
+  photos: Fact[]
+  /** The first PROBE_LIMIT photos there are, as probed. */
+  sample: (ExportFacts['sample'][number] & { name: string; tooLarge: boolean })[]
+}
+
 /** The peak an HDR source that states none is read at, in cd/m². */
 const UNSTATED_HDR_PEAK = 1000
 /** The room an export leaves, below which it is refused. */
@@ -105,12 +133,6 @@ async function freeBytes(dir: string): Promise<number | null> {
   } catch {
     return null
   }
-}
-
-function formatBytes(n: number): string {
-  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
-  if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`
-  return `${Math.max(1, Math.round(n / 1024))} KB`
 }
 
 /** How often a running export looks whether its engine waits for the editing. */
@@ -695,53 +717,121 @@ export class Exporter {
     this.previewAbort?.abort()
   }
 
+  private gathered: { keys: string; at: number; facts: Promise<Gathered> } | null = null
+
+  /**
+   * What an export of `keys` needs to know of them that no setting changes:
+   * each one's row (offline or not) and a sample's probe. Read once for a
+   * selection (a minute at most), so the checks that follow the settings in
+   * the sheet only look at the disk.
+   */
+  private gather(keys: string[]): Promise<Gathered> {
+    const id = keys.join('\n')
+    const now = Date.now()
+    if (this.gathered?.keys === id && now - this.gathered.at < FACTS_FRESH_MS)
+      return this.gathered.facts
+    const facts = (async (): Promise<Gathered> => {
+      const photos = await mapLimit(keys, FACTS_AT_ONCE, async (key): Promise<Fact> => {
+        const item = await this.library.item(key).catch(() => undefined)
+        if (item?.offline) return { key, item, row: null, offline: true }
+        const row = await this.library.photoRow(key).catch(() => null)
+        return { key, item, row, offline: false }
+      })
+      const probed = photos.filter((p) => p.row).slice(0, PROBE_LIMIT)
+      const infos = await mapLimit(probed, FACTS_AT_ONCE, (p) =>
+        this.library.probe(p.row!).catch(() => null)
+      )
+      const sample: Gathered['sample'] = []
+      for (const [i, p] of probed.entries()) {
+        const info = infos[i]
+        if (!info) continue
+        const turned = ['Transpose', 'Rotate90', 'Transverse', 'Rotate270'].includes(
+          sourceOrientation(info, null)
+        )
+        sample.push({
+          key: p.key,
+          name: p.row!.name,
+          width: turned ? info.height : info.width,
+          height: turned ? info.width : info.height,
+          isHdr: info.is_hdr,
+          hasGainMap: !!info.gain_map,
+          tooLarge:
+            info.width * info.height > READ_LIMITS.max_pixels ||
+            Math.max(info.width, info.height) > READ_LIMITS.max_side
+        })
+      }
+      return { photos, sample }
+    })()
+    this.gathered = { keys: id, at: now, facts }
+    facts.catch(() => {
+      if (this.gathered?.facts === facts) this.gathered = null
+    })
+    return facts
+  }
+
+  /** The photos an export of `keys` would take, for the sheet's summary and estimate. */
+  async facts(keys: string[]): Promise<ExportFacts> {
+    const { photos, sample } = await this.gather(keys)
+    return {
+      photos: photos.length,
+      offline: photos.filter((p) => p.offline).length,
+      sample: sample.map(({ key, width, height, isHdr, hasGainMap }) => ({
+        key,
+        width,
+        height,
+        isHdr,
+        hasGainMap
+      }))
+    }
+  }
+
   /**
    * The checks an export's settings cannot make on their own: a folder that
    * cannot be written, too little room, files that would be replaced or
-   * skipped, a photo past what the engine opens. The same `Guard`s as
-   * `exportGuards`, raised before anything is written.
+   * skipped, a photo past what the engine opens, photos offline. The same
+   * `Guard`s as `exportGuards`, raised before anything is written; what
+   * the photos are is read once (`gather`), what the settings make of them
+   * each time.
    */
   async preflight(keys: string[], s: ExportSettings): Promise<Guard[]> {
     const out: Guard[] = []
     const folders = new Set<string>()
     let existing = 0
     let replaced = false
-    let need = 0
-    const big: string[] = []
-    let offline = 0
+    const { photos, sample } = await this.gather(keys)
     const dest = await this.destination()
-    for (const [i, key] of keys.entries()) {
-      const item = await this.library.item(key)
-      // Passed over by the export, and said so: never a reason to stop it.
-      if (item?.offline) {
-        offline++
-        continue
-      }
-      const row = await this.library.photoRow(key).catch(() => null)
-      if (!row) continue
-      const { target, stem } = this.nameOf(row, item, s, i + 1, dest)
-      folders.add(target)
+    const offline = photos.filter((p) => p.offline).length
+    const big = sample.filter((p) => p.tooLarge).map((p) => p.name)
+    const checked = await mapLimit([...photos.entries()], FACTS_AT_ONCE, async ([i, p]) => {
+      if (!p.row) return null
+      const { target, stem } = this.nameOf(p.row, p.item, s, i + 1, dest)
       const file = join(target, `${stem}.${FORMAT_EXT[s.format]}`)
-      if (await exists(file)) {
-        if (await sameFile(file, row.path)) replaced = true
-        else existing++
-      }
-      need += row.size * 2
-      if (i < PROBE_LIMIT) {
-        const info = await this.library.probe(row).catch(() => null)
-        if (
-          info &&
-          (info.width * info.height > READ_LIMITS.max_pixels ||
-            Math.max(info.width, info.height) > READ_LIMITS.max_side)
-        )
-          big.push(row.name)
-      }
+      const there = await exists(file)
+      return { target, there: there && (await sameFile(file, p.row.path)) ? 'original' : there }
+    })
+    for (const c of checked) {
+      if (!c) continue
+      folders.add(c.target)
+      if (c.there === 'original') replaced = true
+      else if (c.there) existing++
     }
+    // The room it needs: the sample's estimate for every photo, with a margin.
+    const written = photos.filter((p) => p.row).length
+    const each =
+      sample.length > 0
+        ? sample.reduce(
+            (n, p) => n + estimateBytes(s, p.width, p.height, p.isHdr || p.hasGainMap),
+            0
+          ) / sample.length
+        : 0
+    const need = Math.max(
+      Math.round(each * written * 1.25),
+      photos.reduce((n, p) => n + (p.row?.size ?? 0), 0)
+    )
     if (replaced)
       out.push({
         id: 'overwrite-original',
         severity: 'block',
-        step: 'review',
         card: 'location',
         message: t(
           'A file would be written over its original: change the name, the folder or the format.'
@@ -757,7 +847,6 @@ export class Exporter {
         out.push({
           id: 'folder-unwritable',
           severity: 'block',
-          step: 'review',
           card: 'location',
           message: t('Playroom cannot write to {{folder}}: choose another folder.', {
             folder: there
@@ -770,7 +859,6 @@ export class Exporter {
         out.push({
           id: 'disk-full',
           severity: 'block',
-          step: 'review',
           card: 'location',
           message: t('Only {{free}} is free where {{folder}} is.', {
             free: formatBytes(free),
@@ -781,7 +869,6 @@ export class Exporter {
         out.push({
           id: 'disk-low',
           severity: 'warn',
-          step: 'review',
           card: 'location',
           message: t('{{free}} is free where {{folder}} is; this export may need about {{need}}.', {
             free: formatBytes(free),
@@ -796,7 +883,6 @@ export class Exporter {
           ? {
               id: 'collide',
               severity: 'warn',
-              step: 'review',
               card: 'location',
               message: tp(
                 '{{count}} file already exists and will be replaced.',
@@ -808,7 +894,6 @@ export class Exporter {
             ? {
                 id: 'collide',
                 severity: 'warn',
-                step: 'review',
                 card: 'location',
                 message: tp(
                   '{{count}} file already exists and will be skipped.',
@@ -819,7 +904,6 @@ export class Exporter {
             : {
                 id: 'collide',
                 severity: 'minor',
-                step: 'review',
                 card: 'location',
                 message: tp(
                   '{{count}} file already exists: the new ones get a number.',
@@ -833,7 +917,6 @@ export class Exporter {
       out.push({
         id: 'offline',
         severity: 'warn',
-        step: 'review',
         card: null,
         message: tp(
           '{{count}} photo is offline and will be skipped.',
@@ -845,7 +928,6 @@ export class Exporter {
       out.push({
         id: 'too-large',
         severity: 'warn',
-        step: 'format',
         card: 'size',
         message:
           big.length > 1

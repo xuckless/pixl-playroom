@@ -29,10 +29,10 @@ test('the defaults export a JPEG without a block', () => {
   assert.equal(blocked(g), false)
 })
 
-test('a format that cannot hold what the HDR mode asks is a block, with its step', () => {
+test('a format that cannot hold what the HDR mode asks is a block, with its card', () => {
   const g = exportGuards(set({ format: 'jpeg' }, { mode: 'keep' }), [pq])
   assert.deepEqual(ids(g, 'block'), ['hdr-format'])
-  assert.equal(g.find((x) => x.id === 'hdr-format')!.step, 'delivery')
+  assert.equal(g.find((x) => x.id === 'hdr-format')!.card, 'hdr')
   assert.deepEqual(ids(exportGuards(set({ format: 'png' }, { mode: 'gainmap' }), [map]), 'block'), [
     'gainmap-format'
   ])

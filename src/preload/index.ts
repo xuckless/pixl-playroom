@@ -32,6 +32,7 @@ import {
   type FirstLookPicture,
   type EngineStatus,
   type GpuDragState,
+  type ExportFacts,
   type ExportPreset,
   type ExportProgress,
   type FolderListing,
@@ -402,6 +403,8 @@ const api = {
     /** The checks the disk and the photos make: folder, room, replaced files, size. */
     check: (keys: string[], settings: ExportSettings) =>
       call<Guard[]>(IPC.export.check, keys, settings),
+    /** The photos an export would take, read once for the selection: the estimate's sample. */
+    facts: (keys: string[]) => call<ExportFacts>(IPC.export.facts, keys),
     onProgress: (cb: (p: ExportProgress) => void) => on(IPC.export.progress, cb)
   },
   enhance: {
