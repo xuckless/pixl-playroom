@@ -80,7 +80,7 @@ export interface BrushSettings {
   density: number
   /** Paint only where the colour matches the colour under the brush's centre. */
   autoMask: boolean
-  /** A pen's pressure scales size and flow. */
+  /** A pen's pressure scales size and strength. */
   pressure: boolean
 }
 /** Lightroom's two brushes, A and B, and the eraser, each remembering its own settings. */
