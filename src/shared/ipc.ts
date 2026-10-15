@@ -656,6 +656,11 @@ export interface BatchResult {
   failed: { key: string; message: string }[]
   /** A nudge held at a slider's end on these photos (Quick develop). */
   limited?: string[]
+  /**
+   * A growing batch's photos whose step was not rewritten (edited since, or
+   * the rewrite failed): they keep the step they had, still the batch's.
+   */
+  kept?: { key: string; seq: number }[]
 }
 
 /** A batch taken back (or brought back): where it was, and where a later edit kept it. */

@@ -502,5 +502,13 @@
     "ja": "ライブラリのどこでも、⌥↑ と ⌥↓ で選択した写真の露光量を1/3段（⇧ で1段）、⌥← と ⌥→ でホワイトバランスを変えられます。続けてのクリックやキー操作は、各写真のヒストリーで1ステップ、⌘Z 1回分になります。",
     "vi": "⌥↑ và ⌥↓ thay đổi phơi sáng của vùng chọn một phần ba stop (với ⇧, cả một stop), còn ⌥← và ⌥→ thay đổi cân bằng trắng, ở bất cứ đâu trong Thư viện. Một loạt nhấp hoặc phím bấm là một bước trong Lịch sử của mỗi ảnh và một lần ⌘Z.",
     "zh-Hans": "在图库中任意位置，⌥↑ 和 ⌥↓ 将所选照片的曝光度调整三分之一档（按住 ⇧ 为一整档），⌥← 和 ⌥→ 调整其白平衡。一连串点击或按键在每张照片的历史记录中只是一步，也只需一次 ⌘Z。"
+  },
+  "{{look}} at 0%": {
+    "en": "{{look}} at 0%",
+    "fr": "{{look}} à 0 %",
+    "de": "{{look}} bei 0 %",
+    "ja": "{{look}}（0%）",
+    "vi": "{{look}} ở 0%",
+    "zh-Hans": "{{look}}（0%）"
   }
 }

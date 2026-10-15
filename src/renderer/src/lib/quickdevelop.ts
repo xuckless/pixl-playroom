@@ -25,9 +25,11 @@ import type { Preset } from '../../../shared/ipc'
 import { onTop, type StepRef } from '../../../shared/libraryundo'
 import {
   lookLabel,
+  lookLive,
   needsModels,
   nudgeLabel,
   readout,
+  readoutEntries,
   ROW_BY_ID,
   targetsSummary,
   type NudgeId,
@@ -38,7 +40,7 @@ import { nextId, useLibrary } from '../state/library'
 import { useLibraryUndo } from '../state/libraryUndo'
 import { useUi } from '../state/ui'
 import { api } from './api'
-import { runRecipeBatch, type BatchOutcome } from './batch'
+import { runRecipeBatch, type BatchOutcome, type RecipeBatch } from './batch'
 import { t, tk, tp } from './i18n'
 
 /** A burst ends this long after its last click. */
@@ -55,6 +57,12 @@ export interface QuickLook {
   sig: string
   /** Each photo's step. */
   steps: StepRef[]
+  /**
+   * Set when every step was rewritten to nothing (Amount 0) and its entry
+   * went: the entry that was under it (null, none). It stays live while that
+   * is still the newest.
+   */
+  below?: string | null
 }
 
 interface QuickState {
@@ -65,13 +73,19 @@ interface QuickState {
   /** The undo entries behind the readouts: one undone, and they start again. */
   entries: string[]
   look: QuickLook | null
+  /**
+   * The look's batch being rewritten (its Amount, a swap): it stays live
+   * meanwhile, though its entry may go and come back before `look` follows.
+   */
+  rewriting: string | null
 }
 
 export const useQuick = create<QuickState>(() => ({
   sig: '',
   readouts: {},
   entries: [],
-  look: null
+  look: null,
+  rewriting: null
 }))
 
 /** The targets as one string: the readouts and a look belong to exactly these photos. */
@@ -92,13 +106,29 @@ export function summaryOf(keys: readonly string[]): TargetsSummary {
   )
 }
 
+/** The bursts being written: one whose entry goes came back to where it started. */
+const writing = new Set<string>()
+
 /** An undo or redo took back what the readouts count: they start again. */
 useLibraryUndo.subscribe((s) => {
   const q = useQuick.getState()
   if (q.entries.length === 0) return
-  const done = new Set(s.done.map((e) => e.id))
-  if (!q.entries.every((id) => done.has(id))) useQuick.setState({ readouts: {}, entries: [] })
+  const entries = readoutEntries(q.entries, s.done, writing)
+  if (!entries) useQuick.setState({ readouts: {}, entries: [] })
+  else if (entries !== q.entries) useQuick.setState({ entries })
 })
+
+/**
+ * Quick develop's writes one after another: a click on another row, or the
+ * Amount let go while a nudge is written, waits its turn rather than being
+ * refused as a batch still running.
+ */
+let queue: Promise<unknown> = Promise.resolve()
+function inTurn<T>(fn: () => Promise<T>): Promise<T> {
+  const p = queue.then(fn, fn)
+  queue = p.catch(() => undefined)
+  return p
+}
 
 /** "3 stacks: covers only", "2 held at the slider's end": what a toast adds. */
 function notes(sum: TargetsSummary, o: BatchOutcome): string {
@@ -190,14 +220,25 @@ export function nudge(row: NudgeId, dir: 1 | -1, big = false): void {
   b.timer = setTimeout(() => {
     if (burst === b) burst = null
   }, BURST_MS)
-  if (!b.inflight) void send(b)
+  if (!b.inflight) {
+    b.inflight = true
+    void inTurn(() => send(b))
+  }
 }
 
 /** Write the burst's total so far; clicks made meanwhile go in the next write. */
 async function send(b: Burst): Promise<void> {
-  b.inflight = true
   try {
     while (b.total !== b.sent) {
+      if (b.started && !onTop(useLibraryUndo.getState(), b.id)) {
+        // Something else was done between two writes: the clicks still to
+        // send are a burst of their own, on top of it.
+        b.id = nextId()
+        b.total -= b.sent
+        b.sent = 0
+        b.steps = []
+        b.started = false
+      }
       const total = b.total
       const r = ROW_BY_ID.get(b.row)
       if (!r) return
@@ -205,6 +246,8 @@ async function send(b: Burst): Promise<void> {
       const prior = b.steps
       const value = readout(b.row, total, b.mixed)
       const sum = summaryOf(b.keys)
+      const id = b.id
+      writing.add(id)
       const o = await runRecipeBatch({
         keys: b.keys,
         id: b.id,
@@ -226,7 +269,7 @@ async function send(b: Burst): Promise<void> {
           tp('{{what}} on {{count}} photo', '{{what}} on {{count}} photos', n, {
             what: `${t(r.label)} ${value}`
           }) + notes(sum, o)
-      })
+      }).finally(() => writing.delete(id))
       if (!o) {
         // Not written (another batch was running): the clicks not sent are dropped.
         const q = useQuick.getState()
@@ -241,7 +284,7 @@ async function send(b: Burst): Promise<void> {
       b.sent = total
       b.steps = o.entry.steps
       const q = useQuick.getState()
-      if (q.sig === b.sig && !q.entries.includes(b.id))
+      if (q.sig === b.sig && o.entry.steps.length > 0 && !q.entries.includes(b.id))
         useQuick.setState({ entries: [...q.entries, b.id] })
     }
   } finally {
@@ -263,7 +306,7 @@ export const lookName = (p: Preset): string => (p.builtin ? t(p.name) : p.name)
 /** The look batch on these targets that can still be swapped or scaled, if any. */
 export function liveLook(keys: readonly string[]): QuickLook | null {
   const l = useQuick.getState().look
-  if (!l || l.sig !== sigOf(keys) || !onTop(useLibraryUndo.getState(), l.batchId)) return null
+  if (!l || l.sig !== sigOf(keys) || !lookLive(l, useLibraryUndo.getState().done)) return null
   return l
 }
 
@@ -276,7 +319,8 @@ async function writeLook(
   const sum = summaryOf(keys)
   const name = lookName(p)
   const prior = swap?.steps ?? []
-  const o = await runRecipeBatch({
+  if (swap) useQuick.setState({ rewriting: swap.batchId })
+  const o = await writeLookBatch({
     keys,
     id: swap?.batchId,
     continues: !!swap,
@@ -296,6 +340,8 @@ async function writeLook(
         prior.filter((s) => want.has(s.key))
       )
     },
+    // At 0 a look's every step is gone: the photos are as they were before it.
+    unchanged: amount === 0 ? t('{{look}} at 0%', { look: name }) : undefined,
     said: (n, o) =>
       tp('{{look}} on {{count}} photo', '{{look}} on {{count}} photos', n, {
         look: amount === 100 ? name : `${name} · ${amount}%`
@@ -305,13 +351,33 @@ async function writeLook(
         : '') +
       notes(sum, o)
   })
-  if (!o || o.entry.steps.length === 0) return
+  // The look follows in the same change as `rewriting` ends: never a moment locked.
+  if (!o) return useQuick.setState({ rewriting: null })
   const sig = sigOf(keys)
+  if (o.entry.steps.length === 0) {
+    // At 0 every step is gone, and so its entry: the Amount can still bring it back.
+    const below = useLibraryUndo.getState().done.at(-1)?.id ?? null
+    return useQuick.setState({
+      rewriting: null,
+      ...(swap ? { look: { ...swap, look: p, amount, steps: [], below } } : {})
+    })
+  }
   const q = useQuick.getState()
   useQuick.setState({
+    rewriting: null,
     look: { batchId: o.entry.id, look: p, amount, sig, steps: o.entry.steps },
     ...(q.sig === sig ? {} : { sig, readouts: {}, entries: [] })
   })
+}
+
+/** A look's batch; a failure to start it ends `rewriting` too. */
+async function writeLookBatch(b: RecipeBatch): Promise<BatchOutcome | null> {
+  try {
+    return await runRecipeBatch(b)
+  } catch (err) {
+    useQuick.setState({ rewriting: null })
+    throw err
+  }
 }
 
 /**
@@ -322,17 +388,24 @@ export async function applyLookTo(p: Preset, opts: { stack?: boolean } = {}): Pr
   const keys = quickTargets()
   if (keys.length === 0) return useLibrary.getState().say(t('Select photos first'))
   endBurst()
-  const swap = opts.stack ? null : liveLook(keys)
   useUi.getState().noteRecentLook(p.id)
-  await writeLook(p, 100, keys, swap)
+  // Whether it swaps is asked in its turn: a nudge written meanwhile locks the last look.
+  await inTurn(() => writeLook(p, 100, keys, opts.stack ? null : liveLook(keys)))
 }
 
+/** Counts the Amounts let go: one waiting its turn while a newer one came is not written. */
+let amountAsks = 0
+
 /** The look's Amount let go: every photo's step rewritten at `amount` (0…100). */
-export async function setLookAmount(amount: number): Promise<void> {
-  const keys = quickTargets()
-  const live = liveLook(keys)
-  if (!live || live.amount === amount) return
-  await writeLook(live.look, Math.round(amount), keys, live)
+export function setLookAmount(amount: number): Promise<void> {
+  const ask = ++amountAsks
+  return inTurn(async () => {
+    if (ask !== amountAsks) return
+    const keys = quickTargets()
+    const live = liveLook(keys)
+    if (!live || live.amount === Math.round(amount)) return
+    await writeLook(live.look, Math.round(amount), keys, live)
+  })
 }
 
 // ── Auto ────────────────────────────────────────────────────────────────────

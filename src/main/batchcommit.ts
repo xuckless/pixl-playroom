@@ -161,7 +161,8 @@ export type MakeChange = (key: string, before: Recipe) => Promise<Recipe>
  * writes); a photo edited since is left as it is. A photo with no step yet
  * gets one, as `commitBatch` writes it (with the batch's Version, if any).
  * `steps` are each photo's step after; a step rewritten to change nothing
- * is gone, and so missing from them.
+ * is gone, and so missing from them. A photo edited since, or whose rewrite
+ * failed, keeps the step it had (and the batch's Undo goes on naming it).
  */
 export async function writeBatch(
   s: BatchServices,
@@ -178,22 +179,28 @@ export async function writeBatch(
   const label = batchLabel(tag.label, tag.id)
   await Promise.all(again.map((key) => s.sessions.flush(key)))
   const written: { key: string; recipe: Recipe }[] = []
+  // Photos whose step stays as it was: still the batch's to undo.
+  const kept: BatchResult['steps'] = []
   for (const key of again) {
+    const seq = had.get(key) as number
     try {
-      const seq = had.get(key) as number
       const before = await s.index.batchBase(key, seq)
       // Edited since (in Develop, or by another batch): it keeps what it has.
-      if (!before) continue
+      if (!before) {
+        kept.push({ key, seq })
+        continue
+      }
       const next = s.planes.slim(await make(key, before))
       const now = await s.index.amendBatchStep(key, seq, label, next)
       if (now !== null) steps.push({ key, seq: now })
       written.push({ key, recipe: next })
     } catch (err) {
+      kept.push({ key, seq })
       failed.push({ key, message: err instanceof Error ? err.message : String(err) })
     }
   }
   await follow(s, written)
-  if (fresh.length === 0) return { items: await s.index.itemsFor(again), steps, failed }
+  if (fresh.length === 0) return { items: await s.index.itemsFor(again), steps, failed, kept }
   const current = await currentRecipes(s, fresh)
   const changes: BatchChange[] = []
   for (const key of fresh) {
@@ -209,7 +216,8 @@ export async function writeBatch(
   return {
     items: [...(await s.index.itemsFor(again)), ...out.items],
     steps: [...steps, ...out.steps],
-    failed: out.failed
+    failed: out.failed,
+    kept
   }
 }
 

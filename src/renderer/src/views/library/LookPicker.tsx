@@ -3,8 +3,7 @@ import type { Preset } from '../../../../shared/ipc'
 import { LOOKS } from '../../../../shared/looks/catalog'
 import { COLLECTION_BY_ID } from '../../../../shared/looks/collections'
 import { smartBlockers } from '../../../../shared/looks/smart'
-import { onTop } from '../../../../shared/libraryundo'
-import { pickerRows, pickerSections } from '../../../../shared/quickdevelop'
+import { lookLive, lookPreview, pickerRows, pickerSections } from '../../../../shared/quickdevelop'
 import { Icon } from '../../components/icons'
 import { Slider } from '../../components/ui'
 import { api } from '../../lib/api'
@@ -83,9 +82,11 @@ function useQuickPreview(
 /** The look batch on these targets, and whether it can still be swapped or scaled. */
 function useTargetLook(keys: string[]): { look: QuickLook | null; live: boolean } {
   const look = useQuick((s) => s.look)
+  const rewriting = useQuick((s) => s.rewriting)
   const done = useLibraryUndo((s) => s.done)
   if (!look || look.sig !== sigOf(keys)) return { look: null, live: false }
-  return { look, live: onTop({ done, undone: [] }, look.batchId) }
+  // Being rewritten, its entry may be gone a moment: the Amount keeps the keyboard.
+  return { look, live: rewriting === look.batchId || lookLive(look, done) }
 }
 
 /**
@@ -109,6 +110,8 @@ export function LookPicker({ keys }: { keys: string[] }): React.JSX.Element {
   const [drag, setDrag] = useState<number | null>(null)
   // As last moved: a key's step and its commit come in one go.
   const amountNow = useRef(100)
+  // Counts the Amounts let go: the newest one's write ends the drag.
+  const commits = useRef(0)
   const amount = drag ?? look?.amount ?? 100
   const list = useRef<HTMLDivElement>(null)
 
@@ -131,12 +134,16 @@ export function LookPicker({ keys }: { keys: string[] }): React.JSX.Element {
   )
   const rows = useMemo(() => pickerRows(sections), [sections])
   const at = rows.findIndex((r) => r.row === picked)
-  const chosen: Preset | null = at >= 0 ? rows[at].look : (look?.look ?? null)
-  const under = look && live && focus ? look.steps.find((s) => s.key === focus)?.seq : undefined
-  // Dragging the Amount: the applied look at that Amount; else the look picked, whole.
-  const previewId = drag !== null && look ? look.look.id : (chosen?.id ?? null)
-  const previewAmount = drag ?? 100
-  const url = useQuickPreview(focus, previewId, previewAmount, under)
+  // A look locked under later edits is not picked again by itself: Apply would stack it.
+  const chosen: Preset | null = at >= 0 ? rows[at].look : live ? (look?.look ?? null) : null
+  const shown = lookPreview(
+    chosen?.id ?? null,
+    look ? { id: look.look.id, amount: look.amount, live } : null,
+    drag
+  )
+  const under =
+    shown.under && look && focus ? look.steps.find((s) => s.key === focus)?.seq : undefined
+  const url = useQuickPreview(focus, shown.id, shown.amount, under)
 
   const move = (by: number): void => {
     if (rows.length === 0) return
@@ -257,7 +264,10 @@ export function LookPicker({ keys }: { keys: string[] }): React.JSX.Element {
               setDrag(amountNow.current)
             }}
             onCommit={() => {
-              void setLookAmount(amountNow.current).finally(() => setDrag(null))
+              const n = ++commits.current
+              void setLookAmount(amountNow.current).finally(() => {
+                if (commits.current === n) setDrag(null)
+              })
             }}
           />
         ) : (

@@ -225,16 +225,19 @@ export function lookAt(
   after.layers.push(...structuredClone(smart))
   const k = Math.min(1, Math.max(0, amount / 100))
   if (k === 1) return after
-  // A smart look's masks are its own, scaled by its Amount; the rest blends.
-  const fields = lookFields(before, after).filter((f) => f[0] !== 'layers' && f[0] !== 'pixels')
+  // A smart look's masks are its own, scaled by its Amount, as Develop's rail
+  // scales them; any other look's masks and steps are its once there is any of it.
+  const own = !!p.smart || smart.length > 0
+  const fields = lookFields(before, after).filter(
+    (f) => !own || (f[0] !== 'layers' && f[0] !== 'pixels')
+  )
   const out = blendLook(before, after, fields, k)
+  if (!own) return out
   const made = new Set(smart.map((l) => l.id))
-  out.layers = [
-    ...before.layers,
-    ...after.layers
-      .filter((l) => made.has(l.id))
-      .map((l) => ({ ...l, amount: Math.round(l.amount * k) }))
-  ]
+  out.layers = after.layers.map((l) =>
+    made.has(l.id) ? { ...l, amount: Math.round(l.amount * k) } : l
+  )
+  out.pixels = structuredClone(after.pixels)
   return out
 }
 
@@ -327,6 +330,67 @@ export function pickerSections(o: {
   for (const [id, looks] of shelves)
     out.push({ id, label: COLLECTION_BY_ID.get(id)?.label ?? id, looks })
   return out.filter((s) => s.looks.length > 0)
+}
+
+/**
+ * Whether a look batch can still be swapped or scaled: its entry is the
+ * newest on the Library's undo stack (`done`), or, every step rewritten to
+ * nothing at Amount 0 so that its entry went, the one it was on (`below`,
+ * null for none) still is.
+ */
+export function lookLive(
+  look: { batchId: string; steps: readonly unknown[]; below?: string | null },
+  done: readonly { id: string }[]
+): boolean {
+  const top = done[done.length - 1]?.id ?? null
+  if (top === look.batchId) return true
+  return look.steps.length === 0 && look.below !== undefined && top === look.below
+}
+
+/** The look applied last on these targets, as the picker sees it. */
+export interface AppliedLook {
+  id: string
+  amount: number
+  /** Still the newest entry on the undo stack: it can be swapped or scaled. */
+  live: boolean
+}
+
+/**
+ * What the picker's one preview shows: the look picked, else the applied one
+ * while it can still change; while the Amount moves, the applied look at
+ * that Amount. `under`: shown in place of the applied look (its step taken
+ * off first), as Apply or the Amount would write it; otherwise on the photo
+ * as it stands, as a stacked look would be. `id` null: the photo as it is.
+ */
+export function lookPreview(
+  picked: string | null,
+  applied: AppliedLook | null,
+  drag: number | null
+): { id: string | null; amount: number; under: boolean } {
+  const live = !!applied?.live
+  if (drag !== null && applied && live) return { id: applied.id, amount: drag, under: true }
+  const id = picked ?? (live && applied ? applied.id : null)
+  if (id === null) return { id: null, amount: 100, under: false }
+  // The applied look picked again shows at the Amount it was given.
+  const amount = live && applied?.id === id ? applied.amount : 100
+  return { id, amount, under: live }
+}
+
+/**
+ * The undo entries behind the rows' readouts, after the Library's undo stack
+ * changed (`done`): null when one of them was undone or taken off by its
+ * toast (the readouts start again). An entry gone because its burst came back
+ * to where it started (`emptied`, still being written) only leaves the list.
+ */
+export function readoutEntries(
+  entries: readonly string[],
+  done: readonly { id: string }[],
+  emptied: ReadonlySet<string>
+): string[] | null {
+  const there = new Set(done.map((e) => e.id))
+  const kept = entries.filter((id) => there.has(id))
+  if (entries.some((id) => !there.has(id) && !emptied.has(id))) return null
+  return kept.length === entries.length ? (entries as string[]) : kept
 }
 
 /** The picker's rows in order, each look under the section it is shown in. */

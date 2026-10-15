@@ -53,6 +53,8 @@ export interface RecipeBatch {
   write(keys: string[], tag: BatchTag): Promise<BatchResult>
   /** What it did ("Pasted onto 12 photos"); `o` is how it went. */
   said(count: number, o: BatchOutcome): string
+  /** What it says when no photo changed (else "Nothing to change"). */
+  unchanged?: string
   /** The batch's id (a new one when not given): a growing batch keeps its first one. */
   id?: string
   /** Carry on batch `id` (see the top of this file): no question asked first. */
@@ -134,6 +136,7 @@ export async function runRecipeBatch(b: RecipeBatch): Promise<BatchOutcome | nul
   const steps: BatchResult['steps'] = []
   const failed: Failure[] = []
   const limited: string[] = []
+  const kept: BatchResult['steps'] = []
   let stopped = false
   let done = 0
   const busy = useBusy.getState()
@@ -161,6 +164,7 @@ export async function runRecipeBatch(b: RecipeBatch): Promise<BatchOutcome | nul
       steps.push(...r.steps)
       failed.push(...r.failed)
       limited.push(...(r.limited ?? []))
+      kept.push(...(r.kept ?? []))
       done += part.length
       if (shown) busy.update(job, { progress: done / keys.length, detail: progress() })
     }
@@ -181,7 +185,7 @@ export async function runRecipeBatch(b: RecipeBatch): Promise<BatchOutcome | nul
     kind: 'recipe',
     id: tag.id,
     title: b.title,
-    steps: had ? mergeSteps(had, keys.slice(0, done), steps) : steps
+    steps: had ? mergeSteps(had, keys.slice(0, done), [...steps, ...kept]) : steps
   }
   if (had) replaceUndo(entry)
   else pushUndo(entry)
@@ -203,7 +207,7 @@ function sayOutcome(b: RecipeBatch, left: number, o: BatchOutcome): void {
     lib.say(t('{{what}}: {{error}}', { what: b.title, error: o.failed[0].message }), 'error')
     return
   }
-  const parts = [changed === 0 ? t('Nothing to change') : b.said(changed, o)]
+  const parts = [changed === 0 ? (b.unchanged ?? t('Nothing to change')) : b.said(changed, o)]
   if (o.failed.length > 0)
     parts.push(
       tp('{{count}} failed ({{error}})', '{{count}} failed ({{error}})', o.failed.length, {

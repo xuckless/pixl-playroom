@@ -7,6 +7,8 @@ import {
   deltaRow,
   lookAt,
   lookLabel,
+  lookLive,
+  lookPreview,
   needsModels,
   noteRecent,
   NUDGE_ROWS,
@@ -16,6 +18,7 @@ import {
   pickerSections,
   quickDeltaOf,
   readout,
+  readoutEntries,
   RECENT_LOOKS,
   targetsSummary,
   thirds
@@ -174,6 +177,67 @@ test('a smart look’s masks scale with its Amount; its model work is Develop’
     smart.some((p) => needsModels(p.smart!)),
     'some smart look runs a model'
   )
+})
+
+test('any other look’s masks are its own at an Amount, as Develop blends them', () => {
+  const before = defaultRecipe(false)
+  const ctx = { wb: JPEG, lensResolved: 'keep' as const }
+  const layer = {
+    ...structuredClone(before),
+    id: 'p1',
+    amount: 60
+  } as unknown as Recipe['layers'][number]
+  // A saved preset carrying a mask: Develop's rail takes it whole once there is any of the look.
+  const withMask: Preset = {
+    ...plain,
+    id: 'user-mask',
+    builtin: false,
+    meta: undefined,
+    recipe: { ...structuredClone(plain.recipe), layers: [layer] },
+    fields: [...(plain.fields ?? []), ['layers']]
+  }
+  const whole = lookAt(before, withMask, ctx, 100)
+  const half = lookAt(before, withMask, ctx, 50)
+  assert.equal(whole.layers.length, 1)
+  assert.deepEqual(half.layers, whole.layers)
+  assert.deepEqual(lookAt(before, withMask, ctx, 0).layers, before.layers)
+})
+
+test('the look preview: the one picked, the applied one at its Amount, the Amount moving', () => {
+  const applied = { id: 'a', amount: 60, live: true }
+  // Nothing picked: the applied look as it stands, in place of itself.
+  assert.deepEqual(lookPreview(null, applied, null), { id: 'a', amount: 60, under: true })
+  // Another picked: whole, in place of the applied one (a swap).
+  assert.deepEqual(lookPreview('b', applied, null), { id: 'b', amount: 100, under: true })
+  // The Amount moving shows the applied look at that Amount.
+  assert.deepEqual(lookPreview('b', applied, 30), { id: 'a', amount: 30, under: true })
+  // Locked: nothing picked is the photo as it is; a pick goes on top of it.
+  const locked = { ...applied, live: false }
+  assert.deepEqual(lookPreview(null, locked, null), { id: null, amount: 100, under: false })
+  assert.deepEqual(lookPreview('a', locked, null), { id: 'a', amount: 100, under: false })
+  assert.deepEqual(lookPreview(null, null, null), { id: null, amount: 100, under: false })
+})
+
+test('a look stays live while its entry is newest, and at Amount 0 while nothing came after', () => {
+  const done = [{ id: 'x' }, { id: 'look' }]
+  assert.equal(lookLive({ batchId: 'look', steps: [1] }, done), true)
+  assert.equal(lookLive({ batchId: 'look', steps: [1] }, [...done, { id: 'paste' }]), false)
+  // Every step rewritten to nothing: its entry went, the one under it is on top.
+  const gone = { batchId: 'look', steps: [], below: 'x' }
+  assert.equal(lookLive(gone, [{ id: 'x' }]), true)
+  assert.equal(lookLive(gone, [{ id: 'x' }, { id: 'paste' }]), false)
+  assert.equal(lookLive({ batchId: 'look', steps: [], below: null }, []), true)
+  assert.equal(lookLive({ batchId: 'look', steps: [] }, []), false)
+  // Brought back from 0: its entry is on top again before the picker hears of its steps.
+  assert.equal(lookLive(gone, [{ id: 'x' }, { id: 'look' }]), true)
+})
+
+test('the readouts start again when an entry behind them is undone, not when a burst comes back to 0', () => {
+  const entries = ['e1', 'e2']
+  assert.equal(readoutEntries(entries, [{ id: 'e1' }, { id: 'e2' }], new Set()), entries)
+  assert.equal(readoutEntries(entries, [{ id: 'e1' }], new Set()), null)
+  // e2's burst came back to where it started while being written: it only leaves the list.
+  assert.deepEqual(readoutEntries(entries, [{ id: 'e1' }], new Set(['e2'])), ['e1'])
 })
 
 test('the picker: My Looks, presets, recent, then the collections; one list when searching', () => {
@@ -382,7 +446,46 @@ test('writeBatch rewrites the steps it has, writes new ones, and leaves photos e
     { key: 'had', seq: 4 },
     { key: 'new', seq: 9 }
   ])
+  // The photo edited since keeps its step, still the batch's to undo.
+  assert.deepEqual(out.kept, [{ key: 'edited', seq: 5 }])
   assert.deepEqual(out.failed, [])
+})
+
+test('a rewrite that fails keeps the photo’s step in the batch, and says so', async () => {
+  const r = defaultRecipe(false)
+  const s = {
+    index: {
+      batchBase: async () => r,
+      amendBatchStep: async (key: string, seq: number) => {
+        if (key === 'bad') throw new Error('disk full')
+        return seq
+      },
+      recipes: async () => [],
+      itemsFor: async (keys: string[]) => keys.map(() => undefined)
+    },
+    planes: { slim: (x: Recipe) => x, hydrate: async (x: Recipe) => x },
+    library: { addVersion: async () => null, queueThumb: () => {} },
+    sessions: { liveRecipe: () => undefined, update: () => {}, flush: async () => {} }
+  } as unknown as BatchServices
+  const out = await writeBatch(
+    s,
+    ['ok', 'bad'],
+    { id: 'q2', label: 'Contrast: +5', version: null },
+    [
+      { key: 'ok', seq: 2 },
+      { key: 'bad', seq: 3 }
+    ],
+    async (_key, before) => nudgeRecipe(before, { contrast: 5 }, null).recipe
+  )
+  assert.deepEqual(out.steps, [{ key: 'ok', seq: 2 }])
+  assert.deepEqual(out.kept, [{ key: 'bad', seq: 3 }])
+  assert.deepEqual(out.failed, [{ key: 'bad', message: 'disk full' }])
+  // The entry after: written steps and kept ones, none lost.
+  const had = [
+    { key: 'ok', seq: 2 },
+    { key: 'bad', seq: 3 }
+  ]
+  assert.deepEqual(mergeSteps(had, ['ok', 'bad'], [...out.steps, ...(out.kept ?? [])]), had)
 })
 
 test('Quick develop’s keys are bound once each, and ⇧A is left to culling', async () => {
