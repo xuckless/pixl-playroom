@@ -19,6 +19,7 @@ import {
   viewGeometry,
   type Projective
 } from '../src/shared/view'
+import { ownLensFrame, placeMasks, retagMasks } from '../src/shared/lensframe'
 import { nextGeometryRev, planeFits } from '../src/renderer/src/state/maskplanes'
 import { nextTarget, type Watched } from '../src/renderer/src/views/loupe/maskgl/handover'
 
@@ -117,6 +118,52 @@ test('the placement key moves with the framing and the lens, not with a guide or
   const k1 = key(lensed)
   lensed.off = { optics: true }
   assert.notEqual(key(lensed), k1, 'Optics switched off unwarps the picture')
+})
+
+test('the masks’ lens record moving (a lens edit settling) leaves every plane on hand standing', () => {
+  // Rebased or retagged, the masks sit where they did on the picture: the
+  // engine draws no new plane or thumbnail for it, so none may be waited for.
+  const r = framed(true)
+  r.lens.distortion = 40
+  r.masks = { lensFrame: null }
+  const key = (x: Recipe): string => maskPlacementKey(x, false, W, H)
+  assert.equal(key(retagMasks(r)), key(r))
+  const own = ownLensFrame(r)
+  assert.ok(own)
+  const rebased = placeMasks(r, { to: own, maps: {} }, 'rebase')
+  assert.notEqual(rebased.masks.lensFrame, r.masks.lensFrame)
+  assert.equal(key(rebased), key(r))
+})
+
+test('the placement key moves only when what the engine places masks by does', () => {
+  // A key that moved where compile's framing and lens did not would wait for
+  // a mask thumbnail the engine never draws again (its signature is those).
+  const edits: ((x: Recipe) => void)[] = [
+    () => {},
+    (x) => (x.basic.exposure = 1),
+    (x) => (x.geometry.straighten = 7),
+    (x) => (x.geometry.quarterTurns = 2),
+    (x) => (x.geometry.flipHorizontal = true),
+    (x) => (x.geometry.crop = null),
+    (x) => (x.off = { crop: true }),
+    (x) => (x.off = { geometry: true }),
+    (x) => (x.off = { optics: true }),
+    (x) => (x.lens.distortion = 30),
+    (x) => (x.lens.vignetting = 30),
+    (x) => (x.masks = { lensFrame: null }),
+    (x) => (x.geometry.upright.guides = [{ from: { x: 0, y: 0 }, to: { x: 0, y: 1 } }])
+  ]
+  const variants = edits.map((f) => {
+    const x = framed(true)
+    x.lens.distortion = 10
+    x.masks = { lensFrame: ownLensFrame(x) }
+    f(x)
+    const c = compile(x, ctx())
+    return { key: maskPlacementKey(x, false, W, H), placed: JSON.stringify([c.framing, c.lens]) }
+  })
+  for (const a of variants)
+    for (const b of variants)
+      if (a.key !== b.key) assert.notEqual(a.placed, b.placed, `${a.key} / ${b.key}`)
 })
 
 test('a mask plane shows only over the view and the framing it was drawn for', () => {

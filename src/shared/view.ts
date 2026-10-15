@@ -17,7 +17,7 @@ import { effective } from './edits'
 import { lensCorrection } from './lens'
 import { inverse, matrixOf, swapsAxes, transformPoint } from './orientation'
 import { applyProjective, glMat3, type Projective } from './projective'
-import { gridPoint, lensFrameKey, type LensGrid } from './lensframe'
+import { gridPoint, type LensGrid } from './lensframe'
 import type { Recipe } from './recipe'
 import {
   canvasToFrame,
@@ -93,6 +93,10 @@ export function loupeGeometry(
  * the engine is given them (rounded as `compile` rounds them). A change to
  * it leaves every mask plane on hand drawn for another picture; anything
  * else (a guide moved, an aspect lock on a drawn crop) leaves them as they are.
+ *
+ * Not the lens frame the masks are recorded on: moving that record (a lens
+ * edit settling) leaves every mask where it was on the picture, and a plane
+ * or thumbnail the engine has no reason to draw again would never show.
  */
 export function maskPlacementKey(
   r: Recipe,
@@ -108,9 +112,7 @@ export function maskPlacementKey(
     g.crop && [g.crop.x, g.crop.y, g.crop.width, g.crop.height].map(round4),
     round4(g.straighten),
     g.transform,
-    lensCorrection(e.lens)?.distortion ?? null,
-    // The lens the masks are drawn on: a lens edit settling moves them onto the new one.
-    lensFrameKey(r.masks?.lensFrame ?? null)
+    lensCorrection(e.lens)?.distortion ?? null
   ])
 }
 
