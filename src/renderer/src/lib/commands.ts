@@ -43,6 +43,7 @@ import { api, errorText } from './api'
 import { autoWbBatch } from './autowb'
 import { makeProofCopies, makeProofCopy, toggleProofSplit } from './proofing'
 import { copySettings, pasteSettings } from './clipboard'
+import { autoToneTargets, nudge } from './quickdevelop'
 import { developBatch, gridStep, inGrid, inMode, metaItem, metaTargets } from './librarycontext'
 import {
   afterDecision,
@@ -624,6 +625,16 @@ export const COMMANDS: KeyCommand[] = [
     when: () => !!lib().clipboard && lib().targets().length > 0,
     run: () => void pasteSettings(lib().targets())
   },
+  ...quickNudges(),
+  {
+    id: 'library.autoTone',
+    label: tk('Auto tone on the selection'),
+    group: 'Library',
+    context: 'library',
+    keys: [],
+    when: () => lib().targets().length > 0,
+    run: () => void autoToneTargets(lib().targets())
+  },
   ...gridMoves(),
   {
     id: 'library.stack',
@@ -678,6 +689,19 @@ export const COMMANDS: KeyCommand[] = [
     context: 'library',
     keys: ['I'],
     run: () => ui().setLibraryInfo(!ui().libraryInfo)
+  },
+  {
+    id: 'library.quickDevelop',
+    label: tk('Show or hide Quick develop'),
+    group: 'View',
+    context: 'library',
+    keys: ['Shift+I'],
+    run: () => {
+      const u = ui()
+      const shown = u.libraryInfo && u.libraryTab === 'quick'
+      u.setLibraryTab('quick')
+      u.setLibraryInfo(!shown)
+    }
   },
   {
     id: 'library.sidebar',
@@ -1228,6 +1252,44 @@ export const COMMANDS: KeyCommand[] = [
     }
   }
 ]
+
+/**
+ * Quick develop's nudges from the keyboard, wherever the focus is in the
+ * Library (lib/quickdevelop.ts): ⌥↑ ⌥↓ Exposure a third of a stop (⇧ a whole
+ * one), ⌥← ⌥→ Temp. Each run of presses is one batch on the selection.
+ */
+function quickNudges(): KeyCommand[] {
+  const nudges: [string, string, string, Parameters<typeof nudge>][] = [
+    ['quick.exposureUp', tk('Exposure up a third of a stop'), 'Alt+ArrowUp', ['exposure', 1]],
+    [
+      'quick.exposureDown',
+      tk('Exposure down a third of a stop'),
+      'Alt+ArrowDown',
+      ['exposure', -1]
+    ],
+    ['quick.exposureUpStop', tk('Exposure up a stop'), 'Shift+Alt+ArrowUp', ['exposure', 1, true]],
+    [
+      'quick.exposureDownStop',
+      tk('Exposure down a stop'),
+      'Shift+Alt+ArrowDown',
+      ['exposure', -1, true]
+    ],
+    ['quick.warmer', tk('Warmer'), 'Alt+ArrowRight', ['temp', 1]],
+    ['quick.cooler', tk('Cooler'), 'Alt+ArrowLeft', ['temp', -1]]
+  ]
+  return nudges.map<KeyCommand>(([id, label, key, args]) => ({
+    id,
+    label,
+    group: 'Edit',
+    context: 'library',
+    keys: [key],
+    when: () => lib().targets().length > 0,
+    run: (e) => {
+      nudge(...args)
+      stop(e)
+    }
+  }))
+}
 
 /**
  * The grid's keyboard moves (⇧ extends the selection), listening while the

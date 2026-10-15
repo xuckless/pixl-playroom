@@ -899,6 +899,8 @@ const MODE_KEYS: Record<LibraryMode, [string[], string][]> = {
     [['library.compare'], tk('compare')],
     [['library.survey'], tk('survey')],
     [['library.stack'], tk('stack')],
+    [['library.quickDevelop'], tk('quick develop')],
+    [['library.undo'], tk('undo')],
     [['library.develop'], tk('develop')]
   ],
   loupe: [

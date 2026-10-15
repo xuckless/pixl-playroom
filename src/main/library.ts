@@ -23,6 +23,7 @@ import {
   PRESERVE_ALL,
   reduceRefused,
   unreadableFile,
+  type ConvertReport,
   type ConvertRequest,
   type InputFormat,
   type SourceInfo,
@@ -1134,6 +1135,44 @@ export class Library {
   }
 
   /**
+   * The photo `key` graded with `recipe` into `out`, at most `edge` on its
+   * long side, with no Develop session: Quick develop's look preview and its
+   * Auto tone measure (main/quickdevelop.ts). Made as a thumbnail is (a JPEG
+   * in sRGB on the background engine); `request` changes what it says.
+   */
+  async render(
+    key: string,
+    recipe: Recipe,
+    out: string,
+    o: {
+      edge: number
+      request?: Partial<ConvertRequest>
+      /** What it is shown in: sRGB as a thumbnail, Display P3 as Develop measures. */
+      space?: 'Srgb' | 'DisplayP3'
+      signal?: AbortSignal
+    }
+  ): Promise<{ report: ConvertReport; row: PhotoRow }> {
+    const row = await this.photoRow(key)
+    const info = await this.probe(row)
+    const base = {
+      encode: { Jpeg: { quality: 85, subsampling: 'Quarter' as const, optimize: false } },
+      pixel: { depth: 'Eight' as const, channels: 3 },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      threads: BACKGROUND_THREADS,
+      color: displayPolicy(info, o.space ?? 'Srgb'),
+      ...o.request
+    }
+    const graded = await this.planes.hydrate(recipe)
+    const report = await this.graded(row, info, graded, out, base, o.edge, o.signal)
+    return { report, row }
+  }
+
+  /** A file version's stamp: what a render of it is cached under. */
+  versionStamp(row: PhotoRow): string {
+    return versionOf(row)
+  }
+
+  /**
    * The photo unedited at most `edge` on its long side (`previewPlan`): a
    * RAW's embedded preview sized from the preview, a JPEG decoded at a
    * fraction of its size where that still leaves the edge. Only a RAW with
@@ -1223,8 +1262,10 @@ export class Library {
     recipe: Recipe,
     out: string,
     base: Record<string, unknown>,
-    edge = THUMB_EDGE
-  ): Promise<PictureSize> {
+    /** The long edge wanted (a thumbnail's, a look's preview, a measure). */
+    edge = THUMB_EDGE,
+    signal?: AbortSignal
+  ): Promise<ConvertReport> {
     // A gain-map photo edited as HDR: its applied rendition, tone mapped.
     const hdr = editsHdr(recipe, file) ? await ensureHdrSource(this.engine, row, file) : null
     const info = hdr?.info ?? file
@@ -1297,15 +1338,17 @@ export class Library {
     const cropW = (compiled.crop?.width ?? 1) * width
     const cropH = (compiled.crop?.height ?? 1) * height
     const factor = Math.min(1, edge / (Math.max(cropW, cropH) * (src.width / px.frameWidth)))
-    const report = await this.engine.convert({
-      ...blankRequest(src.path, out, src.input),
-      ...base,
-      resize: factor < 1 ? { Scale: { factor } } : 'None',
-      grade: compiled.grade,
-      framing: compiled.framing,
-      lens: compiled.lens,
-      retouch: compiled.retouch
-    })
-    return { width: report.width, height: report.height }
+    return this.engine.convert(
+      {
+        ...blankRequest(src.path, out, src.input),
+        ...base,
+        resize: factor < 1 ? { Scale: { factor } } : 'None',
+        grade: compiled.grade,
+        framing: compiled.framing,
+        lens: compiled.lens,
+        retouch: compiled.retouch
+      },
+      { signal }
+    )
   }
 }

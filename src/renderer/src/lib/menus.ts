@@ -465,13 +465,32 @@ function photoMenu(): Item[] {
     stackMenu(),
     collectionMenu(),
     sep,
-    cmd('autoTone', t('Auto Tone')),
+    cmd(inDevelop() ? 'autoTone' : 'library.autoTone', t('Auto Tone')),
     cmd('autoWbBatch', t('Auto White Balance')),
+    quickMenu(),
     ...(newerDevelop() ? [cmd('rebuild', t('Rebuild with the Latest Develop'))] : []),
     sep,
     cmd('cull.rejectAll', t('Reject Suggested Rejects')),
     cmd('cull.keep', t('Keep (Not a Reject)'))
   ]
+}
+
+/** Photo → Quick Develop: the Library's nudges on the selection (lib/quickdevelop.ts). */
+function quickMenu(): Item {
+  return {
+    label: t('Quick Develop'),
+    submenu: [
+      cmd('quick.exposureUp', t('Exposure +1/3')),
+      cmd('quick.exposureDown', t('Exposure −1/3')),
+      cmd('quick.exposureUpStop', t('Exposure +1')),
+      cmd('quick.exposureDownStop', t('Exposure −1')),
+      sep,
+      cmd('quick.warmer', t('Warmer')),
+      cmd('quick.cooler', t('Cooler')),
+      sep,
+      cmd('library.quickDevelop', t('Show Quick Develop'))
+    ]
+  }
 }
 
 /** Show Super resolution (it isn't one of the adjustment cards with a key). */
@@ -580,7 +599,12 @@ function viewMenu(): Item[] {
     ...zoomItems(),
     sep,
     cmd('library.sidebar', t('Show Sources'), { checked: ui().librarySidebar }),
-    cmd('library.info', t('Show Info'), { checked: ui().libraryInfo }),
+    cmd('library.info', t('Show Info'), {
+      checked: ui().libraryInfo && ui().libraryTab === 'info'
+    }),
+    cmd('library.quickDevelop', t('Show Quick Develop'), {
+      checked: ui().libraryInfo && ui().libraryTab === 'quick'
+    }),
     cmd('library.filterBar', t('Show Filter Bar'), { checked: ui().filterBar }),
     act('view.filmstrip', t('Show Filmstrip'), () => ui().setFilmstrip(!ui().filmstrip), {
       checked: ui().filmstrip,
@@ -690,6 +714,16 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
     ...(!developing || dev().session?.key === key ? [copySettings()] : []),
     pasteSettings(),
     ...pasteMoreItems(),
+    ...(developing
+      ? []
+      : [
+          cmd(
+            'library.autoTone',
+            n > 1
+              ? tp('Auto Tone ({{count}} Photo)', 'Auto Tone ({{count}} Photos)', n)
+              : t('Auto Tone')
+          )
+        ]),
     cmd(
       'autoWbBatch',
       n > 1

@@ -3,9 +3,9 @@
  *
  * Every change the Library makes to photos' settings goes through here:
  * paste and sync (`library.applyRecipe`), auto white balance on a selection
- * (autowb.ts), and the looks and Quick develop nudges that come next. A batch
- * is written the way an edit in Develop is, so each photo's own history is
- * the record and the undo:
+ * (autowb.ts), and Quick develop's nudges, looks and Auto tone
+ * (quickdevelop.ts). A batch is written the way an edit in Develop is, so
+ * each photo's own history is the record and the undo:
  *
  * - A photo with no history gets its base quietly (where it stood), with no
  *   "Before …" step that changes nothing (`IndexService.batchStep`).
@@ -14,6 +14,9 @@
  *   row of its own and the Library can find it again.
  * - Paste, sync and look batches keep at most one automatic "Before …"
  *   Version of each photo; nudges and Auto keep none (their step is enough).
+ * - A batch can grow (`writeBatch`): a burst of nudges, a look's Amount or
+ *   a look swapped rewrites each photo's step while it is still its last,
+ *   so it stays one step per photo and one entry to undo.
  * - A photo's first step makes its project. The renderer sends a batch in
  *   chunks (lib/batch.ts), after asking once where projects go, so a batch
  *   on thousands of photos shows its progress and can be stopped.
@@ -140,6 +143,82 @@ export async function commitBatch(
   await follow(s, written)
   const items = await s.index.itemsFor(changes.map((c) => c.key))
   return { items, steps, failed }
+}
+
+/**
+ * A photo's change in a batch that may already have its step: worked out
+ * from where the photo stood before the batch (`before`), so a nudge
+ * burst's total, a look's Amount or a look swapped is made again from
+ * there rather than laid on what the last write left.
+ */
+export type MakeChange = (key: string, before: Recipe) => Promise<Recipe>
+
+/**
+ * Write a chunk of a batch that goes on growing (Quick develop: a burst of
+ * nudges, a look and its Amount): each photo with a step in the batch
+ * already (`prior`) has that step rewritten from where it stood before it,
+ * while the step is still its last (one step per photo, however many
+ * writes); a photo edited since is left as it is. A photo with no step yet
+ * gets one, as `commitBatch` writes it (with the batch's Version, if any).
+ * `steps` are each photo's step after; a step rewritten to change nothing
+ * is gone, and so missing from them. A photo edited since, or whose rewrite
+ * failed, keeps the step it had (and the batch's Undo goes on naming it).
+ */
+export async function writeBatch(
+  s: BatchServices,
+  keys: string[],
+  tag: BatchTag,
+  prior: { key: string; seq: number }[],
+  make: MakeChange
+): Promise<BatchResult> {
+  const had = new Map(prior.map((p) => [p.key, p.seq]))
+  const fresh = keys.filter((k) => !had.has(k))
+  const again = keys.filter((k) => had.has(k))
+  const failed: BatchResult['failed'] = []
+  const steps: BatchResult['steps'] = []
+  const label = batchLabel(tag.label, tag.id)
+  await Promise.all(again.map((key) => s.sessions.flush(key)))
+  const written: { key: string; recipe: Recipe }[] = []
+  // Photos whose step stays as it was: still the batch's to undo.
+  const kept: BatchResult['steps'] = []
+  for (const key of again) {
+    const seq = had.get(key) as number
+    try {
+      const before = await s.index.batchBase(key, seq)
+      // Edited since (in Develop, or by another batch): it keeps what it has.
+      if (!before) {
+        kept.push({ key, seq })
+        continue
+      }
+      const next = s.planes.slim(await make(key, before))
+      const now = await s.index.amendBatchStep(key, seq, label, next)
+      if (now !== null) steps.push({ key, seq: now })
+      written.push({ key, recipe: next })
+    } catch (err) {
+      kept.push({ key, seq })
+      failed.push({ key, message: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  await follow(s, written)
+  if (fresh.length === 0) return { items: await s.index.itemsFor(again), steps, failed, kept }
+  const current = await currentRecipes(s, fresh)
+  const changes: BatchChange[] = []
+  for (const key of fresh) {
+    try {
+      const cur = current.get(key)
+      if (!cur) continue
+      changes.push({ key, before: cur.recipe, next: await make(key, cur.recipe) })
+    } catch (err) {
+      failed.push({ key, message: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  const out = await commitBatch(s, changes, tag, failed)
+  return {
+    items: [...(await s.index.itemsFor(again)), ...out.items],
+    steps: [...steps, ...out.steps],
+    failed: out.failed,
+    kept
+  }
 }
 
 /**

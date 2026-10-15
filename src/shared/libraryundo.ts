@@ -105,6 +105,38 @@ export function pushEntry(stack: UndoStack, e: UndoEntry, ring = RING): UndoStac
   return { done: done.slice(Math.max(0, done.length - ring)), undone: [] }
 }
 
+/**
+ * A batch that goes on growing (a nudge burst, a look's Amount or swap):
+ * its entry, while it is still the newest, is replaced by the one it grew
+ * into; otherwise the entry goes on top as a new one would. An entry left
+ * with no step goes (the burst came back to where it started).
+ */
+export function replaceTop(stack: UndoStack, e: UndoEntry, ring = RING): UndoStack {
+  const top = stack.done[stack.done.length - 1]
+  if (top?.id !== e.id) return pushEntry(stack, e, ring)
+  const rest = stack.done.slice(0, -1)
+  return { done: entrySize(e) > 0 ? [...rest, e] : rest, undone: [] }
+}
+
+/** The batch's entry is the newest on the stack: it may still grow. */
+export function onTop(stack: UndoStack, id: string): boolean {
+  return stack.done[stack.done.length - 1]?.id === id
+}
+
+/**
+ * A growing batch's steps after one more write: each photo written this
+ * time (`keys`) has its new step, or none (its step was rewritten to change
+ * nothing, so it is gone); every other photo keeps the step it had.
+ */
+export function mergeSteps(
+  had: readonly StepRef[],
+  keys: readonly string[],
+  fresh: readonly StepRef[]
+): StepRef[] {
+  const written = new Set(keys)
+  return [...had.filter((s) => !written.has(s.key)), ...fresh]
+}
+
 /** The entry `id` taken off the stack (undone out of order by its toast). */
 export function withoutEntry(stack: UndoStack, id: string): UndoStack {
   return {

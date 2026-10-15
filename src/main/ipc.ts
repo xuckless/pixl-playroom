@@ -60,6 +60,15 @@ import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
 import { autoWbBatch } from './autowb'
 import {
+  autoToneBatch,
+  lookBatch,
+  nudgeBatch,
+  QuickPreviews,
+  recipeStamps,
+  type QuickHelpers
+} from './quickdevelop'
+import { quickDeltaOf, type QuickDelta } from '../shared/quickdevelop'
+import {
   batchTagOf,
   commitBatch,
   currentRecipes,
@@ -934,10 +943,30 @@ export function registerIpc(s: Services): void {
     await s.index.removePreset(id)
   })
 
+  // What Quick develop asks of the rest of main (quickdevelop.ts).
+  const quick: QuickHelpers = {
+    wbContext: async (key) => s.sessions.wbContext(key) ?? wbContext(s.library, key),
+    look: async (id) => {
+      userPresets ??= s.index.presets()
+      return resolveLook(id) ?? (await userPresets).find((u) => u.id === id) ?? null
+    },
+    lensResolved: async (key, p) => {
+      const shot = s.sessions.liveRecipe(key)
+        ? await s.sessions.lensShot(key)
+        : await lensShotOf(s, key)
+      return s.lenses.resolve(shot, p.recipe.lens.profile.id).resolved
+    },
+    frame: (key) => baseFrame(s, key)
+  }
+  const quickPreviews = new QuickPreviews(s, quick, (e) => {
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.looks.thumb, e)
+  })
+
   // ── the Looks browser's cards ──
   handle(IPC.looks.thumbs, async (req: LookThumbRequest) => {
     const wb = s.sessions.wbContext(req.key)
-    if (!wb) return
+    // No Develop session (Quick develop's preview): made from the Library.
+    if (!wb || !req.base) return quickPreviews.request(req)
     const base = await s.planes.hydrate(req.base)
     userPresets ??= s.index.presets()
     const user = await userPresets
@@ -963,7 +992,10 @@ export function registerIpc(s: Services): void {
     })
     s.sessions.lookThumbs(req.key, req.token, jobs, req.edge)
   })
-  handle(IPC.looks.cancel, (key: string) => s.sessions.cancelLookThumbs(key))
+  handle(IPC.looks.cancel, (key: string) => {
+    s.sessions.cancelLookThumbs(key)
+    quickPreviews.cancel()
+  })
   // Smart looks' model work: one job at a time on the AI queue, landing on its photo.
   const runs = new LookRuns({
     startJob: (req) => s.ai.start(req),
@@ -1008,6 +1040,28 @@ export function registerIpc(s: Services): void {
     if (by.key) runs.cancelFor(by.key)
   })
   handle(IPC.looks.answer, (runId: string, a: PickAnswer) => runs.answer(runId, a))
+
+  // ── Quick develop: the Library's nudges, looks and Auto tone (quickdevelop.ts) ──
+  handle(IPC.library.nudge, (keys: string[], delta: QuickDelta, batch: unknown, prior: unknown) =>
+    nudgeBatch(s, quick, keys, quickDeltaOf(delta), batchTagOf(batch), stepRefsOf(prior ?? []))
+  )
+  handle(
+    IPC.library.applyLook,
+    (keys: string[], lookId: string, amount: number, batch: unknown, prior: unknown) =>
+      lookBatch(
+        s,
+        quick,
+        keys,
+        String(lookId),
+        Number(amount),
+        batchTagOf(batch),
+        stepRefsOf(prior ?? [])
+      )
+  )
+  handle(IPC.library.autoTone, (keys: string[], batch: unknown) =>
+    autoToneBatch(s, keys, batchTagOf(batch))
+  )
+  handle(IPC.library.stamps, (keys: string[]) => recipeStamps(s, keys))
   handle(IPC.presets.luts, async (): Promise<LutProfile[]> =>
     (await readdir(paths.luts()))
       .filter((f) => f.toLowerCase().endsWith('.cube'))

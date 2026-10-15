@@ -4,7 +4,8 @@
  *
  * `runRecipeBatch` is how anything changes many photos' settings at once:
  * paste and sync (lib/clipboard.ts, the Sync dialog), auto white balance on
- * a selection (lib/autowb.ts), and the looks and Quick develop to come. It
+ * a selection (lib/autowb.ts), and Quick develop's nudges, looks and Auto
+ * tone (lib/quickdevelop.ts). It
  *
  * 1. asks first above CONFIRM_ABOVE photos;
  * 2. asks once where projects go, if Develop has not asked yet (a photo's
@@ -15,13 +16,24 @@
  * 4. shows the open photo what was written (its recipe and history);
  * 5. puts one entry on the Library's undo stack (state/libraryUndo.ts) and
  *    says what it did, with Undo when it changed more than one photo.
+ *
+ * A batch can go on growing (Quick develop: a burst of nudges, a look and
+ * its Amount): run again with its `id` and `continues`, each photo's step is
+ * rewritten rather than added to, and the batch keeps its one entry on the
+ * undo stack while that entry is still the newest.
  */
 import type { BatchResult, BatchTag } from '../../../shared/ipc'
-import { CONFIRM_ABOVE, type RecipeEntry } from '../../../shared/libraryundo'
+import { CONFIRM_ABOVE, mergeSteps, onTop, type RecipeEntry } from '../../../shared/libraryundo'
 import { useBusy } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { confirmMany, nextId, useLibrary } from '../state/library'
-import { onBatchWritten, pushUndo, undoAction } from '../state/libraryUndo'
+import {
+  onBatchWritten,
+  pushUndo,
+  replaceUndo,
+  undoAction,
+  useLibraryUndo
+} from '../state/libraryUndo'
 import { api, errorText } from './api'
 import { t, tp } from './i18n'
 
@@ -39,8 +51,16 @@ export interface RecipeBatch {
   chunk?: number
   /** Write one chunk: main's half of the batch. */
   write(keys: string[], tag: BatchTag): Promise<BatchResult>
-  /** What it did ("Pasted onto 12 photos"). */
-  said(count: number): string
+  /** What it did ("Pasted onto 12 photos"); `o` is how it went. */
+  said(count: number, o: BatchOutcome): string
+  /** What it says when no photo changed (else "Nothing to change"). */
+  unchanged?: string
+  /** The batch's id (a new one when not given): a growing batch keeps its first one. */
+  id?: string
+  /** Carry on batch `id` (see the top of this file): no question asked first. */
+  continues?: boolean
+  /** No progress in the identity bar below BUSY_FROM photos (a nudge is quick). */
+  quiet?: boolean
 }
 
 export interface Failure {
@@ -52,7 +72,14 @@ export interface BatchOutcome {
   steps: BatchResult['steps']
   failed: Failure[]
   stopped: boolean
+  /** Photos a nudge held at a slider's end. */
+  limited: string[]
+  /** The batch's entry as it stands now (a growing batch's, every write so far). */
+  entry: RecipeEntry
 }
+
+/** A quiet batch shows its progress from this many photos. */
+const BUSY_FROM = 50
 
 /** Photos per call when a batch doesn't say. */
 const CHUNK = 25
@@ -101,68 +128,86 @@ export async function runRecipeBatch(b: RecipeBatch): Promise<BatchOutcome | nul
     lib.say(t('{{what}} is still running', { what: running }))
     return null
   }
-  if (keys.length > CONFIRM_ABOVE && !(await confirmMany(keys.length))) return null
+  if (!b.continues && keys.length > CONFIRM_ABOVE && !(await confirmMany(keys.length))) return null
   running = b.busy
   const job = `batch-${nextId()}`
-  const tag: BatchTag = { id: nextId(), label: b.label, version: b.version ?? null }
+  const tag: BatchTag = { id: b.id ?? nextId(), label: b.label, version: b.version ?? null }
   const chunk = b.chunk ?? CHUNK
   const steps: BatchResult['steps'] = []
   const failed: Failure[] = []
+  const limited: string[] = []
+  const kept: BatchResult['steps'] = []
   let stopped = false
   let done = 0
   const busy = useBusy.getState()
+  const shown = !b.quiet || keys.length >= BUSY_FROM
   try {
     await askProjectsLocation()
     const progress = (): string =>
       tp('{{done}} of {{count}} photo', '{{done}} of {{count}} photos', keys.length, { done })
-    busy.begin({
-      id: job,
-      title: b.busy,
-      detail: progress(),
-      progress: 0,
-      scope: 'global',
-      cancel: () => {
-        stopped = true
-        busy.update(job, { title: t('Stopping'), cancel: undefined })
-      }
-    })
+    if (shown)
+      busy.begin({
+        id: job,
+        title: b.busy,
+        detail: progress(),
+        progress: 0,
+        scope: 'global',
+        cancel: () => {
+          stopped = true
+          busy.update(job, { title: t('Stopping'), cancel: undefined })
+        }
+      })
     for (let i = 0; i < keys.length && !stopped; i += chunk) {
       const part = keys.slice(i, i + chunk)
       const r = await b.write(part, tag)
       useLibrary.getState().patchItems(r.items)
       steps.push(...r.steps)
       failed.push(...r.failed)
+      limited.push(...(r.limited ?? []))
+      kept.push(...(r.kept ?? []))
       done += part.length
-      busy.update(job, { progress: done / keys.length, detail: progress() })
+      if (shown) busy.update(job, { progress: done / keys.length, detail: progress() })
     }
   } catch (err) {
     failed.push({ key: '', message: errorText(err) })
   } finally {
-    busy.end(job)
+    if (shown) busy.end(job)
     running = null
   }
   await refreshDevelop(steps.map((s) => s.key)).catch((err) =>
     useLibrary.getState().say(errorText(err), 'error')
   )
-  const entry: RecipeEntry = { kind: 'recipe', id: tag.id, title: b.title, steps }
-  pushUndo(entry)
-  sayOutcome(
-    b,
-    keys.length - done,
-    { steps, failed, stopped: stopped && done < keys.length },
+  // A growing batch's entry holds every write so far, while it is the newest.
+  const stack = useLibraryUndo.getState()
+  const top = stack.done[stack.done.length - 1]
+  const had = b.continues && onTop(stack, tag.id) && top?.kind === 'recipe' ? top.steps : null
+  const entry: RecipeEntry = {
+    kind: 'recipe',
+    id: tag.id,
+    title: b.title,
+    steps: had ? mergeSteps(had, keys.slice(0, done), [...steps, ...kept]) : steps
+  }
+  if (had) replaceUndo(entry)
+  else pushUndo(entry)
+  const outcome: BatchOutcome = {
+    steps,
+    failed,
+    stopped: stopped && done < keys.length,
+    limited,
     entry
-  )
-  return { steps, failed, stopped }
+  }
+  sayOutcome(b, keys.length - done, outcome)
+  return outcome
 }
 
-function sayOutcome(b: RecipeBatch, left: number, o: BatchOutcome, entry: RecipeEntry): void {
+function sayOutcome(b: RecipeBatch, left: number, o: BatchOutcome): void {
   const lib = useLibrary.getState()
   const changed = o.steps.length
   if (changed === 0 && o.failed.length > 0) {
     lib.say(t('{{what}}: {{error}}', { what: b.title, error: o.failed[0].message }), 'error')
     return
   }
-  const parts = [changed === 0 ? t('Nothing to change') : b.said(changed)]
+  const parts = [changed === 0 ? (b.unchanged ?? t('Nothing to change')) : b.said(changed, o)]
   if (o.failed.length > 0)
     parts.push(
       tp('{{count}} failed ({{error}})', '{{count}} failed ({{error}})', o.failed.length, {
@@ -175,6 +220,6 @@ function sayOutcome(b: RecipeBatch, left: number, o: BatchOutcome, entry: Recipe
   lib.say(
     parts.join(', '),
     o.failed.length > 0 ? 'error' : 'info',
-    changed > 1 ? undoAction(entry) : undefined
+    o.entry.steps.length > 1 ? undoAction(o.entry) : undefined
   )
 }

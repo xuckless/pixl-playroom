@@ -216,6 +216,15 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
           ),
           tk(
             '⌘C copies a photo’s settings in the Library as well, and ⌘V pastes them at once, with an Undo. ⇧⌘V lets you choose what to paste, and Sync names the photo it copies from.'
+          ),
+          tk(
+            'Quick develop sits beside Info in the Library (⇧I): put a look on the whole selection, with a preview of the photo in focus and an Amount, and nudge Exposure, Contrast, Temp, Tint and Vibrance a step at a time. Each row shows what you have changed so far.'
+          ),
+          tk(
+            '⌥↑ and ⌥↓ move the selection’s exposure a third of a stop (with ⇧, a whole stop), and ⌥← and ⌥→ its white balance, anywhere in the Library. A run of clicks or presses is one step in each photo’s History and one ⌘Z.'
+          ),
+          tk(
+            'Auto tone works on a selection too, each photo measured on its own, as Auto white balance already did.'
           )
         ]
       },

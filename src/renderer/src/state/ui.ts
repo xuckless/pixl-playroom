@@ -24,6 +24,7 @@ import {
 import { tk } from '../lib/i18n'
 import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
+import { noteRecent, RECENT_LOOKS } from '../../../shared/quickdevelop'
 
 export type CropGuide = 'thirds' | 'grid' | 'golden' | 'diagonal' | 'none'
 export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
@@ -35,6 +36,9 @@ export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
 ]
 
 export type Rail = 'presets' | 'edits' | 'history' | 'info'
+
+/** The Library's right-hand drawer: Info, or Quick develop. */
+export type LibraryTab = 'info' | 'quick'
 
 /**
  * The interface's look (Settings → Interface → Theme), for A/B testing. The
@@ -220,6 +224,15 @@ interface UiState {
   told: string[]
   /** True the first time a hint is asked for: it is given once. */
   tell(id: string): boolean
+  /** The info drawer's tab: the photos' details, or Quick develop (⇧I). */
+  libraryTab: LibraryTab
+  setLibraryTab(tab: LibraryTab): void
+  /** Quick develop's More rows (Clarity, Saturation) shown. */
+  quickMore: boolean
+  setQuickMore(on: boolean): void
+  /** The looks applied lately in the Library, newest first (its look picker's Recent). */
+  recentLooks: string[]
+  noteRecentLook(id: string): void
   cropGuide: CropGuide
   maskOverlay: MaskOverlaySettings
   setMaskOverlay(p: Partial<MaskOverlaySettings>): void
@@ -394,6 +407,12 @@ export const useUi = create<UiState>()(
         set((s) => ({ told: [...s.told, id] }))
         return true
       },
+      libraryTab: 'info',
+      setLibraryTab: (libraryTab) => set({ libraryTab }),
+      quickMore: false,
+      setQuickMore: (quickMore) => set({ quickMore }),
+      recentLooks: [],
+      noteRecentLook: (id) => set((s) => ({ recentLooks: noteRecent(s.recentLooks, id) })),
       cropGuide: 'thirds',
       maskOverlay: DEFAULT_MASK_OVERLAY,
       setMaskOverlay: (p) => set((s) => ({ maskOverlay: { ...s.maskOverlay, ...p } })),
@@ -500,6 +519,11 @@ export const useUi = create<UiState>()(
             : 'paper',
           libraryMode: p.libraryMode === 'loupe' ? 'loupe' : 'grid',
           told: Array.isArray(p.told) ? p.told.filter((x) => typeof x === 'string') : [],
+          libraryTab: p.libraryTab === 'quick' ? 'quick' : 'info',
+          quickMore: p.quickMore === true,
+          recentLooks: Array.isArray(p.recentLooks)
+            ? p.recentLooks.filter((x): x is string => typeof x === 'string').slice(0, RECENT_LOOKS)
+            : [],
           cardsOpen:
             p.cardsOpen && typeof p.cardsOpen === 'object' ? p.cardsOpen : current.cardsOpen,
           focusCard: savedPanel(p.focusCard) ?? current.focusCard,
