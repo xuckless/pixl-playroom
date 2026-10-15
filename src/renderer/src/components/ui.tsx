@@ -13,7 +13,7 @@ import {
   logFraction
 } from '../lib/sliderDrag'
 import { useEscapeWhile } from '../lib/escape'
-import { rovingNext } from '../lib/roving'
+import { RATING_RUN_MS, ratingAsk, ratingFrom, rovingNext } from '../lib/roving'
 import { LiquidGlass } from './glass/LiquidGlass'
 import { Icon, type IconName } from './icons'
 import { GlassSelect, type GlassOption } from './GlassSelect'
@@ -999,7 +999,9 @@ export function Modal({
  * has clears it; from the keys, arrows move it a star either way (to none
  * below one), Home clears it, End gives five, and 0 to 5 set it. Each star's
  * target is 24 px tall and a star's width apart; `compact` (a library tile)
- * keeps them narrower, where the rating keys do the same.
+ * keeps them narrower and out of the Tab order (the tile is the grid's one
+ * stop, and the rating keys rate it), and a click on one leaves keyboard
+ * focus where it was, so the arrows still move through the grid.
  */
 export function Stars({
   value,
@@ -1010,10 +1012,13 @@ export function Stars({
   onChange?: (v: number) => void
   compact?: boolean
 }): React.JSX.Element {
-  // The ratings the keys asked for in a run of presses, the last one last:
-  // keys can outrun a rating's round trip, and the next press counts on from
-  // the last asked while what shows is still one of the run's.
-  const asked = useRef<number[]>([])
+  // The ratings the keys asked for in a run of presses, the last one last
+  // (lib/roving.ts ratingFrom). The run ends once its last shows, or after a
+  // pause, so a rating changed from elsewhere later counts from what shows.
+  const run = useRef<{ asked: number[]; at: number }>({ asked: [], at: 0 })
+  useEffect(() => {
+    if (run.current.asked[run.current.asked.length - 1] === value) run.current.asked = []
+  }, [value])
   const label = value > 0 ? tp('{{count}} star', '{{count}} stars', value) : t('Not rated')
   if (!onChange)
     return (
@@ -1025,14 +1030,12 @@ export function Stars({
         ))}
       </span>
     )
-  const now = (): number => {
-    const run = asked.current
-    return run.includes(value) ? run[run.length - 1] : value
-  }
+  const asked = (): number[] =>
+    Date.now() - run.current.at < RATING_RUN_MS ? run.current.asked : []
+  const now = (): number => ratingFrom(asked(), value)
   const set = (v: number, group: HTMLElement | null): void => {
     const next = Math.max(0, Math.min(5, v))
-    const run = asked.current.includes(value) ? asked.current : [value]
-    asked.current = [...run, next]
+    run.current = { asked: ratingAsk(asked(), value, next), at: Date.now() }
     onChange(next)
     group?.querySelectorAll<HTMLElement>('button')[Math.max(0, next - 1)]?.focus()
   }
@@ -1062,8 +1065,9 @@ export function Stars({
           aria-checked={n === value}
           aria-label={tp('{{count}} star', '{{count}} stars', n)}
           // One stop for the group: the rating it has (the first star when none).
-          tabIndex={n === Math.max(1, value) ? 0 : -1}
+          tabIndex={!compact && n === Math.max(1, value) ? 0 : -1}
           className={n <= value ? 'on' : ''}
+          onMouseDown={compact ? (e) => e.preventDefault() : undefined}
           onClick={(e) => {
             e.stopPropagation()
             onChange(n === value ? 0 : n)

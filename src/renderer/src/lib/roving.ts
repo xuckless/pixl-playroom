@@ -86,3 +86,30 @@ export function typeAhead(
   }
   return from
 }
+
+/**
+ * How long a run of rating keys (Stars) waits for its ratings to show: keys
+ * can outrun a rating's round trip, and while a run is under way the next
+ * press counts on from the last one asked, not from what shows.
+ */
+export const RATING_RUN_MS = 1500
+
+/** Where the next rating key counts from: the run's last ask while what shows is one of its, else what shows. */
+export function ratingFrom(asked: number[], shown: number): number {
+  return asked.includes(shown) ? asked[asked.length - 1] : shown
+}
+
+/** The run after a rating key asks for `next` (a run that what shows has left starts again). */
+export function ratingAsk(asked: number[], shown: number, next: number): number[] {
+  return [...(asked.includes(shown) ? asked : [shown]), next]
+}
+
+/**
+ * Whether the library's focused tile takes keyboard focus as the focus moves
+ * (lib's `focus`): only while the grid had it, and only from the grid itself
+ * or from nowhere (a tile that scrolled away took focus with it), never from
+ * a field or a button elsewhere that focus went to since.
+ */
+export function gridTakesFocus(gridHad: boolean, fromNowhere: boolean, fromGrid: boolean): boolean {
+  return gridHad && (fromNowhere || fromGrid)
+}

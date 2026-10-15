@@ -2,7 +2,16 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { listMove, rovingNext, typeAhead } from '../src/renderer/src/lib/roving'
+import {
+  gridTakesFocus,
+  listMove,
+  ratingAsk,
+  ratingFrom,
+  rovingNext,
+  typeAhead
+} from '../src/renderer/src/lib/roving'
+import { giveTitle, takeTitle, type Titled } from '../src/renderer/src/lib/titles'
+import { ERROR_MS, INFO_MS, toastLife } from '../src/renderer/src/lib/toasts'
 import { modifierKey, modifierName } from '../src/renderer/src/lib/keys'
 
 const SRC = join(import.meta.dirname, '..', 'src', 'renderer', 'src')
@@ -115,4 +124,83 @@ test('the folded rail is inert, its glyphs tabs', () => {
   assert.match(rail, /inert=\{!open\}/)
   assert.doesNotMatch(rail, /aria-hidden=\{!open\}/)
   assert.match(rail, /role="tabpanel"/)
+})
+
+test('rating keys outrunning the store count on; a run that has shown, or was left, starts again', () => {
+  // Three fast ArrowRights from none: the store still shows 0, then 1.
+  let asked: number[] = []
+  asked = ratingAsk(asked, 0, ratingFrom(asked, 0) + 1)
+  asked = ratingAsk(asked, 0, ratingFrom(asked, 0) + 1)
+  assert.equal(ratingFrom(asked, 1), 2)
+  asked = ratingAsk(asked, 1, ratingFrom(asked, 1) + 1)
+  assert.deepEqual(asked, [0, 1, 2, 3])
+  // What shows is none of the run's (a rating key elsewhere): from what shows.
+  assert.equal(ratingFrom(asked, 5), 5)
+  assert.deepEqual(ratingAsk(asked, 5, 4), [5, 4])
+  // The component ends a run once its last shows (and after a pause), so a
+  // later change to one of its values counts from what shows.
+  const ui = src('components/ui.tsx')
+  assert.match(ui, /run\.current\.asked\[run\.current\.asked\.length - 1\] === value/)
+  assert.match(ui, /RATING_RUN_MS/)
+})
+
+test('a library tile’s stars stay out of the Tab order and leave focus on the grid', () => {
+  const ui = src('components/ui.tsx')
+  assert.match(ui, /tabIndex=\{!compact && n === Math\.max\(1, value\) \? 0 : -1\}/)
+  assert.match(ui, /onMouseDown=\{compact \? \(e\) => e\.preventDefault\(\) : undefined\}/)
+  assert.match(src('views/Library.tsx'), /<Stars\s+compact/)
+})
+
+test('a toast times out unless it has an action or is held; a hold is the toast’s own', () => {
+  assert.equal(toastLife(null, null), null)
+  assert.equal(toastLife({ id: 1, tone: 'info' }, null), INFO_MS)
+  assert.equal(toastLife({ id: 1, tone: 'error' }, null), ERROR_MS)
+  assert.equal(toastLife({ id: 1, tone: 'info', action: {} }, null), null)
+  assert.equal(toastLife({ id: 1, tone: 'info' }, 1), null)
+  // Held, then gone without a leave (its action used): the next one still times out.
+  assert.equal(toastLife({ id: 2, tone: 'info' }, 1), INFO_MS)
+})
+
+/** An element as the titles see it. */
+function el(attrs: Record<string, string>, text = ''): Titled & { attrs: Record<string, string> } {
+  const a = { ...attrs }
+  return {
+    attrs: a,
+    tagName: 'BUTTON',
+    textContent: text,
+    dataset: {},
+    getAttribute: (n) => a[n] ?? null,
+    setAttribute: (n, v) => void (a[n] = v),
+    removeAttribute: (n) => void delete a[n],
+    hasAttribute: (n) => n in a
+  }
+}
+
+test('a title set aside lends its name only while it is away, and a new title replaces it', () => {
+  const icon = el({ title: 'Turn off' })
+  assert.equal(takeTitle(icon), 'Turn off')
+  assert.deepEqual(icon.attrs, { 'aria-label': 'Turn off' })
+  // The state changed under the pointer: React sets a new title.
+  icon.setAttribute('title', 'Turn on')
+  assert.equal(takeTitle(icon), 'Turn on')
+  assert.equal(icon.attrs['aria-label'], 'Turn on')
+  giveTitle(icon)
+  // Back as it was: named by its title again, no stale label left behind.
+  assert.deepEqual(icon.attrs, { title: 'Turn on' })
+  // An element with a name of its own keeps it, and gets its title back.
+  const named = el({ title: 'Why', 'aria-label': 'Export' })
+  takeTitle(named)
+  giveTitle(named)
+  assert.deepEqual(named.attrs, { title: 'Why', 'aria-label': 'Export' })
+  const worded = el({ title: 'More' }, 'Export…')
+  takeTitle(worded)
+  assert.equal(worded.attrs['aria-label'], undefined)
+})
+
+test('the focused tile takes keyboard focus only from the grid, or from a tile that scrolled away', () => {
+  assert.equal(gridTakesFocus(true, false, true), true)
+  assert.equal(gridTakesFocus(true, true, false), true)
+  // Focus went to the search field (from nowhere, so the grid never heard it leave).
+  assert.equal(gridTakesFocus(true, false, false), false)
+  assert.equal(gridTakesFocus(false, true, false), false)
 })

@@ -16,6 +16,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { placePopover } from '../../../shared/placement'
+import { giveTitle, takeTitle } from '../lib/titles'
 import { LiquidGlass } from './glass/LiquidGlass'
 
 /** How long the pointer rests on something before its note opens. */
@@ -102,23 +103,14 @@ export function FloatingTip({
   )
 }
 
-/** Whether an element has a name of its own (not counting its title). */
-function named(el: HTMLElement): boolean {
-  return (
-    el.hasAttribute('aria-label') ||
-    el.hasAttribute('aria-labelledby') ||
-    !!el.textContent?.trim() ||
-    (el instanceof HTMLImageElement && !!el.alt)
-  )
-}
-
 const TIP_ID = 'app-tooltip'
 
 /**
  * The tooltips of every `title` in the app, in the glass. The title moves
  * aside while its note can show (a `data-tip` holds it, so the system's own
  * tooltip never doubles it) and comes back as the pointer or focus leaves;
- * an element named by its title alone keeps the name as its aria-label.
+ * an element named by its title alone takes the title as its aria-label
+ * while it is away, and gives it back with the title.
  */
 export function TooltipHost(): React.JSX.Element | null {
   const [shown, setShown] = useState<{ el: HTMLElement; text: string } | null>(null)
@@ -129,33 +121,25 @@ export function TooltipHost(): React.JSX.Element | null {
 
     const titled = (node: EventTarget | null): HTMLElement | null =>
       node instanceof Element ? (node.closest<HTMLElement>('[title], [data-tip]') ?? null) : null
-    /** The title set aside while its note can show. */
-    const take = (el: HTMLElement): string | null => {
-      const title = el.getAttribute('title')
-      if (title !== null) {
-        el.removeAttribute('title')
-        if (title) {
-          el.dataset.tip = title
-          if (!named(el)) el.setAttribute('aria-label', title)
-        }
-      }
-      return el.dataset.tip ?? null
-    }
-    /** The title back where it was (unless the element has a new one by now). */
-    const give = (el: HTMLElement): void => {
-      const tip = el.dataset.tip
-      delete el.dataset.tip
-      if (tip && !el.hasAttribute('title')) el.setAttribute('title', tip)
-    }
+    // A held element given a new title (its state changed under the pointer):
+    // the new one is set aside too, and the note says it.
+    let noted: HTMLElement | null = null
+    const retitled = new MutationObserver(() => {
+      if (!held?.hasAttribute('title')) return
+      const text = takeTitle(held)
+      if (text && noted === held) setShown({ el: held, text })
+    })
     const hide = (): void => {
       clearTimeout(timer)
+      retitled.disconnect()
       if (described) {
         if (described.was === null) described.el.removeAttribute('aria-describedby')
         else described.el.setAttribute('aria-describedby', described.was)
         described = null
       }
-      if (held) give(held)
+      if (held) giveTitle(held)
       held = null
+      noted = null
       setShown(null)
     }
     const show = (el: HTMLElement, text: string): void => {
@@ -165,16 +149,21 @@ export function TooltipHost(): React.JSX.Element | null {
         described = { el, was }
         el.setAttribute('aria-describedby', was ? `${was} ${TIP_ID}` : TIP_ID)
       }
+      noted = el
       setShown({ el, text })
     }
     const begin = (el: HTMLElement, wait: number): void => {
       if (el === held) return
       hide()
-      const text = take(el)
+      const text = takeTitle(el)
       if (!text) return
       held = el
+      retitled.observe(el, { attributes: true, attributeFilter: ['title'] })
       if (wait === 0) show(el, text)
-      else timer = setTimeout(() => held === el && show(el, text), wait)
+      else
+        timer = setTimeout(() => {
+          if (held === el && el.dataset.tip) show(el, el.dataset.tip)
+        }, wait)
     }
 
     const over = (e: PointerEvent): void => {

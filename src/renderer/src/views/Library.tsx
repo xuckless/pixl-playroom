@@ -13,6 +13,7 @@ import { autoWbBatch } from '../lib/autowb'
 import { choosePhotos } from '../lib/openPhotos'
 import { LABEL_COLOURS } from '../lib/helpers'
 import { folderName, KEYS_MIME, sourceTrail } from '../lib/sources'
+import { gridTakesFocus } from '../lib/roving'
 import { useThumbFirst } from '../lib/thumbs'
 import { IdentityBar } from '../shell/IdentityBar'
 import { useDevelop } from '../state/develop'
@@ -37,7 +38,7 @@ const LABEL_NAME: Record<string, string> = {
 /**
  * Whether keyboard focus is in the grid: the focused photo then takes it as
  * the arrows move the focus (a tile scrolled out of the page drops it, and
- * the next one picks it up).
+ * the next one picks it up; never from a field or button elsewhere).
  */
 let gridFocused = false
 
@@ -97,7 +98,13 @@ const Thumb = memo(function Thumb({
   useThumbFirst(ref, item.key, !item.thumbUrl && !item.unreadable && !item.offline)
   useEffect(() => {
     const el = ref.current
-    if (focus && gridFocused && el && !el.contains(document.activeElement))
+    const at = document.activeElement
+    if (
+      focus &&
+      el &&
+      !el.contains(at) &&
+      gridTakesFocus(gridFocused, !at || at === document.body, !!at?.closest('.grid'))
+    )
       el.focus({ preventScroll: true })
   }, [focus])
   const cls = [

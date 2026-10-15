@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useLibrary } from '../state/library'
 import { t } from '../lib/i18n'
+import { toastLife } from '../lib/toasts'
 import { Icon } from './icons'
 import { Modal } from './ui'
-
-/** How long a message stays: a note a moment, a failure long enough to read twice. */
-const INFO_MS = 4000
-const ERROR_MS = 20000
 
 /**
  * What the app says in passing (the store's `say`): a toast at the foot of
@@ -18,19 +15,19 @@ const ERROR_MS = 20000
  */
 export function Toasts(): React.JSX.Element {
   const toast = useLibrary((s) => s.toast)
-  const [held, setHeld] = useState(false)
+  // The toast the pointer or focus is on (by id): a toast that goes while
+  // held (its action used, another said) never sends the leave that lets go.
+  const [heldId, setHeldId] = useState<number | null>(null)
+  const life = toastLife(toast, heldId)
   useEffect(() => {
-    if (!toast || toast.action || held) return
-    const timer = setTimeout(
-      () => {
-        if (useLibrary.getState().toast === toast) useLibrary.setState({ toast: null })
-      },
-      toast.tone === 'error' ? ERROR_MS : INFO_MS
-    )
+    if (life === null) return
+    const timer = setTimeout(() => {
+      if (useLibrary.getState().toast === toast) useLibrary.setState({ toast: null })
+    }, life)
     return () => clearTimeout(timer)
-  }, [toast, held])
+  }, [toast, life])
   const close = (): void => {
-    setHeld(false)
+    setHeldId(null)
     useLibrary.setState({ toast: null })
   }
   return (
@@ -46,10 +43,10 @@ export function Toasts(): React.JSX.Element {
         <div
           className={`toast ${toast.tone}`}
           key={toast.id}
-          onPointerEnter={() => setHeld(true)}
-          onPointerLeave={() => setHeld(false)}
-          onFocus={() => setHeld(true)}
-          onBlur={() => setHeld(false)}
+          onPointerEnter={() => setHeldId(toast.id)}
+          onPointerLeave={() => setHeldId(null)}
+          onFocus={() => setHeldId(toast.id)}
+          onBlur={() => setHeldId(null)}
         >
           {toast.text}
           {toast.action && (
