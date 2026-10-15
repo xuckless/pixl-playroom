@@ -15,7 +15,8 @@ import {
   describeInvariant,
   invariantDetail,
   invariantPlace,
-  invariantTouches
+  invariantTouches,
+  type InvariantPlace
 } from '../src/shared/invariant'
 import { readPath } from '../src/renderer/src/lib/readpath'
 
@@ -132,6 +133,35 @@ test('HR-0.18-9: an Invariant names the mask and the op, in the request’s own 
   )
   assert.ok(invariantTouches(place, 'basic.highlights'))
   assert.ok(!invariantTouches(place, 'presence.dehaze'))
+})
+
+test('an Invariant in the colour tools names the card and marks its rows (engine 0.21’s ops)', () => {
+  const r = defaultRecipe(false)
+  r.logWheels.highlight = { y: 0.5, r: 0, g: 0, b: 0 }
+  r.primaries.temp = 30
+  r.primaries.lumMix = 100
+  r.primaries.lift.y = 0.1
+  r.curvesVs.hueLum = [{ x: 0.6, y: 1 }]
+  const c = compile(r, ctx)
+  const at = (kind: string): InvariantPlace => {
+    const stages = c.grade!.layers[0].stages
+    const s = stages.findIndex((st) => st.ops.some((op) => kind in op))
+    const o = stages[s].ops.findIndex((op) => kind in op)
+    return invariantPlace(`grade.layers[0].stages[${s}].ops[${o}]: NaN`, c.grade, null, {})!
+  }
+  const log = at('LogWheels')
+  assert.match(describeInvariant(log, 'grade'), /^Log wheels in the photo’s settings/)
+  assert.ok(invariantTouches(log, 'logWheels.low'))
+  assert.ok(!invariantTouches(log, 'primaries.temp'))
+  const gb = at('GainBalance')
+  assert.match(describeInvariant(gb, 'grade'), /^Temp and Tint/)
+  assert.ok(invariantTouches(gb, 'primaries.temp') && invariantTouches(gb, 'primaries.tint'))
+  assert.ok(!invariantTouches(gb, 'primaries.contrast'))
+  const luma = at('LumaPrimary')
+  assert.match(describeInvariant(luma, 'grade'), /^Primaries/)
+  assert.ok(invariantTouches(luma, 'primaries.lumMix'))
+  const vs = at('Curves')
+  assert.ok(invariantTouches(vs, 'curvesVs.hueLum'))
 })
 
 test('HR-0.18-9: the photo’s own settings, a layer’s blend, and a stage outside the grade', () => {
