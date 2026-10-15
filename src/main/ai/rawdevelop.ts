@@ -20,7 +20,7 @@
  * offers PIXL's own demosaic, which denoises as it develops: where it is
  * offered for the sensor, downloaded and "Use PIXL demosaic" is on
  * (Settings → AI models, on by default), it is the develop, alone (no PMRID
- * before it), under its own tag `pd`. Refused, the develop above stands in,
+ * before it), under its own tag (`pdg` on Bayer since 0.21.0, `pd`). Refused, the develop above stands in,
  * then the classic, and the user is told in the engine's words (the 1:1
  * view's note, the export's receipt). A refusal that is the model's own (it
  * will not load, the provider fails) plans around it until its switch is
@@ -115,10 +115,14 @@ export function demosaicFor(cfa: RawCfa | null | undefined, model: boolean): Dem
  * What names a full-size develop's file: the demosaic, and `-pm` with PMRID.
  * The develop's other choices are in the photo's stamp (`versionStamp`).
  * The PIXL demosaic is `pd`, never with PMRID: a tag of its own, so a
- * master DemosaicNet made is not taken for its.
+ * master DemosaicNet made is not taken for its. On a Bayer sensor it is
+ * `pdg` since engine 0.21.0 (E64): the roster's `MeasuredGreenFloor` tells
+ * red and blue the greens' noise line, so 0.20's Bayer masters are made
+ * again, and the steps laid on them are marked as from an older develop
+ * (the owner, 2026-10-14). X-Trans is the same to the bit: still `pd`.
  */
-export function developTag(kind: DemosaicKind, pmrid: boolean): string {
-  if (kind === 'pixl') return 'pd'
+export function developTag(kind: DemosaicKind, pmrid: boolean, cfa: RawCfa | null = null): string {
+  if (kind === 'pixl') return cfa === 'Bayer' ? 'pdg' : 'pd'
   return `${kind === 'model' ? 'dn' : kind === 'ahd' ? 'ahd' : 'ppg'}${pmrid ? '-pm' : ''}`
 }
 
@@ -131,7 +135,7 @@ export function developTag(kind: DemosaicKind, pmrid: boolean): string {
 export function keptMasterTags(tag: string, devKit: boolean): string[] {
   const own = tag.replace(/-pm$/, '')
   const kept = [own, `${own}-pm`]
-  return devKit ? [...new Set([...kept, 'pd', 'dn', 'dn-pm'])] : kept
+  return devKit ? [...new Set([...kept, 'pd', 'pdg', 'dn', 'dn-pm'])] : kept
 }
 
 /** The develop chosen for a RAW, before its model sessions are filled in. */
@@ -196,7 +200,13 @@ export async function scenePlan(
     }
     return released
   }
-  return { cfa, demosaic: 'pixl', pmrid: false, tag: developTag('pixl', false), then: released }
+  return {
+    cfa,
+    demosaic: 'pixl',
+    pmrid: false,
+    tag: developTag('pixl', false, cfa),
+    then: released
+  }
 }
 
 /**
