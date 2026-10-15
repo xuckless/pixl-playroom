@@ -66,6 +66,7 @@ import {
   type Recipe
 } from '../../shared/recipe'
 import { slim } from '../planeref'
+import { diffRecipe, newestShown, nextRedo, replay } from '../../shared/history'
 import { memberResolver, remapCollections, type SmartGroup } from '../../shared/smart'
 import { cacheUrlIn } from '../cache-url'
 import { emptyCamera, readCamera } from '../camera'
@@ -2679,6 +2680,79 @@ export class IndexService {
       (p, k) => p.history.redo(k),
       () => this.store.redoHistory(key)
     )
+  }
+
+  // ── Library batches (main/batchcommit.ts) ──
+
+  /**
+   * One photo's step of a Library batch. A photo with no history gets its
+   * base first, quietly: where it stood (`before`), with no step that
+   * changes nothing. One whose saved recipe moved on without a step (a
+   * paste from before batches wrote history) catches up with one, as an open
+   * in Develop would. Then `next` is one step under `label`, saved with the
+   * recipe (its first step makes the photo's project). Returns the step's
+   * seq, or null when `next` changed nothing.
+   */
+  batchStep(key: string, label: string, before: Recipe, next: Recipe): number | null {
+    const log = this.history(key)
+    if (!log.base) this.appendHistory(key, tk('Opened'), before)
+    else {
+      const head = log.head ?? replay(log.base.recipe, log.steps)
+      if (diffRecipe(head, before).length > 0)
+        this.commitEdit(key, tk('Opened as saved'), before, before)
+    }
+    return this.commitEdit(key, label, next, next).step?.seq ?? null
+  }
+
+  /**
+   * A batch taken back: on each photo whose newest step in effect is still
+   * the batch's, that step is undone and the recipe the history now
+   * describes is saved. A photo edited since (or gone) is skipped and keeps
+   * everything. Returns the recipes undone to, by key, and what was skipped.
+   */
+  undoBatchSteps(steps: { key: string; seq: number }[]): {
+    recipes: Record<string, Recipe>
+    skipped: string[]
+  } {
+    return this.batchHistory(steps, (key, seq) => {
+      if (newestShown(this.history(key).steps)?.seq !== seq) return null
+      return this.undoHistory(key)
+    })
+  }
+
+  /** A batch brought back: each photo's step redone where Redo would bring that step back next. */
+  redoBatchSteps(steps: { key: string; seq: number }[]): {
+    recipes: Record<string, Recipe>
+    skipped: string[]
+  } {
+    return this.batchHistory(steps, (key, seq) => {
+      if (nextRedo(this.history(key).steps)?.seq !== seq) return null
+      return this.redoHistory(key)
+    })
+  }
+
+  private batchHistory(
+    steps: { key: string; seq: number }[],
+    change: (key: string, seq: number) => HistoryLog | null
+  ): { recipes: Record<string, Recipe>; skipped: string[] } {
+    const recipes: Record<string, Recipe> = {}
+    const skipped: string[] = []
+    for (const { key, seq } of steps) {
+      try {
+        const log = change(key, seq)
+        if (!log?.base) {
+          skipped.push(key)
+          continue
+        }
+        const recipe = log.head ?? replay(log.base.recipe, log.steps)
+        this.saveRecipe(key, recipe)
+        recipes[key] = recipe
+      } catch {
+        // The photo went (forgotten, its file gone): nothing of it to take back.
+        skipped.push(key)
+      }
+    }
+    return { recipes, skipped }
   }
 
   setHistoryHidden(key: string, seqs: number[], hidden: boolean): HistoryLog {

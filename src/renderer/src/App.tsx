@@ -46,6 +46,7 @@ import { useGate } from './lib/gate'
 import { isFrame, whenFrame } from './lib/frames'
 import { openReport } from './lib/report'
 import { startMenuUpkeep } from './lib/menus'
+import { askProjectsLocation } from './lib/batch'
 import { t, useLanguage } from './lib/i18n'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, CullBar, LibraryView, Toolbar } from './views/Library'
@@ -63,6 +64,9 @@ import { setSpace } from './views/loupe/zoom'
  * changing elsewhere never re-renders what is under the pointer.
  */
 const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
+  // The first Develop (or Library batch) asks once where projects and exports
+  // go, before an edit makes a project: of everyone, each shown what it has
+  // now. Never of a scripted run.
   useEffect(() => void askProjectsLocation(), [])
   return (
     <div className="develop">
@@ -121,7 +125,8 @@ function DialogHost(): React.JSX.Element {
         <CollectionDialog key={`collection:${editing.id ?? 'new'}`} initial={editing} />
       )}
       {dialog === 'export' && <ExportDialog key="export" />}
-      {dialog === 'sync' && <SyncDialog key="sync" />}
+      {dialog === 'sync' && <SyncDialog key="sync" mode="sync" />}
+      {dialog === 'paste' && <SyncDialog key="paste" mode="paste" />}
       {dialog === 'preset' && <SavePresetDialog key="preset" />}
       {dialog === 'looks' && <LooksBrowser key="looks" />}
       {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
@@ -390,21 +395,6 @@ async function askCrashConsent(): Promise<void> {
 /** How many settled pictures in a row are asked for again when their pixels never arrive. */
 const LOST_FRAME_RETRIES = 3
 let lostFrames = 0
-
-/**
- * The first Develop asks once where projects and exports go (before an edit
- * makes a project): of everyone, a new install and one updating alike, each
- * shown what it has now. Never of a scripted run. Another dialog already
- * open: asked at the next Develop instead.
- */
-async function askProjectsLocation(): Promise<void> {
-  const ask = await api.app.locations().then(
-    (l) => l.ask,
-    () => false
-  )
-  if (!ask || useLibrary.getState().dialog) return
-  useLibrary.getState().setDialog('projects-location')
-}
 
 function useShortcuts(): void {
   useEffect(() => {

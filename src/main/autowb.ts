@@ -19,17 +19,12 @@ import type {
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import { READ_LIMITS } from '../shared/limits'
-import type { AutoWbResult, SampleResult } from '../shared/ipc'
-import { newLocalLayer, type Recipe } from '../shared/recipe'
-import type { PhotoRow } from './db'
+import type { AutoWbResult, BatchTag, SampleResult } from '../shared/ipc'
+import { newLocalLayer } from '../shared/recipe'
+import { commitBatch, currentRecipes, type BatchChange, type BatchServices } from './batchcommit'
 import type { EngineClient } from './engine/client'
-import type { IndexClient } from './indexer/client'
-import { parseKey } from './keys'
-import type { Library } from './library'
 import { paths } from './paths'
-import type { PlaneStore } from './planestore'
 import { ensureProxies, type ProxyFile } from './proxy'
-import type { DevelopSessions } from './render'
 import { BACKGROUND_THREADS, blankRequest, interactiveThreads } from './source'
 
 /** An `analyze` of a proxy file, with the percentiles auto tone reads. */
@@ -227,63 +222,25 @@ export async function engineWbSliders(
   }
 }
 
-export interface WbServices {
-  index: IndexClient
-  planes: PlaneStore
-  library: Library
-  sessions: DevelopSessions
+export interface WbServices extends BatchServices {
   bgEngine: EngineClient
 }
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
 /**
- * Each key's recipe as it stands: an open session's (which may be newer
- * than its sidecar, and is written first) or the saved one.
+ * Auto white balance on every key, each measured on its own draft proxy, and
+ * written as one step of the batch `tag` in each photo's history; its Undo is
+ * the Library's, through that history (batchcommit.ts).
  */
-async function currentRecipes(
+export async function autoWbBatch(
   s: WbServices,
-  keys: string[]
-): Promise<Map<string, { recipe: Recipe; row: PhotoRow }>> {
-  await Promise.all(keys.map((key) => s.sessions.flush(key)))
-  const saved = await s.index.recipes(keys)
-  return new Map(
-    saved.map((r) => [r.key, { row: r.row, recipe: s.sessions.liveRecipe(r.key) ?? r.recipe }])
-  )
-}
-
-/**
- * Save new recipes the way an edit in Develop would be: the history gets
- * where each photo stood (a base, if it had none; nothing if the history
- * already says so) and then the change, the sidecars are written in one
- * transaction, an open session follows, and the thumbnails re-render.
- */
-async function commitWb(
-  s: WbServices,
-  changes: { key: string; before: Recipe; next: Recipe }[],
-  beforeLabel: string,
-  label: string
-): Promise<AutoWbResult['items']> {
-  for (const { key, before, next } of changes) {
-    await s.index.appendHistory(key, beforeLabel, s.planes.slim(before))
-    await s.index.appendHistory(key, label, s.planes.slim(next))
-  }
-  const items = await s.index.saveRecipes(
-    changes.map((c) => ({ key: c.key, recipe: s.planes.slim(c.next) }))
-  )
-  for (const { key, next } of changes) {
-    if (s.sessions.liveRecipe(key)) s.sessions.update(key, next, false)
-    const { photoId, copyId } = parseKey(key)
-    s.library.queueThumb(photoId, copyId, true)
-  }
-  return items
-}
-
-/** Auto white balance on every key, each measured on its own draft proxy. */
-export async function autoWbBatch(s: WbServices, keys: string[]): Promise<AutoWbResult> {
+  keys: string[],
+  tag: BatchTag
+): Promise<AutoWbResult> {
   const current = await currentRecipes(s, keys)
   const failed: AutoWbResult['failed'] = []
-  const changes: { key: string; before: Recipe; next: Recipe }[] = []
+  const changes: BatchChange[] = []
   // Two at a time, whatever the batch: each is a proxy build and a measure
   // on the background engine, which editing shares.
   const measure = async (key: string): Promise<void> => {
@@ -324,27 +281,8 @@ export async function autoWbBatch(s: WbServices, keys: string[]): Promise<AutoWb
     while (next < keys.length) await measure(keys[next++])
   }
   await Promise.all([worker(), worker()])
-  const previous: AutoWbResult['previous'] = {}
-  for (const c of changes) previous[c.key] = c.before.wb
-  const items = changes.length
-    ? await commitWb(s, changes, t('Before auto WB'), t('White balance: Auto'))
-    : []
-  return { items, previous, failed }
-}
-
-/** Put white balances back (Undo after a batch auto white balance). */
-export async function setWbBatch(
-  s: WbServices,
-  pairs: { key: string; wb: Recipe['wb'] }[]
-): Promise<AutoWbResult['items']> {
-  const current = await currentRecipes(
-    s,
-    pairs.map((p) => p.key)
-  )
-  const changes = pairs.flatMap(({ key, wb }) => {
-    const cur = current.get(key)
-    return cur ? [{ key, before: cur.recipe, next: { ...cur.recipe, wb } }] : []
-  })
-  if (changes.length === 0) return []
-  return commitWb(s, changes, t('Before restoring white balance'), t('White balance: restored'))
+  // In the order asked, whichever was measured first.
+  changes.sort((a, b) => keys.indexOf(a.key) - keys.indexOf(b.key))
+  const written = changes.length ? await commitBatch(s, changes, tag) : { items: [], steps: [] }
+  return { ...written, failed }
 }

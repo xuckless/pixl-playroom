@@ -20,11 +20,14 @@ export interface Chord {
  * Where a command listens. `global` works in both views; the develop
  * sub-contexts (`develop.heal` …) are commands that only act while that tool is
  * up, so they may share a key with a general develop command (the more specific
- * one is listed first and wins while its tool is showing).
+ * one is listed first and wins while its tool is showing). The library's
+ * sub-contexts are its views of the photos (`library.grid`; culling's loupe
+ * and compare to come), the same way.
  */
 export type KeyContext =
   | 'global'
   | 'library'
+  | 'library.grid'
   | 'develop'
   | 'develop.heal'
   | 'develop.masks'

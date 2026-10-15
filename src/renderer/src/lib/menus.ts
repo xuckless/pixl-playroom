@@ -19,10 +19,14 @@ import { useDevelop } from '../state/develop'
 import { aboveWhite, canShowHdr, useDisplay } from '../state/display'
 import { selectionSet, useLibrary } from '../state/library'
 import { useUi } from '../state/ui'
+import { undoTitles, useLibraryUndo } from '../state/libraryUndo'
+import type { MetaPatch } from '../../../shared/ipc'
 import { api, errorText } from './api'
+import { nameOfKey } from './clipboard'
 import { t, tp, useLanguage } from './i18n'
 import { COMMANDS, currentBindings, IS_MAC, layoutKey, listening } from './commands'
 import { chordAccelerator } from './keys'
+import { developBatch, metaItem } from './librarycontext'
 
 /** A menu item with what it does, before it is sent. */
 interface Item extends Omit<MenuNode, 'submenu'> {
@@ -113,30 +117,62 @@ function editing(): boolean {
 
 // ── the pieces both kinds of menu use ──
 
-function ratingMenu(): Item {
-  const now = focusedItem()?.rating
+/**
+ * A rating, flag or label item: its key's command, or, for a photo's own menu
+ * (`keys` given), that change on those photos, shown with the same key.
+ */
+function metaCmd(
+  id: string,
+  label: string,
+  patch: MetaPatch,
+  keys: string[] | undefined,
+  extra: Partial<Item>
+): Item {
+  if (!keys) return cmd(id, label, extra)
+  return act(`${id}:menu`, label, () => void lib().setMeta(patch, keys), {
+    key: id,
+    enabled: !modal() && keys.length > 0,
+    ...extra
+  })
+}
+
+/** The photo a menu's checks read: the first of `keys`, else the one the keys act on. */
+const menuItem = (keys?: string[]): LibraryItem | undefined =>
+  keys ? lib().items.find((i) => i.key === keys[0]) : metaItem()
+
+function ratingMenu(keys?: string[]): Item {
+  const now = menuItem(keys)?.rating
   return {
     label: t('Rating'),
     submenu: [0, 1, 2, 3, 4, 5].map((n) =>
-      cmd(`rate.${n}`, n === 0 ? t('None') : '★'.repeat(n), { checked: now === n, radio: true })
+      metaCmd(`rate.${n}`, n === 0 ? t('None') : '★'.repeat(n), { rating: n }, keys, {
+        checked: now === n,
+        radio: true
+      })
     )
   }
 }
 
-function flagMenu(): Item {
-  const now = focusedItem()?.flag ?? null
+function flagMenu(keys?: string[]): Item {
+  const now = menuItem(keys)?.flag ?? null
   return {
     label: t('Flag'),
     submenu: [
-      cmd('flag.pick', t('Pick|flag'), { checked: now === 'pick', radio: true }),
-      cmd('flag.reject', t('Reject'), { checked: now === 'reject', radio: true }),
-      cmd('flag.clear', t('None'), { checked: now === null, radio: true })
+      metaCmd('flag.pick', t('Pick|flag'), { flag: 'pick' }, keys, {
+        checked: now === 'pick',
+        radio: true
+      }),
+      metaCmd('flag.reject', t('Reject'), { flag: 'reject' }, keys, {
+        checked: now === 'reject',
+        radio: true
+      }),
+      metaCmd('flag.clear', t('None'), { flag: null }, keys, { checked: now === null, radio: true })
     ]
   }
 }
 
-function labelMenu(): Item {
-  const now = focusedItem()?.label ?? null
+function labelMenu(keys?: string[]): Item {
+  const now = menuItem(keys)?.label ?? null
   const label = {
     red: t('Red'),
     yellow: t('Yellow'),
@@ -146,15 +182,35 @@ function labelMenu(): Item {
   return {
     label: t('Colour Label'),
     submenu: (['red', 'yellow', 'green', 'blue'] as const).map((c) =>
-      cmd(`label.${c}`, label[c], { checked: now === c })
+      metaCmd(`label.${c}`, label[c], { label: now === c ? null : c }, keys, {
+        checked: now === c
+      })
     )
   }
+}
+
+function copySettings(): Item {
+  return inDevelop()
+    ? cmd('settings.copy', t('Copy Settings'))
+    : cmd('library.copy', t('Copy Settings'))
 }
 
 function pasteSettings(): Item {
   return inDevelop()
     ? cmd('settings.paste', t('Paste Settings'))
-    : cmd('library.paste', t('Paste Settings…'))
+    : cmd('library.paste', t('Paste Settings'))
+}
+
+/** ⇧⌘V, and Sync named after the photo it copies from (UX-05). */
+function pasteMoreItems(): Item[] {
+  const source = inDevelop() ? dev().session?.key : lib().focus
+  return [
+    cmd('settings.pasteSpecial', t('Choose Settings to Paste…')),
+    cmd(
+      'sync',
+      source ? t('Sync Settings from {{name}}…', { name: nameOfKey(source) }) : t('Sync Settings…')
+    )
+  ]
 }
 
 function makeCopy(): Item {
@@ -302,24 +358,30 @@ function fileMenu(): Item[] {
 }
 
 function editMenu(): Item[] {
+  // The Library's Undo names what it takes back ("Undo Paste settings").
+  const undoId = inDevelop() ? 'undo' : 'library.undo'
+  const redoId = inDevelop() ? 'redo' : 'library.redo'
+  const titles = inDevelop()
+    ? { undo: developBatch(false)?.title ?? null, redo: developBatch(true)?.title ?? null }
+    : undoTitles()
   return [
     act(
       'edit.undo',
-      t('Undo'),
+      titles.undo ? t('Undo {{what}}', { what: titles.undo }) : t('Undo'),
       () => {
         if (editing()) document.execCommand('undo')
-        else runCommand('undo')
+        else runCommand(undoId)
       },
-      { key: 'undo', enabled: true }
+      { key: undoId, enabled: true }
     ),
     act(
       'edit.redo',
-      t('Redo'),
+      titles.redo ? t('Redo {{what}}', { what: titles.redo }) : t('Redo'),
       () => {
         if (editing()) document.execCommand('redo')
-        else runCommand('redo')
+        else runCommand(redoId)
       },
-      { key: 'redo', enabled: true }
+      { key: redoId, enabled: true }
     ),
     sep,
     { role: 'cut', label: t('Cut') },
@@ -335,9 +397,9 @@ function editMenu(): Item[] {
       { key: 'library.selectAll', enabled: true }
     ),
     sep,
-    cmd('settings.copy', t('Copy Settings')),
+    copySettings(),
     pasteSettings(),
-    cmd('sync', t('Sync Settings…'))
+    ...pasteMoreItems()
   ]
 }
 
@@ -538,6 +600,8 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
   const suggested = !!item && !!suggestedReasons(item, useCull.getState().reasons)
   const chosen = new Set(lib().targets())
   const stacked = lib().items.some((i) => chosen.has(i.key) && i.stack)
+  // Rated from its menu: the photo clicked in Develop's filmstrip, the selection in the Grid.
+  const rated = developing ? [key] : lib().targets()
   popup([
     developing
       ? act('photo.open', t('Open'), () => void dev().open(key), {
@@ -545,14 +609,14 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
         })
       : cmd('library.develop', t('Open in Develop')),
     sep,
-    ratingMenu(),
-    flagMenu(),
-    labelMenu(),
+    ratingMenu(rated),
+    flagMenu(rated),
+    labelMenu(rated),
     ...(suggested ? [cmd('cull.keep', t('Keep (Not a Reject)'))] : []),
     sep,
-    ...(developing && dev().session?.key === key ? [cmd('settings.copy', t('Copy Settings'))] : []),
+    ...(!developing || dev().session?.key === key ? [copySettings()] : []),
     pasteSettings(),
-    cmd('sync', t('Sync Settings…')),
+    ...pasteMoreItems(),
     cmd(
       'autoWbBatch',
       n > 1
@@ -621,9 +685,9 @@ export function loupeContextMenu(e: ReactMouseEvent): void {
     flagMenu(),
     labelMenu(),
     sep,
-    cmd('settings.copy', t('Copy Settings')),
+    copySettings(),
     pasteSettings(),
-    cmd('sync', t('Sync Settings…')),
+    ...pasteMoreItems(),
     cmd('autoTone', t('Auto Tone')),
     sep,
     makeCopy(),
@@ -696,6 +760,7 @@ export function startMenuUpkeep(): () => void {
   }
   const offs = [
     useLibrary.subscribe(soon),
+    useLibraryUndo.subscribe(soon),
     useDevelop.subscribe(soon),
     useUi.subscribe(soon),
     useCull.subscribe(soon),

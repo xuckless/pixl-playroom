@@ -135,6 +135,27 @@
 .thumb.rejected .thumb-img img {
   opacity: 0.35;
 }
+/* Hidden by the filter but kept while it has the focus: dimmed, in neutral grey. */
+.thumb.filtered-out .thumb-img img {
+  opacity: 0.3;
+  filter: grayscale(0.6);
+}
+.filtered-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  color: var(--text2);
+  background: rgb(var(--shade-rgb) / 0.6);
+  border: 1px solid rgb(var(--fg-rgb) / 0.22);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
 /* A suggested reject (Pass 115): dimmed and grey; on hover its colour and reason come back. */
 .thumb.culled .thumb-img img {
   filter: grayscale(1) brightness(0.55);
@@ -810,7 +831,11 @@
   border-color: color-mix(in srgb, var(--acc) 42%, transparent);
 }
 .thumb.in-stack .thumb-meta {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 5%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--acc) 16%, transparent),
+    color-mix(in srgb, var(--acc) 5%, transparent)
+  );
   border-top-color: color-mix(in srgb, var(--acc) 30%, transparent);
 }
 .thumb.in-stack:not(.stack-cover) .thumb-img {
@@ -841,7 +866,12 @@
 .dupe-head .line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), var(--hair) 40%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    var(--hair) 40%,
+    transparent
+  );
 }
 .grid.loading {
   opacity: 0.55;
@@ -1055,7 +1085,11 @@
   margin: 4px 0 2px 4px;
   padding: 8px 0 8px 12px;
   border-left: 1px solid var(--acc-a35);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 5%, transparent), transparent 60%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 5%, transparent),
+    transparent 60%
+  );
   animation: rowIn 0.45s var(--spring) both;
 }
 .rule-group-head {

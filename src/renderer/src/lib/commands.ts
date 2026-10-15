@@ -5,11 +5,10 @@
  * (Delete in Heal, [ ] for the heal brush) comes before the general one.
  */
 import { rebuild, usePipeline } from './pipeline'
-import { effective } from '../../../shared/edits'
 import { suggestedReasons, useCull } from '../state/cull'
 import { useSyncExternalStore } from 'react'
 import { nextOf } from '../../../shared/masks'
-import { RECIPE_GROUPS } from '../../../shared/recipe'
+import type { GridMove } from '../../../shared/cullnav'
 import {
   jumpToCard,
   masksOpen,
@@ -41,6 +40,9 @@ import { flashHud } from '../views/loupe/hudNote'
 import { loupeZoom, setSpace } from '../views/loupe/zoom'
 import { api, errorText } from './api'
 import { autoWbBatch } from './autowb'
+import { copySettings, pasteSettings } from './clipboard'
+import { developBatch, gridStep, inGrid, metaItem, metaTargets } from './librarycontext'
+import { redoLibrary, undoAction, undoLibrary, useLibraryUndo } from '../state/libraryUndo'
 import { t, tk, tp } from './i18n'
 import {
   allConflicts,
@@ -114,14 +116,19 @@ export async function rejectSuggested(): Promise<void> {
     .filter((i) => suggestedReasons(i, reasons))
     .map((i) => i.key)
   if (keys.length === 0) return lib().say(t('No suggested rejects here'), 'info')
+  const last = useLibraryUndo.getState().done.at(-1)
   await lib().setMeta({ flag: 'reject' }, keys)
+  // Not asked for after all, or not written: nothing to say.
+  const entry = useLibraryUndo.getState().done.at(-1)
+  if (!entry || entry === last) return
   lib().say(
     tp(
       '{{count}} photo flagged rejected: nothing deleted',
       '{{count}} photos flagged rejected: nothing deleted',
       keys.length
     ),
-    'info'
+    'info',
+    undoAction(entry)
   )
 }
 
@@ -147,7 +154,8 @@ const rating = [0, 1, 2, 3, 4, 5].map<KeyCommand>((n) => ({
   group: 'Rating & flags',
   context: 'global',
   keys: [String(n)],
-  run: () => void lib().setMeta({ rating: n })
+  // The selection in the Grid; the photo shown anywhere else (UX-13).
+  run: () => void lib().setMeta({ rating: n }, metaTargets())
 }))
 
 const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((label, i) => ({
@@ -157,8 +165,8 @@ const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((la
   context: 'global',
   keys: [String(6 + i)],
   run: () => {
-    const current = focusedItem()?.label
-    void lib().setMeta({ label: current === label ? null : label })
+    const current = metaItem()?.label
+    void lib().setMeta({ label: current === label ? null : label }, metaTargets())
   }
 }))
 
@@ -205,7 +213,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Rating & flags',
     context: 'global',
     keys: ['P'],
-    run: () => void lib().setMeta({ flag: 'pick' })
+    run: () => void lib().setMeta({ flag: 'pick' }, metaTargets())
   },
   {
     id: 'flag.reject',
@@ -213,7 +221,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Rating & flags',
     context: 'global',
     keys: ['X'],
-    run: () => void lib().setMeta({ flag: 'reject' })
+    run: () => void lib().setMeta({ flag: 'reject' }, metaTargets())
   },
   {
     id: 'cull.rejectAll',
@@ -240,7 +248,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Rating & flags',
     context: 'global',
     keys: ['U'],
-    run: () => void lib().setMeta({ flag: null })
+    run: () => void lib().setMeta({ flag: null }, metaTargets())
   },
   {
     id: 'export',
@@ -269,6 +277,18 @@ export const COMMANDS: KeyCommand[] = [
     keys: ['Mod+Shift+O'],
     run: (e) => {
       void lib().chooseFolder()
+      stop(e)
+    }
+  },
+  {
+    id: 'settings.pasteSpecial',
+    label: tk('Choose settings to paste…'),
+    group: 'Edit',
+    context: 'global',
+    keys: ['Mod+Shift+V'],
+    when: () => !!lib().clipboard,
+    run: (e) => {
+      lib().setDialog('paste')
       stop(e)
     }
   },
@@ -345,13 +365,50 @@ export const COMMANDS: KeyCommand[] = [
     }
   },
   {
+    id: 'library.undo',
+    label: tk('Undo in the library'),
+    group: 'Edit',
+    context: 'library',
+    keys: ['Mod+Z'],
+    run: (e) => {
+      void undoLibrary()
+      stop(e)
+    }
+  },
+  {
+    id: 'library.redo',
+    label: tk('Redo in the library'),
+    group: 'Edit',
+    context: 'library',
+    keys: ['Mod+Shift+Z'],
+    run: (e) => {
+      void redoLibrary()
+      stop(e)
+    }
+  },
+  {
+    id: 'library.copy',
+    label: tk("Copy the focused photo's settings"),
+    group: 'Edit',
+    context: 'library',
+    keys: ['Mod+C'],
+    // Text selected (the info pane's): ⌘C copies that.
+    when: () => !!lib().focus && !document.getSelection()?.toString(),
+    run: () => {
+      const focus = lib().focus
+      if (focus) void copySettings(focus)
+    }
+  },
+  {
     id: 'library.paste',
-    label: tk('Paste settings onto the selection…'),
-    group: 'Library',
+    label: tk('Paste settings onto the selection'),
+    group: 'Edit',
     context: 'library',
     keys: ['Mod+V'],
-    run: () => lib().setDialog('sync')
+    when: () => !!lib().clipboard && lib().targets().length > 0,
+    run: () => void pasteSettings(lib().targets())
   },
+  ...gridMoves(),
   {
     id: 'library.stack',
     label: tk('Stack the selection'),
@@ -487,7 +544,8 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Edit',
     context: 'develop',
     keys: ['Mod+Z'],
-    run: () => dev().undo()
+    // Straight after a paste or sync on several photos: the whole batch.
+    run: () => (developBatch(false) ? void undoLibrary() : dev().undo())
   },
   {
     id: 'redo',
@@ -495,7 +553,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Edit',
     context: 'develop',
     keys: ['Mod+Shift+Z'],
-    run: () => dev().redoStep()
+    run: () => (developBatch(true) ? void redoLibrary() : dev().redoStep())
   },
   ...cards,
   {
@@ -529,28 +587,8 @@ export const COMMANDS: KeyCommand[] = [
     // Text selected (the info pane's): ⌘C copies that.
     when: () => !!dev().recipe && !document.getSelection()?.toString(),
     run: () => {
-      const d = dev()
-      if (!d.recipe) return
-      const groups = RECIPE_GROUPS.filter(
-        (g) =>
-          g !== 'crop' &&
-          g !== 'upright' &&
-          g !== 'orientation' &&
-          g !== 'localAdjustments' &&
-          g !== 'retouch'
-      )
-      lib().setClipboard({
-        // What is seen: a section switched off goes as its defaults.
-        recipe: structuredClone(effective(d.recipe, d.session?.isRaw ?? false)),
-        groups: [...groups],
-        source: d.session?.key ?? null
-      })
-      lib().say(
-        t('Settings copied ({{paste}} to paste, {{choose}} to choose)', {
-          paste: keyHint('settings.paste'),
-          choose: keyHint('sync')
-        })
-      )
+      const key = dev().session?.key
+      if (key) void copySettings(key)
     }
   },
   {
@@ -560,32 +598,8 @@ export const COMMANDS: KeyCommand[] = [
     context: 'develop',
     keys: ['Mod+V'],
     when: () => !!(lib().clipboard && dev().recipe && dev().session),
-    run: () => {
-      const l = lib()
-      const d = dev()
-      if (!l.clipboard || !d.session) return
-      const key = d.session.key
-      const targets = l.targets()
-      void api.library
-        .applyRecipe(
-          targets,
-          l.clipboard.recipe,
-          l.clipboard.groups,
-          l.clipboard.source ?? undefined
-        )
-        .then(async (items) => {
-          lib().patchItems(items)
-          // The open photo's paste is a step of its history, undone on its own.
-          if (targets.includes(key) && dev().session?.key === key) {
-            const s = await api.develop.open(key)
-            if (dev().session?.key === key) dev().replace(s.recipe, tk('Paste settings'))
-          }
-          lib().say(
-            tp('Pasted onto {{count}} photo', 'Pasted onto {{count}} photos', targets.length)
-          )
-        })
-        .catch((err) => lib().say(errorText(err), 'error'))
-    }
+    // The open photo, or the filmstrip's selection: one batch, one Undo.
+    run: () => void pasteSettings(lib().targets())
   },
   {
     id: 'virtualCopy',
@@ -931,6 +945,50 @@ export const COMMANDS: KeyCommand[] = [
   }
 ]
 
+/** The grid's keyboard moves (⇧ extends the selection), listening while the grid is up. */
+function gridMoves(): KeyCommand[] {
+  const moves: [GridMove, string, string][] = [
+    ['up', tk('Up a row (⇧ extends the selection)'), 'ArrowUp'],
+    ['down', tk('Down a row (⇧ extends the selection)'), 'ArrowDown'],
+    ['home', tk('First photo (⇧ extends the selection)'), 'Home'],
+    ['end', tk('Last photo (⇧ extends the selection)'), 'End'],
+    ['pageUp', tk('Up a page (⇧ extends the selection)'), 'PageUp'],
+    ['pageDown', tk('Down a page (⇧ extends the selection)'), 'PageDown']
+  ]
+  const extend = (dir: 1 | -1, id: string, label: string, key: string): KeyCommand => ({
+    id,
+    label,
+    group: 'Navigation',
+    context: 'library.grid',
+    keys: [key],
+    when: () => inGrid(),
+    run: (e) => {
+      const l = lib()
+      const vis = l.visible()
+      const i = vis.findIndex((it) => it.key === l.focus)
+      const next = vis[Math.min(vis.length - 1, Math.max(0, i + dir))]
+      if (next) l.moveTo(next.key, true)
+      stop(e)
+    }
+  })
+  return [
+    ...moves.map<KeyCommand>(([move, label, key]) => ({
+      id: `grid.${move}`,
+      label,
+      group: 'Navigation',
+      context: 'library.grid',
+      keys: [key, `Shift+${key}`],
+      when: () => inGrid(),
+      run: (e) => {
+        gridStep(move, e.shiftKey)
+        stop(e)
+      }
+    })),
+    extend(-1, 'grid.extendPrev', tk('Extend the selection to the left'), 'Shift+ArrowLeft'),
+    extend(1, 'grid.extendNext', tk('Extend the selection to the right'), 'Shift+ArrowRight')
+  ]
+}
+
 function step(e: KeyboardEvent, dir: 1 | -1): void {
   const l = lib()
   const vis = l.visible()
@@ -1017,7 +1075,7 @@ export function useKeyHint(): (id: string) => string {
 /** Whether a command's context is listening in this view. */
 export function listening(context: KeyContext, inDevelop: boolean): boolean {
   if (context === 'global') return true
-  if (context === 'library') return !inDevelop
+  if (context === 'library' || context === 'library.grid') return !inDevelop
   return inDevelop
 }
 
