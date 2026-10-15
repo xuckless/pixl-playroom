@@ -105,6 +105,11 @@ The photo and its virtual copies, one row each.
 | `snapshots`  | JSON array of `{ id, name, at, recipe }`                       |
 | `updated_at` | ISO 8601 time                                                  |
 
+A copy's id names its files in Playroom's cache, so a reader keeps a copy only when its id is
+1–64 letters, digits, `_` or `-` (what Playroom makes). A layer or component id in a recipe
+that breaks the rule is read as a stable one made from it, and a plane's `ref` must be a
+64-hex hash.
+
 ### `history`
 
 Each item's edit history.
