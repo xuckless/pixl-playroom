@@ -152,25 +152,28 @@
 .tool-bar .vsep {
   margin: 0 2px;
 }
-/* A narrower window: the toolbars give up, in turn, their key hints, then
-   their padding, then the words beside an icon (its tooltip keeps them), so
-   nothing falls off the edge down to the window's smallest width. */
-@media (max-width: 1360px) {
-  .tool-bar .kbd,
-  .tool-bar .seg button .k {
-    display: none;
-  }
+/* A bar that would overflow (lib/useFit.ts) gives up, level by level:
+   1, its key hints; 2, the words beside an icon (its tooltip keeps them)
+   and some padding; 3, its dividers; 4, even the primary button's word.
+   The Library's size slider stays, only narrower. */
+.tool-bar:is([data-fit='1'], [data-fit='2'], [data-fit='3'], [data-fit='4'])
+  :is(.kbd, .seg button .k) {
+  display: none;
 }
-@media (max-width: 1240px) {
-  .tool-bar {
-    gap: 6px;
-  }
-  .tool-bar .seg.lg button {
-    padding: 0 9px;
-  }
-  .tool-bar .lbl {
-    display: none;
-  }
+.tool-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) {
+  gap: 6px;
+}
+.tool-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) .seg.lg button {
+  padding: 0 9px;
+}
+.tool-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) .lbl {
+  display: none;
+}
+.tool-bar:is([data-fit='3'], [data-fit='4']) .vsep {
+  display: none;
+}
+.tool-bar[data-fit='4'] .lbl-last {
+  display: none;
 }
 .seg.lg {
   height: 32px;

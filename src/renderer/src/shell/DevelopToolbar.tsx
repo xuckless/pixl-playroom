@@ -1,4 +1,5 @@
 import { Fragment } from 'react'
+import { useFit } from '../lib/useFit'
 import { canRedo } from '../../../shared/history'
 import { ProofButton } from './ProofSetup'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
@@ -78,6 +79,7 @@ function FullHdrToggle(): React.JSX.Element {
 
 /** The second tier in Develop: back to the library, history, how to look, and what to do with the photo. */
 export function DevelopToolbar(): React.JSX.Element {
+  const bar = useFit(4)
   const compare = useDevelop((s) => s.compare)
   const setCompare = useDevelop((s) => s.setCompare)
   const clipping = useDevelop((s) => s.clipping)
@@ -201,7 +203,7 @@ export function DevelopToolbar(): React.JSX.Element {
     }
   ]
   return (
-    <nav className="tool-bar">
+    <nav ref={bar} className="tool-bar">
       <button
         className="ghost lg"
         onClick={() => setView('library')}
@@ -286,7 +288,7 @@ export function DevelopToolbar(): React.JSX.Element {
         title={withKey(t('Export'), 'export')}
       >
         <Icon name="export" />
-        {t('Export…')}
+        <span className="lbl-last">{t('Export…')}</span>
       </LiquidGlass>
     </nav>
   )

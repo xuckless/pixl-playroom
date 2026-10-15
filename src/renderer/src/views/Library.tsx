@@ -1,4 +1,5 @@
 import { rebuild, usePipeline } from '../lib/pipeline'
+import { useFit } from '../lib/useFit'
 import { olderDevelop } from '../../../shared/rebuild'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -418,6 +419,7 @@ function ModeSegment(): React.JSX.Element {
 }
 
 export function Toolbar(): React.JSX.Element {
+  const bar = useFit(4)
   const mode = useLibrary((s) => s.mode)
   const sort = useLibrary((s) => s.sort)
   const setSort = useLibrary((s) => s.setSort)
@@ -439,7 +441,7 @@ export function Toolbar(): React.JSX.Element {
   const count = useShownCount()
   const total = useLibrary((s) => s.items.length)
   return (
-    <nav className={`toolbar tool-bar library-bar${dupes ? ' dupes' : ''}`}>
+    <nav ref={bar} className={`toolbar tool-bar library-bar${dupes ? ' dupes' : ''}`}>
       <button
         className={`icon lg${sidebar ? ' on' : ''}`}
         title={withKey(t('Sources'), 'library.sidebar')}
@@ -544,7 +546,7 @@ export function Toolbar(): React.JSX.Element {
         title={withKey(t('Export selected'), 'export')}
       >
         <Icon name="export" />
-        {t('Export…')}
+        <span className="lbl-last">{t('Export…')}</span>
       </LiquidGlass>
       <button
         className={`icon lg${info ? ' on' : ''}`}

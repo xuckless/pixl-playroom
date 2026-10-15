@@ -1162,35 +1162,53 @@
 
 /* As the window narrows the size slider goes first, then the key hints,
    then the action labels; the search and the sort stay whole. */
-@media (max-width: 1400px) {
-  .library-bar .size-range,
-  .library-bar .kbd {
-    display: none;
-  }
+/* The Library's bar takes the toolbars' fit levels (shell.css); its own
+   gap and buttons need the same at its level 2. */
+.library-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) {
+  gap: 6px;
 }
-@media (max-width: 1240px) {
-  .library-bar {
-    gap: 6px;
-  }
-  .library-bar .seg.lg button {
-    padding: 0 9px;
-  }
-  .library-bar .lbl {
-    display: none;
-  }
-  /* The stars and the dots say what they are; their tooltips keep the words. */
-  .fb-stars .fb-label,
-  .fb-labels .fb-label {
-    display: none;
-  }
-  .filter-bar {
-    gap: 12px;
-  }
+.library-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) .seg.lg button {
+  padding: 0 9px;
 }
-@media (max-width: 1500px) {
-  .library-bar.dupes .lbl {
-    display: none;
-  }
+.library-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) .lbl {
+  display: none;
+}
+/* The size slider is never dropped, only narrowed. */
+.library-bar:is([data-fit='2'], [data-fit='3'], [data-fit='4']) .bar-range .slider {
+  width: 110px;
+}
+/* Tightest: the knob alone (its tooltip names it). */
+.library-bar:is([data-fit='3'], [data-fit='4']) .bar-range .slider {
+  width: 64px;
+}
+.library-bar:is([data-fit='3'], [data-fit='4']) .bar-range .sl-text {
+  display: none;
+}
+/* The search keeps a usable width until the last level, so the hints and
+   words go before it is squeezed. */
+.library-bar .search-field {
+  min-width: 180px;
+}
+.library-bar:is([data-fit='3'], [data-fit='4']) .search-field {
+  min-width: 110px;
+}
+/* Still short (beside the Info drawer): a second row, rather than
+   filters scrolled out of sight. */
+.filter-bar[data-fit='2'] {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 38px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  row-gap: 6px;
+}
+/* The filter bar, short of room: the stars and the dots say what they are
+   (their tooltips keep the words). */
+.filter-bar:is([data-fit='1'], [data-fit='2']) {
+  gap: 12px;
+}
+.filter-bar:is([data-fit='1'], [data-fit='2']) :is(.fb-stars, .fb-labels) .fb-label {
+  display: none;
 }
 .thumb .hdr-badge {
   position: absolute;

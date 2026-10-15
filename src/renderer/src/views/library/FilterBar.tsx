@@ -21,6 +21,7 @@ import { useCull } from '../../state/cull'
 import { useLibrary, useVisible } from '../../state/library'
 import { useUi } from '../../state/ui'
 import { FilterButton } from './ToolbarMenus'
+import { useFit } from '../../lib/useFit'
 import { FLAGS, labelName } from './filterNames'
 
 /** What a "More…" filter's chip says. */
@@ -41,6 +42,7 @@ const MORE_NAMES: Record<MoreFilter, string> = {
  * default because the default filter hides the rejects, and this says so.
  */
 export function FilterBar(): React.JSX.Element | null {
+  const bar = useFit(2)
   const shown = useUi((s) => s.filterBar)
   const filter = useLibrary((s) => s.filter)
   const setFilter = useLibrary((s) => s.setFilter)
@@ -63,7 +65,7 @@ export function FilterBar(): React.JSX.Element | null {
     return `${name} ${end(r?.[0])}–${end(r?.[1])}${which === 'focal' ? ' mm' : ''}`
   }
   return (
-    <div className="filter-bar" role="toolbar" aria-label={t('Filters')}>
+    <div ref={bar} className="filter-bar" role="toolbar" aria-label={t('Filters')}>
       <span
         className="fb-group fb-stars"
         role="group"
