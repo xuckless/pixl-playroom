@@ -216,6 +216,57 @@ test('on a B&W photo the glows are grey; a mask has none, and its Amount leaves 
   assert.deepEqual(scaled.effects.bloom, layer.settings.effects.bloom)
 })
 
+test('a B&W photo with a mask glows in its finishing layer, after the mask, in linear light', () => {
+  const r = defaultRecipe(false)
+  r.treatment = 'bw'
+  r.effects.halation.amount = 50
+  r.effects.grainAmount = 20
+  const layer = newLocalLayer('Mask')
+  layer.components.push({
+    id: 'g',
+    kind: 'linear',
+    mode: 'Add',
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    start: { x: 0.5, y: 0 },
+    end: { x: 0.5, y: 1 },
+    width: 512,
+    height: 512
+  })
+  layer.settings.basic.exposure = 0.5
+  r.layers.push(layer)
+  const g = compile(r, ctx).grade!
+  const names = g.layers.map((l) => l.name)
+  const finish = g.layers[names.indexOf('black & white')]
+  assert.ok(names.indexOf('black & white') > names.indexOf('Mask'))
+  // The grey mix, then the glow in light, then the print's grain over it.
+  assert.deepEqual(
+    finish.stages.map((s) => s.space === 'LinearWorking'),
+    [false, true, false]
+  )
+  assert.deepEqual(
+    finish.stages.slice(1).map((s) => s.ops.map((o) => Object.keys(o)[0])),
+    [['Halation'], ['Grain']]
+  )
+  assert.equal(find({ ...g, layers: [g.layers[0]] }, 'Halation').length, 0)
+})
+
+test('a glow, a density or a colour grain takes a drag off the GPU, by the op’s field', async () => {
+  const { gpuRefusal } = await import('../src/shared/gpudrag')
+  const r = defaultRecipe(false)
+  r.basic.contrast = 10
+  assert.equal(gpuRefusal(compile(r, ctx).grade), null)
+  r.effects.halation.amount = 40
+  assert.equal(gpuRefusal(compile(r, ctx).grade), 'grade.layers[0].stages[1].ops[0]')
+  r.effects.halation.amount = 0
+  r.density.amount = 30
+  assert.match(
+    gpuRefusal(compile(r, ctx).grade) ?? '',
+    /^grade\.layers\[0\]\.stages\[0\]\.ops\[\d+\]$/
+  )
+})
+
 test('Density: after the HSL bands, none at 0 or on B&W, bands by name; a mask scales its amount', () => {
   const r = defaultRecipe(false)
   r.hsl.red.saturation = 20
@@ -483,6 +534,34 @@ test(
       r.treatment = 'bw'
       await assert.doesNotReject(render(r), 'black and white')
       await assert.doesNotReject(render({ ...r, treatment: 'color' }), 'diffusion')
+      // Colour grain alone (Amount 0) still grains: the engine's grain is not
+      // skipped for a luminance amount of 0 while its colour is above it.
+      const flat = defaultRecipe(false)
+      flat.basic.contrast = 5
+      const clean = await render(flat)
+      flat.effects.grainColour = 80
+      const coloured = await render(flat)
+      let moved = 0
+      for (let i = 0; i < clean.length; i++) if (clean[i] !== coloured[i]) moved++
+      assert.ok(moved > clean.length / 4, `colour grain moved ${moved} of ${clean.length}`)
+      // A B&W photo with a mask: the glows in the finishing layer.
+      const masked = structuredClone(r)
+      const layer = newLocalLayer('Mask')
+      layer.components.push({
+        id: 'g',
+        kind: 'linear',
+        mode: 'Add',
+        opacity: 100,
+        invert: false,
+        feather: 0,
+        start: { x: 0.5, y: 0 },
+        end: { x: 0.5, y: 1 },
+        width: w,
+        height: h
+      })
+      layer.settings.basic.exposure = 0.3
+      masked.layers.push(layer)
+      await assert.doesNotReject(render(masked), 'black and white, masked')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
