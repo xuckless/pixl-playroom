@@ -51,6 +51,10 @@ export const paths = {
   photoCachePath: (photoId: number): string =>
     join(app.getPath('userData'), 'cache', 'photos', String(photoId)),
   thumbs: (): string => dir('cache', 'thumbs'),
+  /** The Library's screen previews and 1:1 pictures, kept under a cap (previews.ts). */
+  previews: (): string => dir('cache', 'previews'),
+  /** The Library's 1:1 tiles, a few at a time: nothing kept. */
+  previewTiles: (): string => dir('cache', 'previews', 'tiles'),
   /**
    * Where 0.3's before/after kept edited photos' thumbnails from the engine
    * before 0.17: only removed now (the comparison went with engine 0.18).

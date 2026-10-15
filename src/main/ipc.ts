@@ -82,6 +82,7 @@ import type { BrainStore } from './ai/brain'
 import type { Namer } from './ai/namer'
 import type { PlaneFinder } from './ai/found'
 import type { CullMeasurer } from './cull'
+import type { Previews } from './previews'
 import { readNames } from '../shared/naming'
 import { benchmarkSam3 } from './ai/sam3bench'
 import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/smart'
@@ -247,6 +248,8 @@ export interface Services {
   namer: Namer
   /** Cull signals and suggestions. */
   cull: CullMeasurer
+  /** The Library's screen previews and 1:1 pictures. */
+  previews: Previews
 }
 
 /** What AI can do with the killswitch thrown: nothing a model does, and why. */
@@ -547,6 +550,27 @@ export function registerIpc(s: Services): void {
     return s.planes.slim(effective(cur.recipe, cur.row.is_raw === 1))
   })
   handle(IPC.library.itemsOf, (keys: string[]) => s.index.itemsFor(keys))
+  handle(IPC.library.preview, (key: string) => s.previews.screen(String(key)))
+  handle(IPC.library.warmPreviews, (keys: unknown, shown: unknown) => {
+    const strings = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []
+    s.previews.warm(strings(keys), strings(shown))
+  })
+  handle(IPC.library.focus, (key: string) => s.previews.focus(String(key)))
+  handle(IPC.library.focusRegion, (key: string, rect: unknown) => {
+    const r = rect as Record<string, unknown> | null
+    const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+    return s.previews.region(String(key), {
+      x: n(r?.x),
+      y: n(r?.y),
+      width: n(r?.width),
+      height: n(r?.height)
+    })
+  })
+  handle(IPC.library.previewCache, () => s.previews.state())
+  handle(IPC.library.setPreviewCap, (bytes: number) => s.previews.setCap(Number(bytes)))
+  handle(IPC.library.clearPreviews, () => s.previews.clear())
+  handle(IPC.library.shotGroup, (key: string) => s.index.shotGroup(String(key)))
   handle(IPC.library.prioritize, (keys: string[]) => s.library.prioritize(keys))
   handle(IPC.library.resetRecipe, async (keys: string[]) => {
     const { items, recipes } = await s.index.resetRecipes(keys)

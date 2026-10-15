@@ -49,6 +49,7 @@ import { startLicence } from './licence'
 import { startAccount } from './account'
 import { startGate } from './gate'
 import { Library } from './library'
+import { Previews } from './previews'
 import { CameraProfiles } from './cameraprofiles'
 import { OriginalEmbedder } from './project/embed'
 import { buildMenu } from './menu'
@@ -457,6 +458,7 @@ app.whenReady().then(() => {
   })
   process.on('exit', () => brain.killNow())
   registerIpc({
+    previews: new Previews(library, index, engine, bgEngine),
     namer,
     finder,
     cull,

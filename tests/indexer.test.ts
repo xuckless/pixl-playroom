@@ -240,6 +240,84 @@ test('a thumbnail is asked for once per recipe, and not again for a file that fa
   }
 })
 
+test('a preview is named by the thumbnail’s stamp, whether the thumbnail is current or not', async () => {
+  const f = fixture()
+  try {
+    const [a, b] = await f.index.listFolder(f.folder)
+    const job = f.index.thumbJob(a.photoId, null)
+    assert.ok(job)
+    const out = join(f.root, 'thumb.jpg')
+    writeFileSync(out, 'jpeg')
+    f.index.setThumb(a.photoId, null, out, job.stamp)
+    // The thumbnail is current: no thumbnail work, but the preview's is there, same stamp.
+    assert.equal(f.index.thumbJob(a.photoId, null), null)
+    const preview = f.index.previewJob(a.photoId, null)
+    assert.equal(preview?.stamp, job.stamp)
+    assert.equal(preview?.edited, false)
+    const r = defaultRecipe(false)
+    r.basic.exposure = 1
+    f.index.saveRecipe(a.key, r)
+    const edited = f.index.previewJob(a.photoId, null)
+    assert.equal(edited?.edited, true)
+    assert.notEqual(edited?.stamp, job.stamp, 'an edit names a new preview')
+    assert.equal(edited?.recipe.basic.exposure, 1)
+    f.index.markFailed(b.photoId, 'unrecognised container')
+    assert.equal(f.index.previewJob(b.photoId, null), null)
+  } finally {
+    f.done()
+  }
+})
+
+test('a photo’s shots: its burst, else the pictures nearly the same, never stacking anything', async () => {
+  const f = fixture(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'])
+  try {
+    const items = await f.index.listFolder(f.folder)
+    await settle()
+    const store = storeOf(f.index)
+    const base = Date.UTC(2026, 8, 1, 12, 0, 0)
+    // a b c a burst (2 s apart); d and e far apart, but their pictures nearly the same.
+    const at = [0, 2, 4, 60, 120]
+    items.forEach((it, i) => {
+      store.setCamera(it.photoId, {
+        make: null,
+        model: null,
+        lens: null,
+        iso: null,
+        exposureTime: null,
+        fNumber: null,
+        focalLength: null,
+        capturedAt: new Date(base + at[i] * 1000).toISOString(),
+        gps: null
+      })
+    })
+    const [a, b, c, d, e] = items
+    assert.deepEqual(f.index.shotGroup(b.key), { kind: 'burst', keys: [a.key, b.key, c.key] })
+    assert.equal(f.index.shotGroup(d.key), null, 'no hashes yet: alone')
+    const hashes = [
+      'ffff000000000000',
+      '0f0f0f0f0f0f0f0f',
+      'f0f0f0f0f0f0f0f0',
+      '00000000000000ff',
+      '000000000000000f'
+    ]
+    items.forEach((it, i) => {
+      const thumb = join(f.root, `${it.photoId}.jpg`)
+      writeFileSync(thumb, 'jpeg')
+      f.index.setThumb(it.photoId, null, thumb, 'stamp-1')
+      f.index.setDhash(it.photoId, hashes[i], 'stamp-1')
+    })
+    assert.deepEqual(f.index.shotGroup(e.key), { kind: 'near', keys: [d.key, e.key] })
+    // A burst wins over the pictures nearly the same.
+    assert.equal(f.index.shotGroup(a.key)?.kind, 'burst')
+    assert.ok(
+      f.index.items(f.folder).every((i) => !i.stack),
+      'nothing stacked'
+    )
+  } finally {
+    f.done()
+  }
+})
+
 test('pruning keeps the planes the history names, and only those', async () => {
   const f = fixture()
   try {
