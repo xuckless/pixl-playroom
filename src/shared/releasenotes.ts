@@ -50,6 +50,29 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
             'Saved edits take the new maths, and edited photos’ thumbnails are made again once so the library agrees with them.'
           )
         ]
+      },
+      {
+        title: tk('Library'),
+        items: [
+          tk(
+            '⌘Z works in the Library: ratings, flags, labels, pastes and auto white balance come back, and the Edit menu says what it is about to undo. A change to several photos has an Undo in its toast, and one to more than 500 asks first, in case ⌘A met a number key.'
+          ),
+          tk(
+            'Undoing a paste goes through each photo’s own History, so a photo you edited since keeps your edit, and the toast says how many did.'
+          ),
+          tk(
+            'Reject a photo while rejects are hidden and it stays where it is, dimmed and marked Hidden by filter, until you move on. The grid no longer shuffles under your cursor.'
+          ),
+          tk(
+            'The grid walks by row too: ↑ and ↓, Home and End, Page Up and Page Down, with ⇧ to stretch the selection.'
+          ),
+          tk(
+            'In Develop, the rating, flag and label keys touch only the photo you are looking at, whatever the filmstrip has selected.'
+          ),
+          tk(
+            '⌘C copies a photo’s settings in the Library as well, and ⌘V pastes them at once, with an Undo. ⇧⌘V lets you choose what to paste, and Sync names the photo it copies from.'
+          )
+        ]
       }
     ]
   },

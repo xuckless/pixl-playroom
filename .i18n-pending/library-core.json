@@ -574,5 +574,61 @@
     "ja": "{{what}}：{{error}}",
     "vi": "{{what}}: {{error}}",
     "zh-Hans": "{{what}}：{{error}}"
+  },
+  "{{name}} is offline": {
+    "en": "{{name}} is offline",
+    "fr": "{{name}} est hors ligne",
+    "de": "{{name}} ist offline",
+    "ja": "{{name}} はオフラインです",
+    "vi": "{{name}} đang ngoại tuyến",
+    "zh-Hans": "{{name}} 处于离线状态"
+  },
+  "⌘Z works in the Library: ratings, flags, labels, pastes and auto white balance come back, and the Edit menu says what it is about to undo. A change to several photos has an Undo in its toast, and one to more than 500 asks first, in case ⌘A met a number key.": {
+    "en": "⌘Z works in the Library: ratings, flags, labels, pastes and auto white balance come back, and the Edit menu says what it is about to undo. A change to several photos has an Undo in its toast, and one to more than 500 asks first, in case ⌘A met a number key.",
+    "fr": "⌘Z fonctionne dans la Bibliothèque : notes, drapeaux, libellés, collages et balance des blancs auto reviennent, et le menu Modifier dit ce qu’il va annuler. Une modification de plusieurs photos a un bouton Annuler dans sa notification, et une modification de plus de 500 photos demande d’abord, au cas où ⌘A aurait croisé une touche chiffrée.",
+    "de": "⌘Z funktioniert in der Bibliothek: Bewertungen, Markierungen, Farbmarkierungen, Einfügen und automatischer Weißabgleich lassen sich widerrufen, und das Menü Bearbeiten sagt, was es gleich widerruft. Eine Änderung an mehreren Fotos hat ein Widerrufen in ihrer Meldung, und eine an mehr als 500 fragt vorher, falls ⌘A auf eine Zifferntaste getroffen ist.",
+    "ja": "ライブラリで ⌘Z が使えます。レーティング、フラグ、ラベル、ペースト、自動ホワイトバランスを元に戻せ、編集メニューには何を取り消すかが表示されます。複数の写真への変更には通知に取り消すボタンが付き、500 枚を超える変更は、⌘A と数字キーがうっかり重なったときのために先に確認します。",
+    "vi": "⌘Z hoạt động trong Thư viện: xếp hạng, cờ, nhãn, lần dán và cân bằng trắng tự động đều hoàn tác được, và menu Sửa cho biết sắp hoàn tác điều gì. Thay đổi trên nhiều ảnh có nút Hoàn tác trong thông báo, và thay đổi trên hơn 500 ảnh sẽ hỏi trước, phòng khi ⌘A lỡ gặp một phím số.",
+    "zh-Hans": "图库中也能用 ⌘Z 了：星级、旗标、色标、粘贴和自动白平衡都能撤销，“编辑”菜单会写明要撤销什么。对多张照片的更改会在提示中附带“撤销”，超过 500 张的更改会先询问，以防 ⌘A 碰上了数字键。"
+  },
+  "Undoing a paste goes through each photo’s own History, so a photo you edited since keeps your edit, and the toast says how many did.": {
+    "en": "Undoing a paste goes through each photo’s own History, so a photo you edited since keeps your edit, and the toast says how many did.",
+    "fr": "Annuler un collage passe par l’Historique de chaque photo : une photo modifiée depuis garde votre modification, et la notification dit combien l’ont gardée.",
+    "de": "Ein eingefügtes Ergebnis wird über das Protokoll jedes Fotos widerrufen: Ein Foto, das Sie seitdem bearbeitet haben, behält Ihre Bearbeitung, und die Meldung sagt, wie viele das waren.",
+    "ja": "ペーストの取り消しは写真ごとのヒストリーを通して行われます。その後に編集した写真はその編集を保ち、何枚がそうだったかは通知に表示されます。",
+    "vi": "Hoàn tác một lần dán đi qua Lịch sử của từng ảnh, nên ảnh bạn đã chỉnh sau đó giữ nguyên chỉnh sửa của bạn, và thông báo cho biết có bao nhiêu ảnh như vậy.",
+    "zh-Hans": "撤销粘贴会经过每张照片自己的历史记录，之后又编辑过的照片会保留你的编辑，提示会告诉你有几张。"
+  },
+  "Reject a photo while rejects are hidden and it stays where it is, dimmed and marked Hidden by filter, until you move on. The grid no longer shuffles under your cursor.": {
+    "en": "Reject a photo while rejects are hidden and it stays where it is, dimmed and marked Hidden by filter, until you move on. The grid no longer shuffles under your cursor.",
+    "fr": "Rejetez une photo alors que les rejets sont masqués : elle reste à sa place, atténuée et marquée Masquée par le filtre, jusqu’à ce que vous passiez à la suivante. La grille ne se réorganise plus sous votre curseur.",
+    "de": "Lehnen Sie ein Foto ab, während Abgelehnte ausgeblendet sind, bleibt es an seinem Platz, abgedunkelt und als Vom Filter ausgeblendet markiert, bis Sie weitergehen. Das Raster springt nicht mehr unter Ihrem Mauszeiger umher.",
+    "ja": "不採用を非表示にしている間に写真を不採用にしても、次に移るまではその場に残り、暗く表示されて「フィルターで非表示」と示されます。カーソルの下でグリッドが並び替わることはもうありません。",
+    "vi": "Loại một ảnh khi ảnh bị loại đang ẩn thì ảnh vẫn ở nguyên chỗ, mờ đi và được đánh dấu Bị bộ lọc ẩn, cho đến khi bạn chuyển sang ảnh khác. Lưới không còn xáo trộn dưới con trỏ của bạn.",
+    "zh-Hans": "在隐藏已排除照片时排除一张照片，它会留在原处，变暗并标为“已被筛选隐藏”，直到你移到下一张。网格不会再在光标下乱跳。"
+  },
+  "The grid walks by row too: ↑ and ↓, Home and End, Page Up and Page Down, with ⇧ to stretch the selection.": {
+    "en": "The grid walks by row too: ↑ and ↓, Home and End, Page Up and Page Down, with ⇧ to stretch the selection.",
+    "fr": "La grille se parcourt aussi par ligne : ↑ et ↓, Début et Fin, Page précédente et Page suivante, avec ⇧ pour étendre la sélection.",
+    "de": "Das Raster lässt sich auch zeilenweise durchgehen: ↑ und ↓, Pos1 und Ende, Bild auf und Bild ab, mit ⇧ zum Erweitern der Auswahl.",
+    "ja": "グリッドは行単位でも移動できます。↑ と ↓、Home と End、Page Up と Page Down、⇧ を押せば選択を広げられます。",
+    "vi": "Lưới cũng đi theo hàng: ↑ và ↓, Home và End, Page Up và Page Down, kèm ⇧ để mở rộng vùng chọn.",
+    "zh-Hans": "网格也能按行移动：↑ 和 ↓、Home 和 End、Page Up 和 Page Down，按住 ⇧ 可扩展选择。"
+  },
+  "In Develop, the rating, flag and label keys touch only the photo you are looking at, whatever the filmstrip has selected.": {
+    "en": "In Develop, the rating, flag and label keys touch only the photo you are looking at, whatever the filmstrip has selected.",
+    "fr": "En Développement, les touches de note, de drapeau et de libellé ne touchent que la photo affichée, quelle que soit la sélection du film fixe.",
+    "de": "Im Entwickeln-Modus wirken die Tasten für Bewertung, Markierung und Farbmarkierung nur auf das Foto, das Sie gerade ansehen, egal was im Filmstreifen ausgewählt ist.",
+    "ja": "現像では、レーティング、フラグ、ラベルのキーは、フィルムストリップで何を選択していても、表示中の写真にだけ働きます。",
+    "vi": "Trong Chỉnh sửa, các phím xếp hạng, cờ và nhãn chỉ tác động đến ảnh bạn đang xem, bất kể dải phim đang chọn gì.",
+    "zh-Hans": "在“修改照片”中，星级、旗标和色标快捷键只作用于正在查看的照片，无论胶片显示窗格中选了什么。"
+  },
+  "⌘C copies a photo’s settings in the Library as well, and ⌘V pastes them at once, with an Undo. ⇧⌘V lets you choose what to paste, and Sync names the photo it copies from.": {
+    "en": "⌘C copies a photo’s settings in the Library as well, and ⌘V pastes them at once, with an Undo. ⇧⌘V lets you choose what to paste, and Sync names the photo it copies from.",
+    "fr": "⌘C copie aussi les paramètres d’une photo dans la Bibliothèque, et ⌘V les colle aussitôt, avec un Annuler. ⇧⌘V vous laisse choisir quoi coller, et Synchroniser nomme la photo dont il copie les paramètres.",
+    "de": "⌘C kopiert die Einstellungen eines Fotos jetzt auch in der Bibliothek, und ⌘V fügt sie sofort ein, mit Widerrufen. Mit ⇧⌘V wählen Sie, was eingefügt wird, und Synchronisieren nennt das Foto, von dem es kopiert.",
+    "ja": "ライブラリでも ⌘C で写真の設定をコピーでき、⌘V ですぐにペーストできます（取り消しも可能）。⇧⌘V ならペーストする内容を選べ、同期はコピー元の写真名を表示します。",
+    "vi": "⌘C giờ cũng sao chép thiết lập của ảnh trong Thư viện, và ⌘V dán ngay, kèm Hoàn tác. ⇧⌘V cho bạn chọn dán những gì, và Đồng bộ ghi rõ ảnh nguồn được sao chép.",
+    "zh-Hans": "在图库中也能用 ⌘C 拷贝照片的设置，⌘V 立即粘贴，并可撤销。⇧⌘V 可选择要粘贴的内容，“同步”会写明从哪张照片拷贝。"
   }
 }
