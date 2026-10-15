@@ -70,7 +70,7 @@ import { lutsFor } from './lutfile'
 import { cacheFile } from './contain'
 import { maskFramesFor } from './maskframe'
 import { keyOf } from './keys'
-import { coalesceByKey, mergeChanged } from './coalesce'
+import { coalesceByKey, mergeChanged, thumbsAgain } from './coalesce'
 import { rateLimited } from './lograte'
 import { paths } from './paths'
 import { pixelDeps } from './pixels/base'
@@ -158,6 +158,8 @@ export class Library {
   private dupes: AbortController | null = null
   /** Per folder, the photos whose facts changed since the window was last told; null: the listing. */
   private changedPhotos = new Map<string, Set<number> | null>()
+  /** The keys the window last listed (a folder or any source): a fill's thumbnails are queued there. */
+  private listed: ReadonlySet<string> = new Set()
 
   /** What edited photos looked like before engine 0.17: the first-open comparison. */
 
@@ -539,6 +541,7 @@ export class Library {
   /** A folder's items as the index has them; its thumbnails are queued. */
   async openFolder(folder: string): Promise<LibraryItem[]> {
     const items = await this.index.listFolder(folder)
+    this.listed = new Set(items.map((it) => it.key))
     for (const it of items) this.queueThumb(it.photoId, it.copyId)
     this.queueHdr(items)
     return items
@@ -546,15 +549,15 @@ export class Library {
 
   /**
    * Tell the window a folder changed: the changed photos' items in, when
-   * only their facts did (their thumbnails made again if the sidecar moved
-   * the recipe), else a listing to ask for again.
+   * only their facts did (the thumbnails of those it lists made again if the
+   * sidecar moved the recipe), else a listing to ask for again.
    */
   private async tellChanged(folder: string): Promise<void> {
     const photos = this.changedPhotos.get(folder)
     this.changedPhotos.delete(folder)
     const items = photos ? await this.index.itemsOfIds([...photos]).catch(() => null) : null
     if (!items) return this.broadcast(IPC.library.changed, { folder })
-    for (const it of items) if (!it.offline) this.queueThumb(it.photoId, it.copyId)
+    for (const it of thumbsAgain(items, this.listed)) this.queueThumb(it.photoId, it.copyId)
     this.broadcast(IPC.library.changed, { folder, items })
   }
 
@@ -570,6 +573,7 @@ export class Library {
       src.kind === 'duplicates'
         ? await this.duplicates(src.folder, src.threshold)
         : await this.index.listSource(src)
+    this.listed = new Set(listing.items.map((it) => it.key))
     for (const it of listing.items) if (!it.offline) this.queueThumb(it.photoId, it.copyId)
     this.queueHdr(listing.items)
     return listing

@@ -18,7 +18,7 @@ import type { SmartGroup } from '../../../shared/smart'
 import { collapseStacks } from '../../../shared/stacks'
 import { api, errorText } from '../lib/api'
 import { t, tp } from '../lib/i18n'
-import { folderName, isUnder } from '../lib/sources'
+import { folderName, relistsOn } from '../lib/sources'
 import { cosmeticChanges, withChanged } from '../lib/visiblepatch'
 import { useBusy } from './busy'
 import { useUi } from './ui'
@@ -254,14 +254,8 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const src = get().source
     if (!src) return
     // Facts read in (EXIF, a sidecar): those items, wherever they show.
-    if (items) return get().patchItems(items)
-    const mine =
-      src.kind === 'folder'
-        ? src.path === folder || (src.deep === true && isUnder(folder, src.path))
-        : src.kind === 'duplicates'
-          ? src.folder === null || src.folder === folder
-          : true
-    if (mine) void get().refresh()
+    if (items) get().patchItems(items)
+    if (relistsOn(src, folder, !!items)) void get().refresh()
   },
 
   async onSourcesChanged() {

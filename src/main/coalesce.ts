@@ -43,3 +43,16 @@ export function mergeChanged(
   for (const id of photos) out.add(id)
   return out
 }
+
+/**
+ * Of a fill's items, those whose thumbnails are queued again: the ones the
+ * window lists now (`listed`, the last listing's keys) and that are there.
+ * A listing asked for again queued just those; a photo opened on its own
+ * fills its whole folder, and that folder's thumbnails are not wanted yet.
+ */
+export function thumbsAgain<T extends { key: string; offline?: boolean }>(
+  items: T[],
+  listed: ReadonlySet<string>
+): T[] {
+  return items.filter((it) => !it.offline && listed.has(it.key))
+}

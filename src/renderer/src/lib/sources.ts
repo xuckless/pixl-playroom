@@ -43,6 +43,20 @@ export function isUnder(path: string, folder: string): boolean {
   return path.length > base.length && path.startsWith(base) && /[\\/]/.test(path[base.length])
 }
 
+/**
+ * Whether a change to `folder` lists the source shown again. `facts`: only
+ * some photos' facts changed (their EXIF or sidecar read in), their items
+ * patched in with it: a folder, photos or the duplicates then show them as
+ * they are, but a collection lists again, as a smart one matches on those
+ * facts (a camera, a date) and may gain or lose them.
+ */
+export function relistsOn(src: LibrarySource, folder: string, facts: boolean): boolean {
+  if (src.kind === 'folder')
+    return !facts && (src.path === folder || (src.deep === true && isUnder(folder, src.path)))
+  if (src.kind === 'duplicates') return !facts && (src.folder === null || src.folder === folder)
+  return !facts || src.kind === 'collection'
+}
+
 /** The source as a trail of names: its kind, the sets it sits in, its own name. */
 export function sourceTrail(src: LibrarySource, collections: Collection[]): string[] {
   switch (src.kind) {
