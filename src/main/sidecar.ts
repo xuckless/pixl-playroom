@@ -13,6 +13,7 @@ import type { ColorLabel, Flag, Snapshot } from '../shared/ipc'
 import { normaliseRecipe, type Recipe } from '../shared/recipe'
 import { parseRawColour, type RawColour } from '../shared/rawcolour'
 import { readNames, type PhotoNames } from '../shared/naming'
+import { isSafeId } from '../shared/ids'
 
 export const SIDECAR_SUFFIX = '.playroom.json'
 
@@ -99,12 +100,16 @@ export function readSidecar(
   if (!existsSync(file)) return { sidecar: emptySidecar(), mtime: null }
   try {
     const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    // A copy's id names its thumbnail in the cache and goes into its key: a
+    // copy whose id Playroom could not have made (shared/ids.ts) is left out.
     const copies = Array.isArray(raw.copies)
-      ? (raw.copies as Record<string, unknown>[]).map((c) => ({
-          ...item(c, isRaw),
-          id: String(c.id ?? ''),
-          name: String(c.name ?? 'Copy')
-        }))
+      ? (raw.copies as Record<string, unknown>[])
+          .filter((c) => isSafeId(c?.id))
+          .map((c) => ({
+            ...item(c, isRaw),
+            id: String(c.id),
+            name: String(c.name ?? 'Copy')
+          }))
       : []
     return {
       sidecar: {

@@ -46,6 +46,7 @@ import type { IndexClient } from './indexer/client'
 import type { PlaneStore } from './planestore'
 import { brushPlanes } from './brushes'
 import { lutsFor } from './lutfile'
+import { cacheFile } from './contain'
 import { keyOf } from './keys'
 import { paths } from './paths'
 import { pixelDeps } from './pixels/base'
@@ -599,7 +600,7 @@ export class Library {
     const raw = row.is_raw === 1
 
     const info = await this.probe(row)
-    const out = join(
+    const out = cacheFile(
       paths.thumbs(),
       `${row.id}${job.copyId ? '-' + job.copyId : ''}-${hash32(stamp).toString(16)}.jpg`
     )

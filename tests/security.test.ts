@@ -35,6 +35,7 @@ import {
   type CompileContext
 } from '../src/shared/compile'
 import { LUT_MAX_BYTES, lutFileIn, lutsFor } from '../src/main/lutfile'
+import { readSidecar, sidecarPath } from '../src/main/sidecar'
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'pixl-sec-'))
 const HASH = 'a'.repeat(64)
@@ -282,6 +283,48 @@ test('a recipe’s ids and plane references are kept only when they are safe nam
       ['c6', null]
     ]
   )
+})
+
+test('a virtual copy is read only when its id is one Playroom could have made', () => {
+  const dir = tmp()
+  // A copy's id names its thumbnail (`<photo>-<copy>-<stamp>.jpg`) and goes into its key.
+  const photo = join(dir, 'a.jpg')
+  writeFileSync(
+    sidecarPath(photo),
+    JSON.stringify({
+      app: 'pixl-playroom',
+      version: 1,
+      photo: {},
+      copies: [
+        { id: 'k3x9a1b2', name: 'Copy 1' },
+        { id: '../../../../Library/LaunchAgents/x', name: 'Copy 2' },
+        { id: 'a:b', name: 'Copy 3' },
+        { name: 'Copy 4' }
+      ]
+    })
+  )
+  assert.deepEqual(
+    readSidecar(photo, false).sidecar.copies.map((c) => c.id),
+    ['k3x9a1b2']
+  )
+  const path = join(dir, 'a.pixl')
+  craft(path, dir, (db) => {
+    const add = db.prepare(
+      "INSERT INTO items(item_id, name, sort, updated_at) VALUES (?, 'Copy', 1, '')"
+    )
+    add.run('k3x9a1b2')
+    add.run('../../../thumbs/x')
+  })
+  const p = PixlFile.open(path)
+  try {
+    assert.deepEqual(
+      p.read(false).copies.map((c) => c.id),
+      ['k3x9a1b2']
+    )
+  } finally {
+    p.close()
+    rmSync(dir, { recursive: true })
+  }
 })
 
 // ── SEC-3: LUTs and files in a recipe ──

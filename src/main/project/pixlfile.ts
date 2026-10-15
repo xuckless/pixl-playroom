@@ -35,7 +35,7 @@ import { parseRawColour } from '../../shared/rawcolour'
 import { readNames } from '../../shared/naming'
 import { hydrateRecipe, normaliseRecipe, slimRecipe, type Recipe } from '../../shared/recipe'
 import { HISTORY_SCHEMA, HistoryTable, type HistoryRow } from '../historytable'
-import { isBlobHash, isPlainExt } from '../../shared/ids'
+import { isBlobHash, isPlainExt, isSafeId } from '../../shared/ids'
 import { isDevicePath } from '../contain'
 import { planeRef, pngSize, renameRefs } from '../planeref'
 import { IMAGE_EXTENSIONS } from '../source'
@@ -671,8 +671,10 @@ export class PixlFile {
       photo: photo
         ? itemOf(photo)
         : { rating: 0, flag: null, label: null, recipe: null, snapshots: [] },
+      // A copy's id names its thumbnail and goes into its key: one no
+      // Playroom made (a crafted project) is left out (shared/ids.ts).
       copies: rows
-        .filter((r) => r.item_id !== PHOTO)
+        .filter((r) => r.item_id !== PHOTO && isSafeId(r.item_id))
         .map((r) => ({ ...itemOf(r), id: r.item_id, name: r.name })),
       stack: stack ? (JSON.parse(stack) as SidecarStack) : null,
       rawColour: parseRawColour(this.meta('rawColour')),
