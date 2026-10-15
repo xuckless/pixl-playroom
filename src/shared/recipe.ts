@@ -33,6 +33,7 @@ import { normalisePrompt, PROMPT_VIAS, type PromptGeometry, type PromptVia } fro
 import { conceptOf, type ConceptId } from './concepts'
 import { isFacePart, type FaceFound } from './faceparts'
 import { tk } from './i18n'
+import { isPlaneHash, safeIdOf } from './ids'
 
 /**
  * 3 (engine 0.18): a RAW's untouched default sharpening takes the edge mask
@@ -903,7 +904,8 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     settings.calibration = normaliseCalibration(settings.calibration)
     return {
       ...l,
-      id: typeof l.id === 'string' && l.id ? l.id : newId(),
+      // Ids name cache files (a mask's thumbnail): only safe ones are kept (shared/ids.ts).
+      id: safeIdOf(l.id) ?? newId(),
       name: typeof l.name === 'string' ? l.name : 'Mask',
       enabled: l.enabled !== false,
       opacity: num(l.opacity, 100, 0, 100),
@@ -1027,7 +1029,7 @@ function normalisePointColor(value: unknown): PointColorSetting | null {
   if (!isObject(value)) return null
   const v = value
   return {
-    id: typeof v.id === 'string' && v.id ? v.id : newId(),
+    id: safeIdOf(v.id) ?? newId(),
     hue: ((num(v.hue, 0) % 360) + 360) % 360,
     saturation: num(v.saturation, 0, 0, 1),
     luminance: num(v.luminance, 0.5, 0, 1),
@@ -1110,8 +1112,13 @@ function brushSource(v: unknown): BrushSource | null {
 export function normaliseComponent(value: unknown): MaskComponentSetting | null {
   if (!isObject(value)) return null
   const c = value
+  // A plane's reference names its file in the cache: only a SHA-256 is one
+  // (shared/ids.ts). Any other is dropped, and the plane named again from its
+  // PNG; with no PNG to name it from, there is no plane.
+  const ref = isPlaneHash(c.ref) ? { ref: c.ref } : {}
+  if ((c.kind === 'brush' || c.kind === 'depth') && !isPlaneHash(c.ref) && !c.png) return null
   const base = {
-    id: typeof c.id === 'string' && c.id ? c.id : newId(),
+    id: safeIdOf(c.id) ?? newId(),
     mode: MASK_MODES.includes(c.mode as MaskMode) ? (c.mode as MaskMode) : ('Add' as MaskMode),
     opacity: num(c.opacity, 100, 0, 100),
     invert: c.invert === true,
@@ -1130,7 +1137,7 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         kind: 'brush',
         png: c.png,
         // A plane held by reference (IPC, history, a project) keeps its reference.
-        ...(typeof c.ref === 'string' && c.ref ? { ref: c.ref } : {}),
+        ...ref,
         ...((src) => (src ? { source: src } : {}))(brushSource(c.source)),
         width: num(c.width, 1),
         height: num(c.height, 1)
@@ -1194,7 +1201,7 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         ...base,
         kind: 'depth',
         png: c.png,
-        ...(typeof c.ref === 'string' && c.ref ? { ref: c.ref } : {}),
+        ...ref,
         width: num(c.width, 1),
         height: num(c.height, 1),
         near,

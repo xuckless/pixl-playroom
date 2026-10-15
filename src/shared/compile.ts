@@ -76,6 +76,78 @@ import {
   type VsCurve
 } from './resolve'
 
+/** What the render says of a LUT profile not in Playroom's LUT folder (`CompileContext.luts`). */
+export const LUT_MISSING_NOTE = tk(
+  'The LUT this photo uses is not in Playroom’s LUT folder: import it again to see it'
+)
+/** What the render says of an Advanced layer that reads a file it may not. */
+export const CUSTOM_FILE_NOTE = tk(
+  'An Advanced layer that reads a file outside Playroom’s LUT folder is left out'
+)
+
+/** A `LutRef`'s file path, when it names one. */
+function lutPathOf(v: unknown): string | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const lut = (v as { lut?: unknown }).lut
+  if (!lut || typeof lut !== 'object' || !('Path' in lut)) return null
+  const p = (lut as { Path: unknown }).Path
+  return typeof p === 'string' ? p : ''
+}
+
+/** Every `Lut` op's file path in a custom layer's JSON, wherever it sits. */
+function customLutPaths(v: unknown, out: string[]): void {
+  if (Array.isArray(v)) for (const x of v) customLutPaths(x, out)
+  else if (v && typeof v === 'object')
+    for (const [k, x] of Object.entries(v)) {
+      const p = k === 'Lut' ? lutPathOf(x) : null
+      if (p) out.push(p)
+      else customLutPaths(x, out)
+    }
+}
+
+/**
+ * The LUT files a recipe names: its profile's, and every `Lut` op's `Path`
+ * in its custom layers. Main finds each in Playroom's LUT folder
+ * (`CompileContext.luts`).
+ */
+export function lutNamesOf(r: Recipe): string[] {
+  const out: string[] = []
+  if (r.profile.kind === 'lut' && r.profile.path) out.push(r.profile.path)
+  for (const c of r.custom ?? []) customLutPaths(c.layer, out)
+  return [...new Set(out)]
+}
+
+/**
+ * A custom layer with each `Lut` path swapped for the file main found
+ * (`luts`), or null when it reads a file it may not: a LUT not in Playroom's
+ * LUT folder, or a raster mask from a file (`{ Png: path }` and the like;
+ * Playroom's own masks reach the engine as its brush planes, never here).
+ */
+export function customFiles(v: unknown, luts: Record<string, string>): unknown | null {
+  let refused = false
+  const walk = (x: unknown, key: string | null): unknown => {
+    if (Array.isArray(x)) return x.map((e) => walk(e, null))
+    if (!x || typeof x !== 'object') return x
+    if (key === 'Lut') {
+      const p = lutPathOf(x)
+      if (p !== null) {
+        const file = Object.hasOwn(luts, p) ? luts[p] : undefined
+        if (!file) refused = true
+        return { ...(x as Record<string, unknown>), lut: { Path: file ?? '' } }
+      }
+    }
+    if (key === 'source' || key === 'Raster' || key === 'plane') {
+      for (const k of ['Png', 'Tiff', 'Jxl'])
+        if (typeof (x as Record<string, unknown>)[k] === 'string') refused = true
+    }
+    const out: Record<string, unknown> = {}
+    for (const [k, e] of Object.entries(x)) out[k] = walk(e, k)
+    return out
+  }
+  const out = walk(v, null)
+  return refused ? null : out
+}
+
 /** What a waiting vs curve says in the render's notes. */
 const VS_WAITING_NOTE: Partial<Record<VsCurve, string>> = {
   hueLum: tk('Hue vs Lum waits for the engine (E71): kept, not applied yet'),
@@ -170,6 +242,13 @@ export interface CompileContext {
    * process writes them).
    */
   brushPaths: Record<string, string>
+  /**
+   * The LUTs the recipe names (`lutNamesOf`), by the path it names each by,
+   * as main found them in Playroom's LUT folder (main/lutfile.ts). A recipe
+   * comes from files anyone may write, so a path it names is never opened
+   * itself: a LUT not here is missing, and the render says so.
+   */
+  luts?: Record<string, string>
   /** False while the crop tool is open: show the whole, unrotated frame. */
   applyCrop: boolean
   /**
@@ -1375,9 +1454,18 @@ function settingsStages(
       // channels' ratios kept); an SDR one clamps, as it always has.
       if (base?.profile.kind !== 'lut') break
       if (base.profileAmount > 0) {
+        // Only the file main found in Playroom's LUT folder, never the path
+        // the recipe names (it came from a file anyone may write).
+        const file = Object.hasOwn(ctx.luts ?? {}, base.profile.path)
+          ? ctx.luts?.[base.profile.path]
+          : undefined
+        if (!file) {
+          notes.push(LUT_MISSING_NOTE)
+          break
+        }
         look.push({
           Lut: {
-            lut: { Path: base.profile.path },
+            lut: { Path: file },
             amount: clamp(base.profileAmount / 100, 0, 1),
             out_of_domain: hdr ? 'ScaleHeadroom' : 'Clamp'
           }
@@ -1667,8 +1755,13 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
   }
   for (const c of r.custom) {
     if (!c.layer || typeof c.layer !== 'object') continue
+    const layer = customFiles(withLutDomains(c.layer), ctx.luts ?? {})
+    if (!layer) {
+      if (!notes.includes(CUSTOM_FILE_NOTE)) notes.push(CUSTOM_FILE_NOTE)
+      continue
+    }
     layers.push({
-      ...(withLutDomains(c.layer) as GradeLayer),
+      ...(layer as GradeLayer),
       enabled: c.enabled && (c.layer as GradeLayer).enabled !== false
     })
   }

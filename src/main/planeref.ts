@@ -4,6 +4,7 @@
  * them by it (a brush component's `ref`), so two different planes never
  * share a name. Older builds named a plane by a 32-bit hash and the length
  * of its base64 text; those names are rewritten when their store is opened.
+ * Whether a name is one now is `isPlaneHash` (shared/ids.ts).
  */
 import { createHash } from 'crypto'
 import { slimRecipe, type Recipe } from '../shared/recipe'
@@ -11,9 +12,6 @@ import { slimRecipe, type Recipe } from '../shared/recipe'
 export function planeRef(png: string): string {
   return createHash('sha256').update(Buffer.from(png, 'base64')).digest('hex')
 }
-
-/** Whether `ref` is a plane's name now (not an older build's). */
-export const isPlaneHash = (ref: string): boolean => /^[0-9a-f]{64}$/.test(ref)
 
 /** The recipe with its planes by reference (see `slimRecipe`), named by `planeRef`. */
 export function slim(r: Recipe, known?: (ref: string, png: string) => void): Recipe {

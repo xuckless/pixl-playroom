@@ -6,7 +6,7 @@
  * tool.
  */
 import { useMemo, useState } from 'react'
-import { compile } from '../../../shared/compile'
+import { compile, lutNamesOf } from '../../../shared/compile'
 import { rasterGradient } from '../../../shared/gradients'
 import type { GradeLayer } from '../../../shared/engine-types'
 import { migrateLook } from '../../../shared/migratelook'
@@ -172,6 +172,8 @@ export function EngineReportDialog(): React.JSX.Element | null {
             .map((c) => [c.id, `<${c.kind} plane ${c.id}>`])
         )
       ),
+      // Main hands the engine the LUTs it found in Playroom's LUT folder.
+      luts: Object.fromEntries(lutNamesOf(recipe).map((n) => [n, `<lut ${n}>`])),
       applyCrop: true,
       hdr: session.isHdr
     })

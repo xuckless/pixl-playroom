@@ -461,11 +461,11 @@ test('a brush plane held by reference keeps its reference through normalising', 
     width: 4,
     height: 4,
     png: '',
-    ref: 'abc-12'
+    ref: 'abc12'.padEnd(64, '0')
   })
   r.layers.push(l)
   const c = normaliseRecipe(JSON.parse(JSON.stringify(r)), false).layers[0].components[0]
-  assert.equal(c.kind === 'brush' && c.ref, 'abc-12')
+  assert.equal(c.kind === 'brush' && c.ref, 'abc12'.padEnd(64, '0'))
 })
 
 test('a lasso moves with its shift, and in by its feather when that stays inside the line', () => {

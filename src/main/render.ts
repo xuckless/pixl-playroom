@@ -100,6 +100,8 @@ import {
   rendersDir
 } from './autowb'
 import { brushPlanes } from './brushes'
+import { lutsFor } from './lutfile'
+import { cacheFile } from './contain'
 import { paths } from './paths'
 import { sweepPhoto } from './sweep'
 import type { PhotoRow } from './db'
@@ -573,6 +575,7 @@ class Session {
       scale: source.width / px.frameWidth,
       seed: seedOf(this.row),
       brushPaths: await brushPlanes(this.row.id, recipe, user),
+      luts: await lutsFor(recipe, paths.luts()),
       applyCrop,
       // HDR only where the request's pipeline has room above white (Preserve
       // with the HDR working space: masks, the headroom plane, HDR stats). A
@@ -2228,7 +2231,7 @@ class Session {
         )
       )
       if (this.thumbSig[layer.id] === sig) continue
-      const out = join(this.dir, `mthumb-${layer.id}-${sig}.png`)
+      const out = cacheFile(this.dir, `mthumb-${layer.id}-${sig}.png`)
       // Made small, not at the draft's size (see MASK_THUMB_EDGE).
       const k = Math.min(1, MASK_THUMB_EDGE / Math.max(src.width, src.height))
       const report = await this.owner.engine
@@ -2485,6 +2488,7 @@ class Session {
       scale: zoom,
       seed: seedOf(this.row),
       brushPaths: await brushPlanes(this.row.id, this.recipe, user),
+      luts: await lutsFor(this.recipe, paths.luts()),
       applyCrop: !this.view.cropMode,
       showTransform: !this.view.guides,
       // Tone mapped to SDR for the screen, as the picture is (see compileFor);

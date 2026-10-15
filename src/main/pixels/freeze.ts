@@ -16,6 +16,8 @@ import { STRIP_ALL } from '../../shared/engine-types'
 import { defaultUpright } from '../../shared/upright'
 import { newId, type Recipe } from '../../shared/recipe'
 import { brushPlanes } from '../brushes'
+import { lutsFor } from '../lutfile'
+import { paths } from '../paths'
 import type { ProxyFile } from '../proxy'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import { lensMap, moves } from './lensmap'
@@ -65,6 +67,7 @@ export async function freezeMask(
     scale: 1,
     seed: ctx.seed,
     brushPaths: await brushPlanes(ctx.photoId, r, user),
+    luts: await lutsFor(r, paths.luts()),
     applyCrop: false
   })
   const index = compiled.layerIndex[layerId]

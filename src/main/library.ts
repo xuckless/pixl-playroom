@@ -45,6 +45,7 @@ import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
 import type { PlaneStore } from './planestore'
 import { brushPlanes } from './brushes'
+import { lutsFor } from './lutfile'
 import { keyOf } from './keys'
 import { paths } from './paths'
 import { pixelDeps } from './pixels/base'
@@ -780,6 +781,7 @@ export class Library {
       scale: src.width / px.frameWidth,
       seed: seedOf(row),
       brushPaths: await brushPlanes(row.id, recipe, user),
+      luts: await lutsFor(recipe, paths.luts()),
       applyCrop: true,
       hdr: info.is_hdr
     })

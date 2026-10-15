@@ -14,6 +14,7 @@ test('a fine cut-out keeps saying so in the recipe; a quick one says nothing', (
   const fine = normaliseComponent({
     kind: 'brush',
     png: '',
+    ref: 'f'.repeat(64),
     source: { kind: 'segment', target: 'subject', fine: true }
   })
   assert.deepEqual(fine?.kind === 'brush' && fine.source, {
@@ -24,6 +25,7 @@ test('a fine cut-out keeps saying so in the recipe; a quick one says nothing', (
   const quick = normaliseComponent({
     kind: 'brush',
     png: '',
+    ref: 'f'.repeat(64),
     source: { kind: 'segment', target: 'subject', fine: 'yes' }
   })
   assert.deepEqual(quick?.kind === 'brush' && quick.source, { kind: 'segment', target: 'subject' })

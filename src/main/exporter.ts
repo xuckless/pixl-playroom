@@ -42,6 +42,7 @@ import { exportDirFor } from './project/locate'
 import { LOCATION_SETTING, locationOf, type SaveLocation } from '../shared/locations'
 import { cacheUrl } from './protocol'
 import { brushPlanes } from './brushes'
+import { lutsFor } from './lutfile'
 import { embedMetadata } from './exiftool'
 import { exists, sameFile } from './exists'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
@@ -312,6 +313,7 @@ export class Exporter {
       scale: 1,
       seed: seedOf(row),
       brushPaths: await brushPlanes(row.id, recipe, user),
+      luts: await lutsFor(recipe, paths.luts()),
       applyCrop: true,
       // HDR only where the pipeline keeps room above white: PQ/HLG out, or
       // the gain map's HDR master. Tone mapped to SDR, the grade runs after

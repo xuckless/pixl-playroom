@@ -13,6 +13,7 @@
  */
 
 import { t, tk } from './i18n'
+import { isBlobHash } from './ids'
 
 export type PixelStepKind = 'denoise' | 'enhance' | 'retouch'
 
@@ -100,13 +101,11 @@ export function staleRawStep(
   return isRaw && step.params.develop !== mark
 }
 
-const HEX64 = /^[0-9a-f]{64}$/
-
 /** A step read from anywhere (a project, a sidecar, history), or null when it is not one. */
 export function normalisePixelStep(v: unknown): PixelStep | null {
   if (!v || typeof v !== 'object') return null
   const s = v as Record<string, unknown>
-  if (typeof s.id !== 'string' || typeof s.blob !== 'string' || !HEX64.test(s.blob)) return null
+  if (typeof s.id !== 'string' || !isBlobHash(s.blob)) return null
   if (s.kind !== 'denoise' && s.kind !== 'enhance' && s.kind !== 'retouch') return null
   const num = (x: unknown, d: number): number =>
     typeof x === 'number' && Number.isFinite(x) ? x : d
@@ -115,7 +114,7 @@ export function normalisePixelStep(v: unknown): PixelStep | null {
     kind: s.kind,
     label: typeof s.label === 'string' ? s.label : PIXEL_LABEL[s.kind],
     blob: s.blob,
-    alpha: typeof s.alpha === 'string' && HEX64.test(s.alpha) ? s.alpha : null,
+    alpha: isBlobHash(s.alpha) ? s.alpha : null,
     scope: typeof s.scope === 'string' ? s.scope : null,
     opacity: Math.max(0, Math.min(100, num(s.opacity, 100))),
     width: Math.max(1, Math.round(num(s.width, 1))),

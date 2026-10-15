@@ -155,15 +155,25 @@ const PROFILE_LABELS: Record<string, string> = {
   monochrome: tk('Monochrome')
 }
 
+/** A LUT path's file name: a recipe's LUT is found by it in Playroom's LUT folder. */
+const lutFileName = (path: string): string => path.split(/[\\/]/).pop() ?? path
+
 function ProfileRow(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const replace = useDevelop((s) => s.replace)
-  const [luts, setLuts] = useState<LutProfile[]>([])
+  const [luts, setLuts] = useState<LutProfile[] | null>(null)
   useEffect(() => {
     void api.presets.luts().then(setLuts)
   }, [])
   if (!recipe) return null
-  const current = recipe.profile.kind === 'lut' ? `lut:${recipe.profile.path}` : recipe.profile.kind
+  // A recipe from elsewhere names its LUT where it was there: here it is the
+  // one of that name in Playroom's LUT folder, or missing (main/lutfile.ts).
+  const chosen = recipe.profile.kind === 'lut' ? recipe.profile : null
+  const found = chosen
+    ? luts?.find((l) => lutFileName(l.path) === lutFileName(chosen.path))
+    : undefined
+  const missing = chosen !== null && luts !== null && !found
+  const current = chosen ? `lut:${found?.path ?? chosen.path}` : recipe.profile.kind
   const choose = async (v: string): Promise<void> => {
     let profile: ProfileRef
     if (v === 'import') {
@@ -179,7 +189,7 @@ function ProfileRow(): React.JSX.Element | null {
       }
     } else if (v.startsWith('lut:')) {
       const path = v.slice(4)
-      profile = { kind: 'lut', name: luts.find((l) => l.path === path)?.name ?? 'LUT', path }
+      profile = { kind: 'lut', name: luts?.find((l) => l.path === path)?.name ?? 'LUT', path }
     } else profile = { kind: v } as ProfileRef
     replace(
       { ...recipe, profile },
@@ -194,10 +204,26 @@ function ProfileRow(): React.JSX.Element | null {
         onChange={(v) => void choose(v)}
         options={[
           ...Object.entries(PROFILE_LABELS).map(([value, label]) => ({ value, label: t(label) })),
-          ...luts.map((l) => ({ value: `lut:${l.path}`, label: `LUT · ${l.name}` })),
+          ...(luts ?? []).map((l) => ({ value: `lut:${l.path}`, label: `LUT · ${l.name}` })),
+          ...(missing && chosen
+            ? [
+                {
+                  value: `lut:${chosen.path}`,
+                  label: t('LUT · {{name}} (missing)', { name: chosen.name })
+                }
+              ]
+            : []),
           { value: 'import', label: t('Import .cube…') }
         ]}
       />
+      {missing && chosen && (
+        <p className="muted small">
+          {t(
+            'LUT missing: {{file}} is not in Playroom’s LUT folder, so it is left out. Import it to see it.',
+            { file: lutFileName(chosen.path) }
+          )}
+        </p>
+      )}
       {recipe.profile.kind === 'lut' && (
         <RS
           label={tk('Amount')}
