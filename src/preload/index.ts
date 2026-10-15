@@ -1,4 +1,5 @@
 import type { Pipeline } from '../shared/rebuild'
+import type { QuickDelta } from '../shared/quickdevelop'
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { NoiseEstimate, PreviewFrame, Transform } from '../shared/engine-types'
 import type { ScopeBins } from '../shared/scopes'
@@ -254,6 +255,28 @@ const api = {
       call<SourceListing>(IPC.library.duplicates, folder, threshold),
     autoWb: (keys: string[], batch: BatchTag) =>
       call<AutoWbResult>(IPC.library.autoWb, keys, batch),
+    /**
+     * Quick develop (main/quickdevelop.ts): a chunk of a nudge burst, `delta`
+     * its total so far; `prior` the burst's steps written already (rewritten).
+     */
+    nudge: (
+      keys: string[],
+      delta: QuickDelta,
+      batch: BatchTag,
+      prior: { key: string; seq: number }[]
+    ) => call<BatchResult>(IPC.library.nudge, keys, delta, batch, prior),
+    /** A look at `amount` on a chunk; with `prior`, that batch's steps rewritten (Amount, a swap). */
+    applyLook: (
+      keys: string[],
+      lookId: string,
+      amount: number,
+      batch: BatchTag,
+      prior: { key: string; seq: number }[]
+    ) => call<BatchResult>(IPC.library.applyLook, keys, lookId, amount, batch, prior),
+    autoTone: (keys: string[], batch: BatchTag) =>
+      call<BatchResult>(IPC.library.autoTone, keys, batch),
+    /** Each photo's settings stamped (the clipboard's "changed since"). */
+    stamps: (keys: string[]) => call<Record<string, string>>(IPC.library.stamps, keys),
     onSourcesChanged: (cb: () => void) => on(IPC.library.sourcesChanged, cb)
   },
   develop: {

@@ -28,6 +28,7 @@ import {
   metaValuesOf,
   onlyKeys,
   pushEntry,
+  replaceTop,
   UNDO_CHUNK,
   withoutEntry,
   type MetaEntry,
@@ -47,6 +48,11 @@ export const useLibraryUndo = create<UndoStack>(() => EMPTY_STACK)
 /** Put an entry on top of the stack (it ends what can be redone). */
 export function pushUndo(e: UndoEntry): void {
   useLibraryUndo.setState((s) => pushEntry(s, e))
+}
+
+/** A batch that grew (a nudge burst, a look's Amount): its entry replaced while it is the newest. */
+export function replaceUndo(e: UndoEntry): void {
+  useLibraryUndo.setState((s) => replaceTop(s, e))
 }
 
 /** What ⌘Z in the Library would take back, and what ⇧⌘Z would bring back. */

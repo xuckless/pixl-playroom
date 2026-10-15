@@ -2710,6 +2710,28 @@ export class IndexService {
   }
 
   /**
+   * Where a photo stood before its step `seq` of a Library batch, while that
+   * step can still be rewritten (`amendEdit`: the last one stored, in
+   * effect): a nudge burst's next click, a look's Amount or a look swapped
+   * are made again from here. Null once anything came after it.
+   */
+  batchBase(key: string, seq: number): Recipe | null {
+    const log = this.history(key)
+    const last = log.steps[log.steps.length - 1]
+    if (!log.base || !last || last.seq !== seq || last.hidden) return null
+    return replay(log.base.recipe, log.steps.slice(0, -1))
+  }
+
+  /**
+   * A Library batch's step rewritten as `next` (saved with it), where it is
+   * still the last; the step's seq after, null when it could not be (or
+   * `next` is where the photo stood before it: the step is gone).
+   */
+  amendBatchStep(key: string, seq: number, label: string, next: Recipe): number | null {
+    return this.amendEdit(key, seq, label, next, next)?.step?.seq ?? null
+  }
+
+  /**
    * A batch taken back: on each photo whose newest step in effect is still
    * the batch's, that step is undone and the recipe the history now
    * describes is saved. A photo edited since (or gone) is skipped and keeps

@@ -183,6 +183,14 @@ export const IPC = {
     copyRecipe: 'library:copy-recipe',
     /** Photos' items by key, listed or not (the Library's undo checks what each has now). */
     itemsOf: 'library:items-of',
+    /** Quick develop: a burst of nudges on a selection (main/quickdevelop.ts). */
+    nudge: 'library:nudge',
+    /** Quick develop: a look at an Amount on a selection, or that batch rewritten. */
+    applyLook: 'library:apply-look',
+    /** Quick develop: Auto tone measured on each photo of a selection. */
+    autoTone: 'library:auto-tone',
+    /** Each photo's settings stamped, so the clipboard sees its photo change since a copy. */
+    stamps: 'library:stamps',
     /** main → renderer: collections, keywords or metadata changed */
     sourcesChanged: 'library:sources-changed'
   },
@@ -646,6 +654,8 @@ export interface BatchResult {
   items: (LibraryItem | undefined)[]
   steps: { key: string; seq: number }[]
   failed: { key: string; message: string }[]
+  /** A nudge held at a slider's end on these photos (Quick develop). */
+  limited?: string[]
 }
 
 /** A batch taken back (or brought back): where it was, and where a later edit kept it. */
@@ -983,8 +993,15 @@ export interface LookThumbRequest {
   key: string
   /** Counts the browser's asks: an older one arriving late changes nothing. */
   token: number
-  /** The recipe the looks go on (the photo's own, or what it was before a look on trial). */
-  base: Recipe
+  /**
+   * The recipe the looks go on (the photo's own, or what it was before a look
+   * on trial). Absent with no Develop session (Quick develop): the photo as it
+   * stands, or as it stood before its step `under` of a Library batch.
+   */
+  base?: Recipe
+  under?: number
+  /** The looks at this Amount (0…100), not whole (Quick develop's preview). */
+  amount?: number
   /** Catalog ids, saved presets' ids, or `current` for the photo as it is. */
   ids: string[]
   /** The cards' long edge, in pixels. */
