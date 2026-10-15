@@ -1423,6 +1423,8 @@ class Session {
         this.lastSig.full = sig
         this.lastEvent.full = known.event
         this.lastOut.full = known.out
+        // Shown again: its scopes read it again (E76), however many came between.
+        this.keepScopeFile(known.event.url, { path: known.out, width: known.event.width })
       }
       // In Full HDR the picture a thumbnail shrinks from is the companion,
       // whose size is its own.
@@ -3330,6 +3332,8 @@ class Session {
     clearTimeout(this.letGo)
     this.abort?.abort()
     this.regionAbort?.abort()
+    this.scopesAbort?.abort()
+    this.coverageAbort?.abort()
     // Corrected proxies for any other correction are no longer read.
     void pruneLensed(this.row, this.key, this.lensKey(this.recipe))
     void sweepPhoto(this.dir, paths.photoCache(this.row.id))
