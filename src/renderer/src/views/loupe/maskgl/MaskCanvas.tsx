@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { readable } from '../../../lib/frames'
 import { maskJoins } from '../../../../../shared/maskpreview'
 import type { LocalLayer } from '../../../../../shared/recipe'
-import { displayToBase, type P, type ViewGeometry } from '../../../../../shared/view'
+import { displayToBaseMatrix, glMat3, type ViewGeometry } from '../../../../../shared/view'
 import { planePng } from '../../../lib/planes'
 import { lastSentRev, useDevelop } from '../../../state/develop'
 import { useUi, type OverlayMode } from '../../../state/ui'
@@ -53,13 +53,12 @@ let current: MaskGl | null = null
   read: () => current?.readMask() ?? null
 }
 
-/** Normalised display → base as a column-major mat3 (the map is affine). */
+/**
+ * Normalised display → base as a column-major mat3: projective, since an
+ * Upright warp is (the shaders divide by its third row).
+ */
 function toBaseMat(g: ViewGeometry): Float32Array {
-  const f = (p: P): P => displayToBase(g, p)
-  const o = f({ x: 0, y: 0 })
-  const x = f({ x: 1, y: 0 })
-  const y = f({ x: 0, y: 1 })
-  return new Float32Array([x.x - o.x, x.y - o.y, 0, y.x - o.x, y.y - o.y, 0, o.x, o.y, 1])
+  return glMat3(displayToBaseMatrix(g))
 }
 
 /** The base frame (the file upright) at the planes' size. */

@@ -15,9 +15,17 @@ import type { CropRect, Orientation, Transform } from './engine-types'
 import { effectiveCrop, orientedFrame } from './compile'
 import { effective } from './edits'
 import { lensCorrection } from './lens'
-import { inverse, swapsAxes, transformPoint } from './orientation'
+import { inverse, matrixOf, swapsAxes, transformPoint } from './orientation'
+import { applyProjective, glMat3, type Projective } from './projective'
 import type { Recipe } from './recipe'
-import { canvasToFrame, frameToCanvas, uprightTransform } from './upright'
+import {
+  canvasToFrame,
+  frameToCanvas,
+  homography,
+  invert3,
+  uprightTransform,
+  type Mat3
+} from './upright'
 
 export interface ViewGeometry {
   /** The oriented frame, full resolution, in pixels. */
@@ -149,6 +157,109 @@ export function displayToBase(g: ViewGeometry, p: P): P {
 
 export function baseToDisplay(g: ViewGeometry, p: P): P {
   return orientedToDisplay(g, baseToOriented(g, p))
+}
+
+// ── The map as a matrix ──────────────────────────────────────────────────────
+
+/**
+ * Display ↔ base as one projective matrix (`projective.ts`), normalised.
+ * Exact: the crop and straighten, the turns and flips are affine and
+ * Upright's warp is a homography, so their product is one (without an
+ * Upright warp its last row is 0, 0, 1). What draws a mask on the GPU (the
+ * loupe's preview, the brush's stroke) takes it, with the perspective
+ * divide, so its shapes land where `displayToBase` puts them.
+ */
+export { applyProjective, glMat3, type Projective }
+
+function mul3(a: Mat3, b: Mat3): Mat3 {
+  const o = [0, 0, 0, 0, 0, 0, 0, 0, 0] as Mat3
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      for (let k = 0; k < 3; k++) o[i * 3 + j] += a[i * 3 + k] * b[k * 3 + j]
+  return o
+}
+
+/** The same map scaled so its divisor is positive at `p` (the GPU's test for "in front"). */
+function positiveAt(m: Projective, p: P): Projective {
+  return m[6] * p.x + m[7] * p.y + m[8] < 0 ? (m.map((v) => -v) as Projective) : m
+}
+
+/** Display → base, normalised (see `Projective`): the matrix of `displayToBase`. */
+export function displayToBaseMatrix(g: ViewGeometry): Projective {
+  const { width: W, height: H } = g
+  // Display → canvas (normalised): the crop, then the straighten undone about the centre.
+  let toCanvas: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+  if (!g.whole && g.crop) {
+    const t = (g.straighten * Math.PI) / 180
+    const c = Math.cos(t)
+    const s = Math.sin(t)
+    // q = (crop.xy + d · crop.wh) · (W, H) − (W, H) / 2, in pixels about the centre.
+    const crop: Mat3 = [
+      g.crop.width * W,
+      0,
+      g.crop.x * W - W / 2,
+      0,
+      g.crop.height * H,
+      g.crop.y * H - H / 2,
+      0,
+      0,
+      1
+    ]
+    const turn: Mat3 = [c / W, s / W, 0.5, -s / H, c / H, 0.5, 0, 0, 1]
+    toCanvas = mul3(turn, crop)
+  }
+  // Canvas → frame: the warp undone, in the frame's pixels.
+  const unwarp: Mat3 = g.transform
+    ? mul3(
+        [1 / W, 0, 0, 0, 1 / H, 0, 0, 0, 1],
+        mul3(invert3(homography(g.transform, W, H)), [W, 0, 0, 0, H, 0, 0, 0, 1])
+      )
+    : [1, 0, 0, 0, 1, 0, 0, 0, 1]
+  // Oriented → base: the user's turn undone about the centre.
+  const o = matrixOf(inverse(g.user))
+  const toBase: Mat3 = [
+    o[0][0],
+    o[0][1],
+    0.5 - 0.5 * (o[0][0] + o[0][1]),
+    o[1][0],
+    o[1][1],
+    0.5 - 0.5 * (o[1][0] + o[1][1]),
+    0,
+    0,
+    1
+  ]
+  return positiveAt(mul3(toBase, mul3(unwarp, toCanvas)), { x: 0.5, y: 0.5 })
+}
+
+/** Base → display, normalised: the inverse of `displayToBaseMatrix`. */
+export function baseToDisplayMatrix(g: ViewGeometry): Projective {
+  const m = displayToBaseMatrix(g)
+  return positiveAt(invert3(m), applyProjective(m, { x: 0.5, y: 0.5 }))
+}
+
+/**
+ * How much the display → base map magnifies about display point `p`: base
+ * units per display unit, in the sizes given (a brush's plane pixels per
+ * screen pixel, say), as √|det J|, the scale an area keeps. The same both
+ * ways across under a turn or a straighten; under an Upright warp, a dab
+ * keeps its area where a stretch along one axis only would have it grow.
+ */
+export function localScale(
+  g: ViewGeometry,
+  p: P,
+  display: { w: number; h: number },
+  base: { w: number; h: number }
+): number {
+  const m = displayToBaseMatrix(g)
+  const w = m[6] * p.x + m[7] * p.y + m[8]
+  const q = applyProjective(m, p)
+  // ∂(X/w)/∂x = (m0 − X·m6) / w, and so on.
+  const jxx = (m[0] - q.x * m[6]) / w
+  const jxy = (m[1] - q.x * m[7]) / w
+  const jyx = (m[3] - q.y * m[6]) / w
+  const jyy = (m[4] - q.y * m[7]) / w
+  const det = (jxx * jyy - jxy * jyx) * ((base.w * base.h) / (display.w * display.h))
+  return Math.sqrt(Math.abs(det))
 }
 
 /**

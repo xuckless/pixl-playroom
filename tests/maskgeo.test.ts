@@ -4,7 +4,19 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { compile, type CompileContext } from '../src/shared/compile'
 import { defaultRecipe, type Recipe } from '../src/shared/recipe'
-import { loupeGeometry, maskPlacementKey } from '../src/shared/view'
+import {
+  applyProjective,
+  baseToDisplay,
+  baseToDisplayMatrix,
+  displayToBase,
+  displayToBaseMatrix,
+  glMat3,
+  localScale,
+  loupeGeometry,
+  maskPlacementKey,
+  viewGeometry,
+  type Projective
+} from '../src/shared/view'
 import { nextGeometryRev, planeFits } from '../src/renderer/src/state/maskplanes'
 import { nextTarget, type Watched } from '../src/renderer/src/views/loupe/maskgl/handover'
 
@@ -137,4 +149,133 @@ test('the loupe keeps its own mask until the engine has drawn the new framing', 
   assert.equal(nextTarget(was, { ...was, geometryRev: 12 }, 10, 8), 12)
   // Another mask: its plane shows as soon as the engine has one.
   assert.equal(nextTarget(was, { ...was, layerId: 'M', geometryRev: 9 }, 4, 8), 0)
+})
+
+// ── Phase 2: the map as one projective matrix ────────────────────────────────
+
+const ORIENTATIONS: [number, boolean][] = [
+  [0, false],
+  [1, false],
+  [2, false],
+  [3, false],
+  [0, true],
+  [1, true],
+  [2, true],
+  [3, true]
+]
+
+type ViewCase = [string, Recipe, { cropMode?: boolean; guides?: boolean }]
+
+/** The geometries the loupe shows a mask through, by name. */
+function geometries(): ViewCase[] {
+  const make = (f: (r: Recipe) => void): Recipe => {
+    const r = defaultRecipe(false)
+    f(r)
+    return r
+  }
+  const out: ViewCase[] = [
+    ['none', make(() => {}), {}],
+    ['crop', make((r) => (r.geometry.crop = { x: 0.15, y: 0.2, width: 0.7, height: 0.65 })), {}],
+    ['straighten 10', make((r) => (r.geometry.straighten = 10)), {}]
+  ]
+  for (const [turns, flip] of ORIENTATIONS)
+    out.push([
+      `turns ${turns}${flip ? ' flipped' : ''}`,
+      make((r) => {
+        r.geometry.quarterTurns = turns
+        r.geometry.flipHorizontal = flip
+        r.geometry.straighten = 3
+        r.geometry.crop = { x: 0.1, y: 0.05, width: 0.75, height: 0.8 }
+      }),
+      {}
+    ])
+  out.push(['Upright V20', make((r) => (r.geometry.upright.vertical = 50)), {}])
+  const full = make((r) => {
+    Object.assign(r.geometry.upright, {
+      vertical: 30,
+      horizontal: 15,
+      rotate: 3,
+      aspect: 10,
+      scale: 90
+    })
+    r.geometry.quarterTurns = 3
+    r.geometry.flipHorizontal = true
+    r.geometry.straighten = 4
+    r.geometry.crop = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }
+  })
+  out.push(['Upright V30 H15 rotate aspect scale, turned', full, {}])
+  out.push(['the crop tool open', full, { cropMode: true }])
+  out.push(['Upright’s guides', full, { guides: true }])
+  return out
+}
+
+test('the display ↔ base matrices are the per-point maps, Upright and all', () => {
+  for (const [name, r, o] of geometries()) {
+    const g = viewGeometry(r, 6000, 4000, o.cropMode ?? false, o.guides ?? false)
+    const m = displayToBaseMatrix(g)
+    const mi = baseToDisplayMatrix(g)
+    let worst = 0
+    for (let i = 0; i <= 20; i++)
+      for (let j = 0; j <= 20; j++) {
+        const d = { x: i / 20, y: j / 20 }
+        const b = displayToBase(g, d)
+        const viaM = applyProjective(m, d)
+        const back = applyProjective(mi, b)
+        const exact = baseToDisplay(g, b)
+        worst = Math.max(
+          worst,
+          Math.hypot(viaM.x - b.x, viaM.y - b.y),
+          Math.hypot(back.x - exact.x, back.y - exact.y)
+        )
+      }
+    assert.ok(worst < 1e-6, `${name}: ${worst}`)
+    // The GPU's "in front" test holds over the picture.
+    assert.ok(m[6] * 0.5 + m[7] * 0.5 + m[8] > 0, name)
+  }
+})
+
+test('as GLSL takes it: column by column', () => {
+  const m: Projective = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+  assert.deepEqual([...glMat3(m)], [1, 4, 7, 2, 5, 8, 3, 6, 9])
+})
+
+test('a dab keeps its area through the map; along x alone it would not under Upright', () => {
+  const r = defaultRecipe(false)
+  r.geometry.crop = { x: 0.2, y: 0.2, width: 0.5, height: 0.5 }
+  const g = viewGeometry(r, 6000, 4000, false)
+  // Half the frame across 1000 screen pixels: 3 frame pixels a screen pixel.
+  const screen = { w: 1000, h: 1000 * (2000 / 3000) }
+  const s = localScale(g, { x: 0.3, y: 0.6 }, screen, { w: 6000, h: 4000 })
+  assert.ok(Math.abs(s - 3) < 1e-9, `${s}`)
+  // Under an Upright warp: the local Jacobian's area, by finite differences.
+  const u = defaultRecipe(false)
+  u.geometry.upright.vertical = 60
+  const gu = viewGeometry(u, 6000, 4000, false)
+  const p = { x: 0.5, y: 0.15 }
+  const e = 1e-5
+  const a = displayToBase(gu, p)
+  const bx = displayToBase(gu, { x: p.x + e, y: p.y })
+  const by = displayToBase(gu, { x: p.x, y: p.y + e })
+  const det = ((bx.x - a.x) * (by.y - a.y) - (bx.y - a.y) * (by.x - a.x)) / (e * e)
+  const want = Math.sqrt(Math.abs(det))
+  const got = localScale(gu, p, { w: 1, h: 1 }, { w: 1, h: 1 })
+  assert.ok(Math.abs(got - want) / want < 1e-4, `${got} vs ${want}`)
+  const alongX = Math.hypot(bx.x - a.x, bx.y - a.y) / e
+  assert.ok(Math.abs(alongX - want) / want > 0.02, 'the warp stretches one way more')
+})
+
+test('the brush worker’s Auto Mask lookup lands where the exact map puts a dab', () => {
+  // cpuDabs and the dab shader read the picture at baseToDisplayMatrix(plane point).
+  const found = geometries().find(([n]) => n.startsWith('Upright V30'))
+  assert.ok(found)
+  const g = viewGeometry(found[1], 6000, 4000, false)
+  const m = baseToDisplayMatrix(g)
+  for (const d of [
+    { x: 0.2, y: 0.3 },
+    { x: 0.5, y: 0.5 },
+    { x: 0.85, y: 0.1 }
+  ]) {
+    const back = applyProjective(m, displayToBase(g, d))
+    assert.ok(Math.hypot(back.x - d.x, back.y - d.y) < 1e-9)
+  }
 })

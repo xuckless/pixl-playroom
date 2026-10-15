@@ -1,8 +1,10 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { newId, type BrushComponent } from '../../../../shared/recipe'
 import {
-  baseToDisplay,
+  baseToDisplayMatrix,
   displayToBase,
+  displayToBaseMatrix,
+  localScale,
   normalisedIn,
   visiblePart,
   type P,
@@ -13,7 +15,7 @@ import { api, errorText } from '../../lib/api'
 import { isFrame, pictureBitmap as framePixels, readable } from '../../lib/frames'
 import { touchInteracting } from '../../lib/interacting'
 import { planePng, rememberPlane } from '../../lib/planes'
-import type { Affine, Dab } from '../../workers/brush.worker'
+import type { Dab } from '../../workers/brush.worker'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
@@ -30,14 +32,6 @@ const FLOW_PER_DAB = 0.35
 function strokeAlpha(): number {
   const o = useUi.getState().maskOverlay
   return Math.min(0.6, Math.max(0.2, o.opacity / 100))
-}
-
-/** An affine map of normalised points, from where it takes three of them. */
-function affine(f: (p: P) => P): Affine {
-  const o = f({ x: 0, y: 0 })
-  const x = f({ x: 1, y: 0 })
-  const y = f({ x: 0, y: 1 })
-  return [x.x - o.x, y.x - o.x, o.x, x.y - o.y, y.y - o.y, o.y]
 }
 
 interface Stroke {
@@ -91,12 +85,10 @@ export const BrushLayer = memo(function BrushLayer({
   const planeH = baseH > baseW ? BRUSH_EDGE : Math.round((BRUSH_EDGE * baseH) / baseW)
   const toDisplay = (e: { clientX: number; clientY: number }, el: Element): P =>
     normalisedIn(e.clientX, e.clientY, el.getBoundingClientRect())
-  // Plane pixels per screen pixel, measured through the view mapping.
-  const scaleAt = (p: P): number => {
-    const a = displayToBase(g, p)
-    const b = displayToBase(g, { x: p.x + 1 / rect.w, y: p.y })
-    return Math.hypot((b.x - a.x) * planeW, (b.y - a.y) * planeH)
-  }
+  // Plane pixels per screen pixel about a point, through the view mapping:
+  // the scale an area keeps (an Upright warp stretches one way more).
+  const scaleAt = (p: P): number =>
+    localScale(g, p, { w: rect.w, h: rect.h }, { w: planeW, h: planeH })
 
   // The worker's canvas covers the part of the picture in view; it learns
   // where that is whenever the view moves.
@@ -111,7 +103,7 @@ export const BrushLayer = memo(function BrushLayer({
         oy: vis.y,
         rw: rect.w,
         rh: rect.h,
-        toBase: affine((p) => displayToBase(g, p))
+        toBase: displayToBaseMatrix(g)
       }
     })
   }, [worker, vis.x, vis.y, vis.w, vis.h, rect.w, rect.h, g])
@@ -219,7 +211,7 @@ export const BrushLayer = memo(function BrushLayer({
         erase,
         picture,
         ...(pictureBitmap ? { pictureBitmap } : {}),
-        toDisplay: affine((q) => baseToDisplay(g, q)),
+        toDisplay: baseToDisplayMatrix(g),
         alpha: strokeAlpha()
       },
       pictureBitmap ? [pictureBitmap] : []
