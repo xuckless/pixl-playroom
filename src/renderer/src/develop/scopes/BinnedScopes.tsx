@@ -1,7 +1,8 @@
 /**
- * Resolve's scopes drawn from the picture's binned pixels (lib/scopes/live.ts):
+ * Resolve's scopes drawn from the picture's counts (lib/scopes/live.ts:
+ * binned from the preview while it moves, the engine's once it settles):
  * the waveform (luma, or the three channels over one another), the RGB
- * parade and the vectorscope. Each is a canvas of log density under an SVG
+ * parade and the vectorscope (BT.709's Cb/Cr). Each is a canvas of log density under an SVG
  * graticule, the scale on Resolve's 10-bit 0…1023 (and room above it where
  * the picture has headroom).
  */
@@ -168,7 +169,7 @@ export function VectorScope({
       ? (out) => {
           if (zoom === 1) return paintDensity(out, bins.vector!, n, n, LUMA, { gain: 1.1 })
           // 2×: the middle half of the bins, each drawn twice the size.
-          const half = new Uint32Array(n * n)
+          const half = new Float32Array(n * n)
           for (let y = 0; y < n; y++)
             for (let x = 0; x < n; x++)
               half[y * n + x] = bins.vector![(n / 4 + (y >> 1)) * n + n / 4 + (x >> 1)]

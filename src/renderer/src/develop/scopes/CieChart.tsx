@@ -5,8 +5,10 @@
  * the other gamuts over it (off until chosen).
  *
  * The photo's own colours are a density over it, binned from the preview's
- * pixels (shared/scopes.ts): Display P3 at preview resolution. The exact,
- * full-resolution version is engine request E76.
+ * pixels (shared/scopes.ts): Display P3 at preview resolution. The engine's
+ * own u′v′ density (E76) is read from the grade before the screen's gamut
+ * cuts it, for the Metrics tab's gamut coverage; the chart shows what the
+ * screen shows.
  */
 import { useEffect, useRef, useState } from 'react'
 import {
