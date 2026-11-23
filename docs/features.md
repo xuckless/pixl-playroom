@@ -1,0 +1,333 @@
+# What Pixl Playroom does
+
+<sub>[README](../README.md) · [Features](features.md) · [How it fits together](architecture.md) · [Development](development.md) · [Keys](keys.md) · [The .pixl format](pixl-format.md)</sub>
+
+## Library
+
+Open a folder (no import step; files stay where they are): grid
+with engine thumbnails (a RAW's embedded preview until it is edited, the graded
+picture after), sorted by name, capture time, date added, rating, file size or
+edited first; ratings (0–5), pick/reject flags (P/X/U), colour labels (6–9),
+virtual copies, copy/paste/sync settings to a selection, batch export, Enhance.
+
+- **Sources sidebar** (\\ or Ctrl+Shift+L): folders (pinned and recent; one
+  can be taken off the list, its photos left on disk), collections, keywords
+  and duplicates; the grid shows whichever is chosen, across folders.
+- **Collections** — manual ones (drag photos onto them), smart ones built from
+  rules in nested all / any / none groups (rating, flag, label, kind, camera,
+  lens, ISO, focal length, aperture, shutter, capture date, keywords, text,
+  other collections…), and sets to hold both; exported and imported as JSON.
+- **Metadata** — title, caption, copyright and hierarchical keywords
+  ("Places › Canada › Winnipeg") in the Info drawer (I) and in Develop's Info
+  pane, many photos at once. They are written to standard `.xmp` sidecars
+  through ExifTool (`IMG_0001.xmp` beside a RAW, `IMG_0001.jpg.xmp` beside
+  anything else); the original is never touched.
+- **Search and filters** — text over names, titles, captions, keywords,
+  camera and lens; filters for rating, flag, label, edits, camera, lens, RAW or
+  not, ISO and focal ranges, dates and keyword. They mean exactly what the
+  same rules mean in a smart collection.
+- **Stacks** — stack a selection under a cover (Ctrl+G), open and close it
+  (S), or auto-stack a folder by capture time; kept in each photo's `.pixl`
+  project, so a stack travels with the folder.
+- **Duplicates** — exact copies (size and SHA-1) and near ones (a 64-bit
+  difference hash of the thumbnail, with an adjustable distance), in a folder
+  or the whole library.
+- **Suggested rejects** — measured on this computer while it is idle and
+  plugged in (exposure, focus in the subject's region, motion blur, a blink
+  hint, picture hashes for bursts): a photo that looks like a reject shows
+  dimmed and grey, with why on hover ("Subject soft · focus 18% of the
+  burst's best") and Keep or Reject. Filters → Suggested rejects only lists
+  them; Reject all (Shift+X) flags them. A star, a pick or Keep means never
+  suggested, the thresholds learn from what you keep and reject, and nothing
+  is ever deleted.
+- **Auto white balance per photo** across a selection (Ctrl+Shift+U, the
+  toolbar's Auto WB, or "Auto per photo" in Sync), each photo measured on its
+  own, with a history step each and one Undo for the batch.
+- **Open with Pixl Playroom** — Finder's and Explorer's Open With (RAW, DNG,
+  JPEG, TIFF, HEIC, PNG, WebP, AVIF, JPEG XL, each with its own document icon)
+  opens the photo in Develop, in the running app if there is one. Playroom
+  registers as an alternative only and never takes over a file type.
+
+## Develop
+
+The right column holds every adjustment as a folding card, in
+Lightroom Classic's order; above them a strip holds the canvas tools (Crop,
+Heal, Masks).
+
+| Card or tool        | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Engine                                                                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Profile, treatment  | Above the cards: Colour (PIXL's camera profile for 46 bodies, or the file's own colour) or B&W; Neutral, Playroom Standard, Vivid, Monochrome, any imported `.cube` (with amount; an HDR photo's LUT keeps its headroom)                                                                                                                                                                                                                                                                          | `Curves`, `Vibrance`, `Lut`                                                                                                                   |
+| White balance       | As shot / Auto / eyedropper / Custom / saved presets; RAWs show absolute Kelvin from the camera's as-shot white and offer Daylight, Cloudy…; a saved white (and a preset's) converts between a RAW's Kelvin and another photo's relative sliders; Sync copies it, converted, or measures each photo's own                                                                                                                                                                                         | `WhiteBalance` (Bradford), `probe().as_shot_white`                                                                                            |
+| Light               | Exposure (with a highlight shoulder for positive values), Contrast, Highlights, Shadows, Whites, Blacks, Auto (scene-aware: a flat, overcast frame gets contrast, not a highlight pull)                                                                                                                                                                                                                                                                                                           | `Primary`, 1D `Lut`, `Tone`                                                                                                                   |
+| Presence            | Texture, Clarity, Dehaze                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `LocalContrast` ×2, `Dehaze`                                                                                                                  |
+| Colour              | Vibrance, Saturation (and Hue, in a mask)                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `Vibrance`, `Primary`                                                                                                                         |
+| Colour mixer        | 8 bands × hue/sat/lum; B&W mix; Point colour (up to 8 colours picked off the photo, each shifted in hue, saturation and luminance with its own range); the targeted tool (T) drags the band under the pointer                                                                                                                                                                                                                                                                                     | `HslBands`, `Qualifier`, `Primary`                                                                                                            |
+| Colour grading      | Shadows/midtones/highlights/global wheels, blending, balance; Add colour (coloured light, with Neutralise and Match pickers)                                                                                                                                                                                                                                                                                                                                                                      | `ColorGrade`, `AddColor`                                                                                                                      |
+| Tone curve          | Parametric (4 regions, movable splits) and point curves (RGB, R, G, B) with Refine Saturation; built-in and saved curve presets; the targeted tool (T) drags the curve at the tone under the pointer                                                                                                                                                                                                                                                                                              | `Curves` (`refine_saturation`)                                                                                                                |
+| Detail              | Sharpening (amount, radius, detail, masking); noise reduction, Classic (luminance/colour + detail; measured noise σ̂) or AI (SCUNet blind / DRUNet measured, strength)                                                                                                                                                                                                                                                                                                                             | `Sharpen`, `Denoise`, `analyze(noise)`, `enhance`                                                                                             |
+| Effects             | Post-crop vignette (fitted to the crop, follows the straighten; highlight priority or paint overlay), colour wash (a lift toward a colour, with the same pickers), grain (seeded)                                                                                                                                                                                                                                                                                                                 | `Vignette`, `AddColor`, `Grain`                                                                                                               |
+| Optics              | A profile for the lens the file names, found in the bundled Lensfun catalogue (about 1,500 lenses, 1,566 in the bundle; kept current from the models server) or imported, searchable, placed by the photo's crop factor and evaluated at its focal length, aperture and focus distance; Defish for a fisheye (its own projection, with Field 50–100%); Remove chromatic aberration, measured on the photo; manual distortion and vignetting; defringe (purple and green, on edges, with a picker) | `LensCorrection` (`Fisheye`), `suggestLateralCa`, `Defringe`                                                                                  |
+| Geometry            | Upright (Auto, Level, Vertical, Full from the photo's lines; Guided from two to four drawn lines) and Transform sliders (vertical, horizontal, rotate, aspect, scale, offset), the photo kept centred and the crop fitted to the corrected picture                                                                                                                                                                                                                                                | `Framing` (`transform`), `suggestUpright`, `uprightFromLines`                                                                                 |
+| Calibration         | Shadows tint; red/green/blue primary hue & saturation                                                                                                                                                                                                                                                                                                                                                                                                                                             | `ChannelMixer`, `Primary`                                                                                                                     |
+| Crop (strip, R)     | Crop tool with aspect presets and straighten; rotate left/right, flip and guides on its floating bar                                                                                                                                                                                                                                                                                                                                                                                              | `Framing`                                                                                                                                     |
+| Masks (strip, M)    | The masks window (below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `GradeLayer`, `Mask`, `LinearGradient`, `RadialGradient`, `BidirectionalGradient`, `Refine`, `segment`, `segmentPrompt`, `Inspect::LayerMask` |
+| Heal (strip, Q)     | Heal, clone and content-aware fill, Photoshop's way (click or paint, then drag from the spot to its source, live; or Alt-click a source first, later spots keep the offset), red eye and pet eye (drag over the pupil); outlines only while editing (hover or H shows them); a spot list; Q, H, ⌫, Enter, [ ]                                                                                                                                                                                     | `Retouch`, `suggestHealSource`                                                                                                                |
+| Enhance (last card) | JPEG restore (rebuilt from the file's coefficients, or FBCNN blind), deblur (NAFNet), super-resolution (×2 or ×4: Clean SPAN, Damaged general-x4v3, or keep-texture) into a new 16-bit TIFF with the recipe                                                                                                                                                                                                                                                                                       | `enhance` (JpegReconstruct, Model, Upscale)                                                                                                   |
+| Engine report       | View ▸ Engine Report… (Ctrl+Alt+E) or the toolbar's `</>`: the last render's engine report line by line, the compiled grade JSON, and custom layers written directly in the engine's terms (any op, any stage space, CDL, qualifiers)                                                                                                                                                                                                                                                             | the whole `Grade` model                                                                                                                       |
+
+## Masks
+
+A column of the left pane, shown with M (never over the photo):
+Lightroom's masks list (thumbnails; components joined by Add / Subtract /
+Intersect, each mask with its own overlay colour). A selected mask edits with
+every card but Optics and Geometry, plus Amount, blend and opacity. New masks
+come from:
+
+- **Automatic** — Subject and Background (U²-Netp, or **Fine**: BiRefNet
+  lite, which keeps hair and fur, about seven seconds); **Objects** (SAM 2.1, on
+  its own engine host): hover to see what lies under the pointer and click to
+  take it, drag a box, or scribble over it; Shift-click adds a part, Alt-click
+  takes one away, Enter keeps it, Esc drops it. **Sky**, **Vegetation** and
+  **Water** in one click (DINOv2's scene planes); **People**: Face, Hair,
+  Skin and Clothes (Selfie Multiclass), and Eyes, Brows, Lips and Teeth
+  outlined on every face (YuNet and Face Mesh), with a picker per face.
+  **Find by name** at the top of the menu: type "red car" and every one is
+  found (EfficientSAM3).
+- **Draw** — brush A/B/erase with flow, density, pressure and Auto Mask;
+  linear, radial and bidirectional gradients with handles (drawn by the engine,
+  exact at any size); an editable lasso, whose Find object puts the object
+  inside it in its place.
+- **Range** — colour and luminance ranges with smoothness, and **Depth
+  range** (Depth Anything V2 maps the photo's depth once): click to take a
+  distance, then Near, Far and Softness, with the depth map shown while
+  adjusting.
+
+Snap to edges (with an Edge radius) holds a brush stroke, a lasso or an AI mask
+to the photo's edges: on a brush, to the object it was painted on (SAM 2.1). A
+tool whose model is missing offers it there, in a "Model needed" popup.
+Overlay views: Molten glass (the default: a pane of clear glass over the
+photo, a solid line along a sharp edge), colour overlay (on B&W too), image on
+black or white, white on black, outline; show all, or each component in its
+own colour.
+
+## Scopes
+
+RGB histogram with clipping markers and overlay (J), and the
+**colour-concentration chart**: 36 hue bins (10° each), bars coloured by hue
+and mean saturation, the _before_ picture's bars as dashed ghosts behind, a
+masked-region mode that measures inside the selected mask, click a bar to
+open that colour in the Colour mixer, Shift-click to make a colour-range mask
+there. The histogram's numbers wait behind its `</>`. An expand icon on either
+opens the scopes at full size: the histogram as overlay, parade, one channel
+or luma (log, the before picture as a ghost, HDR in stops); the colour chart
+with colour-vision simulation; a CIE 1976 u′v′ chart with PixlRGB and
+reference gamuts; and metrics before and after (range, contrast, clipping,
+cast), with a dominant palette in Lab and hex.
+
+## Viewing
+
+Before (\\), split before/after (Y), zoom from fit to 400%
+(pinch, wheel, Z for 100%) with every tool still on the photo, the part in
+view rendered sharp by the engine from the full-resolution frame (on a
+straightened, cropped, Upright or lens-corrected photo too: the full render's
+own pixels there), crop with composition guides (thirds, grid, golden,
+diagonal) and drag-outside-to-straighten, a fine grid while straightening, clipping
+overlay, brush cursor, lasso and gradient handles. **Full HDR** (top bar) shows
+the photo with its light above white on a display with headroom (see HDR and
+gain maps).
+
+## Interface
+
+Two tiers (identity: photo, frame, engine status; tools:
+library, undo and redo, Full HDR and the view modes, each with a note on
+hover, engine report, virtual copy, export). The left rail is a spine of Presets,
+Snapshots, History and Info, one pane at a time, folding to the spine. The
+right column pins the scopes above the tool strip (Crop, Heal, Masks; Jump
+to, which opens a card and scrolls to it; and a solo switch, under which
+opening a card folds the others), then the cards, each with an (i) note, a
+dot when it is changed and a reset, and Enhance last; Crop's and Heal's
+panels take the cards' place while their tool is in hand, and with a mask
+selected only the cards a mask carries show. Ctrl+1…9 opens the first nine
+cards, Ctrl+↑/↓ the previous or next. A slider is one glass bar with its
+label and value inside: drag it (Alt is finer), click the value to type one,
+double-click to reset, arrow keys to step. The filmstrip waits under the
+loupe until its glass chip is clicked. Liquid glass (an SVG refraction filter
+as the backdrop filter) on the loupe's badges and bars, dialogs, pins and
+popovers; a three.js processing sphere over long operations and a shader
+gradient behind empty views, with CSS fallbacks and reduced-motion stills.
+Minimised, or another app in front for two minutes, Playroom lets its engine
+hosts go once their queued work is done (thumbnails, an export, an AI batch),
+draws flat, still panels, and the top bar says **Engine offline** in yellow;
+the engine is back the moment you are. Settings → Interface → Always flat
+keeps the flat look. `scripts/perf.mjs` profiles the UI on a folder you name
+(flame graphs of both processes, frame times, IPC, and this rest).
+
+## Workflow
+
+Undo/redo and a history list (per photo, kept in its project),
+snapshots (in the project), saved presets (each carrying chosen groups; with
+"Masks & local adjustments" or "AI denoise & deblur", those go as
+instructions, made again on each photo the preset is applied to: ranges and
+gradients as they are, a model's mask as what to ask the model for, a denoise
+or deblur as a step scoped to its mask), copy/paste/sync (Ctrl+C / Ctrl+V /
+Ctrl+Shift+S) — e.g. white balance only, to a batch, copied or measured per
+photo.
+
+## Looks
+
+306 looks: 284 made with Playroom's own sliders (no bundled LUTs)
+and 22 smart looks. Camera colour first (Fujifilm-, Leica-, Hasselblad-,
+Canon-, Nikon-, Sony-, Ricoh-, Panasonic-inspired and more), then cinema
+cameras and print film, colour and black-and-white film stocks, movies and TV,
+smart looks, black and white, creative and essentials. Names are PIXL's own; a
+camera, stock or film shows only as "Inspired by …", and PIXL is not
+affiliated with their owners. Looks the sliders can only approximate
+(halation, bloom) are marked ≈. The Presets rail keeps My Looks (reorder by
+dragging) and the user's saved presets, with search; hovering a look shows it
+on the loupe without saving. Browse opens the full catalog as cards of the
+open photo with each look on it. Applying is one history step; the Applied
+bar's Amount scales only what the look moved, and another look takes its place
+in the same step (Alt puts it on top). A smart look also carries instructions
+(`src/shared/looks/smart.ts`): masks made of parts (ranges, gradients, the
+subject, the background, the sky, people's parts, an object), each with its
+own settings and Amount, and AI steps (denoise, deblur) scoped to them;
+applying one puts its sliders, ranges and gradients in at once and runs its
+model work in order, with one progress bar and Cancel, and asks for a click or
+a box where it needs an object pointed at. 18 of the 22 work on today's engine
+once their models are downloaded; four wait for a people model (skin, eyes,
+faces). The browser can show only the looks that work now. A look can travel
+as a `pixl-look` file (`src/shared/looks/schema.ts`), the format a marketplace
+will use.
+
+## Export
+
+Four steps (Format, Size & colour, Metadata & HDR, Review) of
+the editor's cards; Review renders the first photo through the real export
+request, and guards and a preflight (writable folder, room, replaced files)
+block an export that cannot work. Chosen folder (or beside each original), subfolder, filename
+template (`{name} {seq} {date} {rating} {copy} {ext}`), JPEG/PNG/TIFF/WebP/
+AVIF/JPEG XL with each codec's knobs, bit depth, resize (long/short edge,
+width, height, fit inside a box, megapixels, percent), colour space + intent + BPC, metadata
+blocks, dither, HDR (tone map HDR sources, keep HDR, expand SDR to PQ/HLG,
+or SDR + gain map: UltraHDR JPEG, AVIF; highlights clipped at the peak
+or rolled off by BT.2390 from a chosen knee),
+a watermark (a PNG at one of nine anchors, sized and inset by the
+picture's shorter edge, with opacity and Normal / Multiply / Screen, previewed
+on the photo and composited after the resize so it stays sharp), export
+presets, batch with progress and cancel (it stops the file being
+written). Output sharpening after the resize (Screen, Matte or Glossy × Low,
+Standard or High), in the same engine pass.
+The photo's title, caption, keywords and copyright are written into the file
+(EXIF, XMP and IPTC, in the blocks kept), or only a copyright ("Copyright
+only"), with a default copyright for photos that have none and "Remove
+location" to strip GPS.
+
+## Enhance
+
+**Held** until Playroom's own models (0.4.2): the card shows greyed with a
+note and runs nothing (`ENHANCE_HELD` in `src/renderer/src/panels/enhance.tsx`);
+steps already made keep rendering. As it was:
+
+The last card in the right column runs the engine's enhance
+chain over the photo's original, in its fixed order: a JPEG rebuilt from its
+DCT coefficients (no model) or FBCNN's JPEG restore, NAFNet's motion deblur,
+then the upscale: Scale ×2 or ×4 with a Source, Clean (SPAN, the fastest and
+closest to a sharp original; ×2 is its ×4 brought down), Damaged
+(Real-ESRGAN general-x4v3, which repairs compression and noise) or Keep
+texture (its wdn variant). The result is a new 16-bit TIFF beside the original
+(`-Enhanced`, numbered when taken), which starts with the source's recipe. The
+panel shows the output size, the file size and a time estimate learned from
+earlier runs, offers each missing model, and runs a selection as a batch.
+Models run on the ONNX Runtime the engine ships (CoreML on macOS, DirectML on
+Windows, or the CPU when the performance test finds it faster); one the
+accelerator cannot load (FBCNN, SCUNet under CoreML) moves to the CPU on its
+own.
+
+## AI models
+
+None ships with the app: Settings → AI models downloads each
+from models.pixlfoundation.com when wanted (resumable, checked against the
+engine's roster), shows its size, licence, what is known about its training
+data and how long it takes for a photo on this computer (measured on earlier
+runs, else scaled by the speed test), marks the one Playroom recommends for
+each task, and removes it. A tool that needs a missing model offers it right
+there, in a "Model needed" popup, and goes on when it is here. Select Subject
+and Background (Masks) run U²-Netp, and Fine runs BiRefNet lite (offered
+when first wanted); Objects and Find object run SAM 2.1; Sky, Vegetation and
+Water run DINOv2; the People parts run Selfie Multiclass, and the face parts
+YuNet and Face Mesh; Find by name runs EfficientSAM3; Depth range runs Depth
+Anything V2; Heal's Remove runs MI-GAN. RAWs develop at full size with
+DemosaicNet (2 MB, fetched by itself; AHD without it), and PMRID can take the
+grain out of the sensor data first. **Use AI models** turns every model off at
+once (RAWs still develop with theirs). Models that retire are removed from
+the disk on their own. On Apple silicon, models run on the performance
+cores.
+
+## Lens profiles
+
+The app ships Lensfun's database (CC BY-SA 3.0) as its
+lens catalogue, so every lens Lensfun knows is corrected offline (a fisheye
+with its own projection, defished on request), and checks the models server
+for a newer one at start and every six hours (only changed shards are
+downloaded, each checked by SHA-256). The Lens panel matches the file's lens
+(and, where the EXIF gives no 35 mm focal, the camera's crop factor from the
+catalogue), shows what it found and at which crop, and searches the whole
+catalogue by hand; imported JSON profiles come first. Pasting, syncing or a
+preset re-resolves each photo at its own lens and focal length.
+`pnpm lens-profiles` rebuilds the catalogue from Lensfun, `--bucket <name>`
+publishes it.
+
+## HDR and gain maps
+
+The grid marks HDR photos (a gain map, PQ or HLG).
+A gain-map photo (an iPhone HEIC, an UltraHDR JPEG, an Apple JPEG) is edited
+in HDR: on the rendition its map lifts it to, the map applied once at the
+file's headroom into a PQ master (`src/main/hdrsource.ts`), which the loupe,
+the 1:1 view, the thumbnails and the export then grade like any PQ photo,
+with the HDR histogram. **Photo → Edit as SDR…** edits the SDR picture the
+file stores instead, per photo; a photo with pixel steps (AI Denoise,
+Enhance, baked heals), which an HDR photo cannot take yet, stays in SDR
+(`editsInHdr` in `src/shared/recipe.ts`). **Headroom** in the view bar
+colours where the picture rises above white, amber to magenta at its peak,
+on every photo with light above white (a RAW too); greyed on an SDR one. On an HDR photo the grade keeps
+its highlights: positive exposure has no SDR shoulder, tone curves run on
+past white, and a LUT profile keeps the headroom.
+
+**Full HDR** (engine 0.18) shows any photo with its light above white while
+editing, on a display that has headroom: drafts and the settled picture are
+rendered for that display (its SDR white and peak; Settings → Display reads
+them on macOS, takes typical ones where the system says the screen shows
+HDR, as on Windows, or takes them as stated) into 16-bit float and drawn on a
+WebGPU canvas; the Before and the 1:1 view come as AVIFs with a gain map.
+What reads the picture (the eyedropper, scopes, overlays, a range's key)
+reads an SDR companion of the same render. Off, or on an SDR display, the
+picture is SDR as before; an SDR photo is always shown SDR. Full HDR is on
+by default. A RAW is developed in floating point with its blown
+highlights rebuilt (engine 0.18's Scene master), and rolls softly into white
+when shown in SDR.
+
+## AI denoise
+
+Detail → Noise reduction → AI runs SCUNet (blind, for real
+camera noise) or DRUNet (told the noise it measures) over the photo once and
+keeps the result under the photo's cache, per model and strength: a denoised
+draft first (seconds; the loupe switches to it), then the full-resolution
+master, from which the proxies are remade. Every view, the 1:1 region,
+thumbnails and export then grade the denoised pixels, with the classic
+denoise off; an export that finds no master makes it. HDR photos are refused.
+A model the accelerator cannot load (SCUNet under CoreML) runs on the CPU.
+
+## Updates
+
+Settings → Updates follows the stable or beta channel (a beta
+build follows beta); an update downloads in the background and installs when
+Playroom quits, or at once with Restart to update. The first launch after an
+update says once, in a What's new popup, what it brought and what is coming
+(`src/shared/releasenotes.ts`); Settings → Updates shows it again. Help → Report
+a Problem sends what happened straight to PIXL.
+
+## Privacy
+
+Photos never leave the computer. Masks, noise reduction and Super
+Resolution run locally, there are no analytics, and editing works offline for up
+to 30 days between account checks (`offlineGraceDays`, `src/shared/licence.ts`).
